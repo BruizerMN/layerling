@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEBUG_STATE_STORAGE_KEY, debugStateRequested } from "@/lib/debugState";
 
@@ -29,5 +31,29 @@ describe("debugStateRequested (scene mirror in hidden DOM elements)", () => {
   it("treats blocked or failing storage as off", () => {
     expect(debugStateRequested("", throwingStorage)).toBe(false);
     expect(debugStateRequested("?debugState=1", throwingStorage)).toBe(true);
+  });
+});
+
+describe("the hidden scene mirrors stay gated in the sources", () => {
+  const read = (file: string) => readFileSync(path.resolve(__dirname, "../../apps/web/src", file), "utf8");
+
+  const elementsWithGuard = (source: string, guard: RegExp) => {
+    const found = [...source.matchAll(/<pre data-codex-[a-z]+ hidden>/g)];
+    expect(found.length).toBeGreaterThan(0);
+    return found.every((match) => guard.test(source.slice(Math.max(0, (match.index ?? 0) - 160), match.index)));
+  };
+
+  it("renders data-codex-state and data-codex-summary only when requested", () => {
+    expect(elementsWithGuard(read("components/LayerlingEditor.tsx"), /debugStateEnabled \? \(/)).toBe(true);
+  });
+
+  it("renders data-codex-projects only when requested", () => {
+    expect(elementsWithGuard(read("app/page.tsx"), /projectDebugSummary \? \(/)).toBe(true);
+  });
+
+  it("builds the large state string only when requested", () => {
+    const editor = read("components/LayerlingEditor.tsx");
+    expect(editor).toMatch(/debugStateEnabled\s*\n?\s*\? JSON\.stringify/);
+    expect(editor).toMatch(/debugStateEnabled \? `notice=/);
   });
 });

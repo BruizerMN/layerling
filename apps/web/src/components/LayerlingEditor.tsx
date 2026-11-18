@@ -199,6 +199,7 @@ import { saveWithLessHistoryIfNeeded } from "@/lib/historyTrim";
 import { projectThumbnailPngBytes } from "@/lib/backupDownload";
 import { isBuildMessage, reportWorkerBuild } from "@/lib/buildStamp";
 import { createKernelGate, isKernelStatusMessage, warmKernelMessage, type KernelGate } from "@/lib/cadKernelGate";
+import { useDebugStateEnabled } from "@/lib/debugState";
 import { ensureLylFileWritable, forgetLylFile, forgetStlFile, linkedLylFile, linkedStlFile, lylFileAccessSupported, pickLylFileToOpen, pickLylFileToSave, pickStlFileToSave, rememberLylFile, rememberStlFile, writeLylFile, type LylFileHandle } from "@/lib/lylFileAccess";
 import { addFileBackup, allowBackupFolder, fileBackupsOfDesign, listFileBackups, OPEN_FILE_BACKUPS_EVENT, readFileBackupBytes, readFileBackupSettings } from "@/lib/fileBackups";
 import { backupFileBeforeOverwrite, takeEditorBackupReminder } from "@/components/workplane/fileBackupEditor";
@@ -4643,19 +4644,24 @@ export function LayerlingEditor({
       })
       .join("");
   }, [activeSketchWorkplane, editingSketchShapeId, revolveSketchFront, shapes, sketchActive, sketchMirrorAbout, sketchShowPartEdges]);
+  // The scene mirror in hidden DOM elements is built only when asked for (?debugState=1 or localStorage, see lib/debugState.ts):
+  // on a large design it is a ~10 MB JSON string rebuilt on every change, and nothing in the app reads it.
+  const debugStateEnabled = useDebugStateEnabled();
   const debugState = useMemo(
     () =>
-      JSON.stringify({
-        notice,
-        selectedIds,
-        shapeCount: shapes.length,
-        shapes: shapes.map(debugShapeSummary),
-      }),
-    [notice, selectedIds, shapes],
+      debugStateEnabled
+        ? JSON.stringify({
+          notice,
+          selectedIds,
+          shapeCount: shapes.length,
+          shapes: shapes.map(debugShapeSummary),
+        })
+        : "",
+    [debugStateEnabled, notice, selectedIds, shapes],
   );
   const compactDebugState = useMemo(
-    () => `notice=${notice};selected=${selectedIds.length};count=${shapes.length};${shapes.map(compactShapeSummary).join(";")}`,
-    [notice, selectedIds, shapes],
+    () => (debugStateEnabled ? `notice=${notice};selected=${selectedIds.length};count=${shapes.length};${shapes.map(compactShapeSummary).join(";")}` : ""),
+    [debugStateEnabled, notice, selectedIds, shapes],
   );
 
   useEffect(() => {
@@ -20747,12 +20753,16 @@ export function LayerlingEditor({
           </button>
         </p>
       ) : null}
-      <pre data-codex-state hidden>
-        {debugState}
-      </pre>
-      <pre data-codex-summary hidden>
-        {compactDebugState}
-      </pre>
+      {debugStateEnabled ? (
+        <>
+          <pre data-codex-state hidden>
+            {debugState}
+          </pre>
+          <pre data-codex-summary hidden>
+            {compactDebugState}
+          </pre>
+        </>
+      ) : null}
     </div>
   );
 }
