@@ -49,7 +49,7 @@ journalctl --user -u layerling -f                     # logs
 
 ## Roll back
 `ls ~/bin/layerling-releases` then `ops/hundchen/rollback.sh <older-commit>`. Old releases are never modified or auto-deleted.
-Last known good (the validated build): `c02970ed4`.
+Live and validated: `9619afebc` (adds automatic undo-history trimming). Earlier: `085e13341` (raw-error logging), `c02970ed4` (first validated patch build).
 Full removal of Layerling: `systemctl --user disable --now layerling layerling-mdns`, delete the two unit files in `~/.config/systemd/user/`, then the nginx undo below.
 
 ## One-time sudo steps (done by Bill)
@@ -57,4 +57,14 @@ See `sudo-steps.md` (copy conf to `sites-available`, symlink into `sites-enabled
 
 ## Verified state (2026-11-18)
 typecheck clean; 635 files / 5,960 unit tests pass; perf round-trip of 21,833 parts / 15 states (110.8 MiB project.json, 283.7 MiB meshes, 71.9 MiB .lyl) passes in ~95 s; HTTPS from the Mac verified; service restart, rollback script and crash auto-restart verified; other apps unchanged.
-Real-project (Foshay, in Chrome) acceptance: pending.
+
+## Large-project notes (learned on the Foshay pedestal, 2026-11-18)
+* **Limits we raised:** `project.json` 64 -> 256 MiB, archive entries 4096 -> 32768 (`lylProject.ts`). The 512 MiB archive cap and 1 GiB expanded cap are unchanged.
+* **Why big designs hit the limit:** each saved undo state repeats every node. Layerling's *Insert design* appends `-insert-<uuid>` to every object ID at every group level, so nested nodes carry long IDs and a state of ~21.8k nodes is ~31-37 MiB of JSON. 8 states = 247.6 MiB (just under the cap); 16 = over.
+* **Automatic trim (commit "Trim undo history automatically"):** `.lyl` export retries with fewer undo steps when the package is too big (`saveWithLessHistoryIfNeeded`) and says so ("only the last N of M undo steps were saved"). The design itself is always saved whole. Setting *Saved action history* to **None** in the Export dialog gives a single-state file (~58 MiB project.json, fastest to open).
+* **Diagnosis:** a failed export now logs `[layerling] .lyl export failed:` with the raw error in the browser console (the on-screen text is the friendly version).
+* **Opening a big file** takes ~10-20 s (unzip + parse of a 50-250 MiB manifest) with no progress indicator - follow-up idea.
+* **Verifying a combined file:** compare node by node against the source assemblies after stripping `-insert-<uuid>` and the `state-N/` prefix (type, definition incl. `hole`, group child counts, mesh blobs by sha256). The Foshay check found 21,833/21,833 identical.
+
+## Acceptance results (Foshay pedestal, Chrome on the Mac, app on this VM)
+15 assemblies imported (182 top-level objects, 21,833 nodes, tab ~1.5 GB) -> saved as one `.lyl` -> reopened -> counts, placement, groups, cutters and meshes verified identical -> edited copy saved and reopened with the edit present -> default-settings save auto-trimmed to 5 of 9 undo steps and verified. Originals untouched (sha256 verified). Test files: `~/Documents/Foshay-acceptance/` on the Mac (checksums, baseline, read-only golden copy).
