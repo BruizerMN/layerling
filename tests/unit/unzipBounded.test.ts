@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { strToU8, unzipSync, zipSync, type Zippable } from "fflate";
 import { describe, expect, it } from "vitest";
 import { defaultUnzipDeps, readZipDirectory, unzipBounded, type InflateJob, type UnzipDeps, type UnzipEvent } from "@/lib/unzipBounded";
@@ -188,5 +190,13 @@ describe("unzipBounded recovers from a bad Worker", () => {
     const deps = fakeDeps({ job: () => ({ promise: new Promise<Uint8Array>(() => undefined), cancel: () => undefined }) });
     const got = await unzipBounded(bytes, { workerFromBytes: 1000, maxWorkers: 2, workerTimeoutMs: 25, workerMsPerMiB: 0 }, deps);
     expect(Object.keys(got).length).toBe(4);
+  });
+});
+
+describe("the project package reader uses it", () => {
+  const source = readFileSync(path.resolve(__dirname, "../../apps/web/src/lib/lylProject.ts"), "utf8");
+  it("no longer calls fflate's one-Worker-per-entry unzip", () => {
+    expect(source).not.toMatch(/import \{[^}]*\bunzip\b[^}]*\} from "fflate"/);
+    expect(source).toMatch(/unzipBounded\(/);
   });
 });
