@@ -6,7 +6,10 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 CERTS="$HOME/.local/share/layerling/certs"
 mkdir -p "$CERTS" "$HOME/.config/systemd/user"
 if [ ! -f "$CERTS/layerling.local.pem" ]; then
-  (cd "$CERTS" && mkcert -cert-file layerling.local.pem -key-file layerling.local-key.pem layerling.local)
+  # Same VM-local dev CA the other apps use (AirwaySim convention); the Macs already trust it. Read-only use.
+  CAROOT="${LAYERLING_DEV_CAROOT:-$HOME/sceneryhub-dev/ca}"
+  [ -f "$CAROOT/rootCA.pem" ] || { echo "No dev CA at $CAROOT"; exit 1; }
+  (cd "$CERTS" && CAROOT="$CAROOT" mkcert -cert-file layerling.local.pem -key-file layerling.local-key.pem layerling.local)
   chmod 600 "$CERTS/layerling.local-key.pem"
 fi
 test -L "$HOME/bin/layerling-releases/current" || { echo "no current release symlink"; exit 1; }
