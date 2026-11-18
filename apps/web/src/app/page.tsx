@@ -81,6 +81,7 @@ import { writeDesignView, writeSavedViews } from "@/lib/designView";
 import { seedStartCornerRuler, writeCornerRulers } from "@/lib/cornerRulerStore";
 import { readTape, writeTape } from "@/lib/tapeStore";
 import { useFileAccept } from "@/lib/fileAccept";
+import { useDebugStateEnabled } from "@/lib/debugState";
 import { dropBackupTarget, linkedLylFile, lylFileAccessSupported, onLylFilesLaunched, pickBackupTarget, pickFilesToImport, rememberLylFile, writeBackupTarget, type LylFileHandle } from "@/lib/lylFileAccess";
 import { exportLylProject, importLylProject, inspectLylProjectPackage, LYL_CREATED_WITH_VERSION, LYL_MEDIA_TYPE, withLylProjectName, withLylThumbnail } from "@/lib/lylProject";
 import { relieveOverFineCadMeshes, type RemeshCadBrep } from "@/lib/cadMeshRelief";
@@ -964,6 +965,8 @@ function projectNameFromFileName(fileName: string) {
 export default function Home() {
   useLanguage();
   const [mounted, setMounted] = useState(false);
+  // The project-list mirror in a hidden element is built only when asked for (?debugState=1; see lib/debugState.ts).
+  const debugStateEnabled = useDebugStateEnabled();
   const [view, setView] = useState<AppView>("dashboard");
   const [editorStarted, setEditorStarted] = useState(false);
   const [editorLoading, setEditorLoading] = useState(false);
@@ -3190,7 +3193,7 @@ export default function Home() {
   const activeProject = activeProjectId ? projects.find((project) => project.id === activeProjectId) ?? null : null;
   const activeProjectShapeEntry = activeProjectId ? projectShapesById[activeProjectId] : null;
   const canRenderEditor = !activeProjectId || (Boolean(activeProject) && Boolean(activeProjectShapeEntry));
-  const projectDebugSummary = projects.map((project) => ({
+  const projectDebugSummary = !debugStateEnabled ? null : projects.map((project) => ({
     id: project.id,
     revision: project.revision,
     shapes: project.shapes,
@@ -3202,9 +3205,11 @@ export default function Home() {
 
   return (
     <>
-      <pre data-codex-projects hidden>
-        {JSON.stringify(projectDebugSummary)}
-      </pre>
+      {projectDebugSummary ? (
+        <pre data-codex-projects hidden>
+          {JSON.stringify(projectDebugSummary)}
+        </pre>
+      ) : null}
       <input
         ref={dashboardImportInputRef}
         className="hidden-file-input"
