@@ -195,6 +195,7 @@ import { buildSketchRevolveMesh, DEFAULT_SKETCH_REVOLVE_SETTINGS, normalizeSketc
 import { AppFooter } from "@/components/AppFooter";
 import { useFileAccept } from "@/lib/fileAccept";
 import { exportLylProject, LYL_CREATED_WITH_VERSION, LYL_MEDIA_TYPE, lylThumbnailFiles } from "@/lib/lylProject";
+import { saveWithLessHistoryIfNeeded } from "@/lib/historyTrim";
 import { projectThumbnailPngBytes } from "@/lib/backupDownload";
 import { isBuildMessage, reportWorkerBuild } from "@/lib/buildStamp";
 import { createKernelGate, isKernelStatusMessage, warmKernelMessage, type KernelGate } from "@/lib/cadKernelGate";
@@ -17925,27 +17926,42 @@ export function LayerlingEditor({
       // A design written to the server under another name carries that name inside too, or it
       // would open under the old one while the overview shows the file name (#265).
       const packageName = target === "shared" ? exportName.trim().replace(/\.(lyl|skf)$/i, "") || projectName : projectName;
-      const bytes = preparedBytes ?? await exportLylProject({
-        projectId: projectInfoRef.current.projectId,
-        projectName: packageName,
-        createdAt: projectCreatedAt,
-        modifiedAt: projectModifiedAt,
-        extraFiles: lylThumbnailFiles(await projectThumbnailPngBytes(thumbnailDataUrl)),
-        shapes: view ? view.shapes : shapesRef.current,
-        notes: view ? view.notes : notesRef.current,
-        history: exportedHistory.entries,
-        historyIndex: exportedHistory.index,
-        assets: projectAssetsRef.current,
-        attachments: projectAttachmentsRef.current,
-        workspace: workspaceSettingsRef.current,
-        snapGrid,
-        placementElevation: view ? view.placementElevation : placementElevation,
-        placementWorkplane: view ? view.placementWorkplane : placementWorkplane,
-        sketchPlacementWorkplane: view ? view.placementWorkplane : placementWorkplane,
-      });
+      // A design whose undo history makes the package too big for the format is packed again with fewer history
+      // steps instead of failing (saveWithLessHistoryIfNeeded, as for the browser copy); the design itself is whole.
+      let packedBytes: Uint8Array | undefined = preparedBytes;
+      let historyTrimmed: { kept: number; total: number } | undefined;
+      if (!packedBytes) {
+        const thumbnailFiles = lylThumbnailFiles(await projectThumbnailPngBytes(thumbnailDataUrl));
+        const saved = await saveWithLessHistoryIfNeeded(
+          exportedHistory.entries,
+          exportedHistory.index,
+          (entries, index) => exportLylProject({
+            projectId: projectInfoRef.current.projectId,
+            projectName: packageName,
+            createdAt: projectCreatedAt,
+            modifiedAt: projectModifiedAt,
+            extraFiles: thumbnailFiles,
+            shapes: view ? view.shapes : shapesRef.current,
+            notes: view ? view.notes : notesRef.current,
+            history: entries,
+            historyIndex: index,
+            assets: projectAssetsRef.current,
+            attachments: projectAttachmentsRef.current,
+            workspace: workspaceSettingsRef.current,
+            snapGrid,
+            placementElevation: view ? view.placementElevation : placementElevation,
+            placementWorkplane: view ? view.placementWorkplane : placementWorkplane,
+            sketchPlacementWorkplane: view ? view.placementWorkplane : placementWorkplane,
+          }),
+          async (packed) => { packedBytes = packed; },
+        );
+        historyTrimmed = saved.historyTrimmed;
+      }
+      const bytes = packedBytes as Uint8Array;
+      const trimNote = historyTrimmed ? t("status.savedHistoryTrimmed", { kept: historyTrimmed.kept, total: historyTrimmed.total }) : "";
       if (chooseAfterPackaging) {
         setTopPanel(null);
-        setNotice(t("status.projectReadyToSave"), "stay", {
+        setNotice([t("status.projectReadyToSave"), trimNote].filter(Boolean).join(" "), "stay", {
           label: t("export.saveProject"),
           run: () => void exportLylDesign(exportName, historyLimit, "fileAs", bytes),
         });
@@ -17978,7 +17994,7 @@ export function LayerlingEditor({
         const folderNote = backup.folder === "noPermission"
           ? t("status.backupFolderNeedsPermission")
           : backup.folder === "failed" ? t("status.backupFolderFailed") : "";
-        const savedText = [t("status.savedToFile", { name: fileHandle.name }), backupNote, folderNote].filter(Boolean).join(" ");
+        const savedText = [t("status.savedToFile", { name: fileHandle.name }), trimNote, backupNote, folderNote].filter(Boolean).join(" ");
         setNotice(
           savedText,
           Boolean(offerRename) || Boolean(folderNote),
@@ -17998,7 +18014,7 @@ export function LayerlingEditor({
       } else {
         const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
         await downloadBlobFile(projectExportFileName(exportName, "lyl"), new Blob([buffer], { type: LYL_MEDIA_TYPE }));
-        setNotice(t("status.savedProject"));
+        setNotice([t("status.savedProject"), trimNote].filter(Boolean).join(" "));
       }
       setTopPanel(null);
     } catch (error) {

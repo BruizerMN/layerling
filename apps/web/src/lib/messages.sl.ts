@@ -1810,6 +1810,7 @@ export const MESSAGES_SL: Partial<Record<MessageKey, string>> = {
   "status.serverSaveStopped": "Samodejno shranjevanje se je ustavilo: projekt se je na strežniku spremenil. Naloži ga znova ali ga shrani pod drugim imenom.",
   "status.packagingProject": "Pakiranje urejljivega projekta, zgodovine in odstranjenih podvojenih virov…",
   "status.projectReadyToSave": "Projekt je pripravljen. Izberite, kam shraniti to kopijo.",
+  "status.savedHistoryTrimmed": "Da datoteka ustreza obliki, je shranjenih le zadnjih {kept} od {total} korakov razveljavitve. Sama zasnova je popolna.",
   "status.savedProject": "Urejljiv projekt Layerling (.lyl) shranjen",
   "status.saveProjectFailed": "Projekta Layerling ni bilo mogoče shraniti",
   "status.importNoneFailed": "Nobene od izbranih datotek ({total}) ni bilo mogoče uvoziti.{summary}",

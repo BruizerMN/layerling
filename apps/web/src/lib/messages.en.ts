@@ -2535,6 +2535,7 @@ export const MESSAGES_EN = {
   "status.serverSaveStopped": "Automatic saving stopped: the design changed on the server. Reload it or save it under a different name.",
   "status.packagingProject": "Packaging editable design, history, and deduplicated assets…",
   "status.projectReadyToSave": "The packaged design is ready. Choose where to save this copy.",
+  "status.savedHistoryTrimmed": "To fit the file format, only the last {kept} of {total} undo steps were saved. The design itself is complete.",
   "status.savedProject": "Saved editable layerling design (.lyl)",
   "status.savedToFile": "Saved to {name}",
   "status.previousVersionKept": "The version before is under “{button}”.",

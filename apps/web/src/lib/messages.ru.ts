@@ -2529,6 +2529,7 @@ export const MESSAGES_RU: Partial<Record<MessageKey, string>> = {
   "status.serverSaveStopped": "Автосохранение остановлено: проект изменился на сервере. Перезагрузите его или сохраните под другим именем.",
   "status.packagingProject": "Упаковка редактируемого проекта, истории и ресурсов без дубликатов…",
   "status.projectReadyToSave": "Проект готов. Выберите, куда сохранить эту копию.",
+  "status.savedHistoryTrimmed": "Чтобы файл уложился в формат, сохранены только последние {kept} из {total} шагов отмены. Сам проект сохранён полностью.",
   "status.savedProject": "Сохранён редактируемый проект layerling (.lyl)",
   "status.savedToFile": "Сохранено в {name}",
   "status.previousVersionKept": "Предыдущая версия — в разделе «{button}».",

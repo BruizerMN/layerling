@@ -2534,6 +2534,7 @@ export const MESSAGES_DE: Record<MessageKey, string> = {
   "status.serverSaveStopped": "Automatisches Speichern angehalten: Der Entwurf hat sich auf dem Server geändert. Lade ihn neu oder speichere ihn unter anderem Namen.",
   "status.packagingProject": "Bearbeitbarer Entwurf, Verlauf und abgeglichene Ressourcen werden gepackt …",
   "status.projectReadyToSave": "Der Entwurf ist zum Speichern bereit. Wähle den Speicherort für diese Kopie.",
+  "status.savedHistoryTrimmed": "Damit die Datei ins Format passt, wurden nur die letzten {kept} von {total} Rückgängig-Schritten gespeichert. Der Entwurf selbst ist vollständig.",
   "status.savedProject": "Bearbeitbarer layerling-Entwurf (.lyl) gespeichert",
   "status.savedToFile": "In {name} gespeichert",
   "status.previousVersionKept": "Die vorige Fassung liegt unter „{button}“.",

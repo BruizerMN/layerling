@@ -2534,6 +2534,7 @@ export const MESSAGES_NL: Record<MessageKey, string> = {
   "status.serverSaveStopped": "Automatisch opslaan gestopt: het ontwerp is op de server gewijzigd. Laad het opnieuw of sla het op onder een andere naam.",
   "status.packagingProject": "Bewerkbaar ontwerp, geschiedenis en ontdubbelde assets inpakken…",
   "status.projectReadyToSave": "Het ontwerp is klaar om op te slaan. Kies waar je deze kopie wilt bewaren.",
+  "status.savedHistoryTrimmed": "Om in het bestandsformaat te passen zijn alleen de laatste {kept} van {total} stappen om ongedaan te maken opgeslagen. Het ontwerp zelf is volledig.",
   "status.savedProject": "Bewerkbaar layerling-ontwerp (.lyl) opgeslagen",
   "status.savedToFile": "Opgeslagen in {name}",
   "status.previousVersionKept": "De vorige versie staat onder ‘{button}’.",

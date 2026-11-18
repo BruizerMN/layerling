@@ -2529,6 +2529,7 @@ export const MESSAGES_SV: Partial<Record<MessageKey, string>> = {
   "status.serverSaveStopped": "Automatisk sparning stoppades: designen ändrades på servern. Ladda om den eller spara den under ett annat namn.",
   "status.packagingProject": "Packar redigerbar design, historik och deduplicerade tillgångar…",
   "status.projectReadyToSave": "Projektet är paketerat. Välj var den här kopian ska sparas.",
+  "status.savedHistoryTrimmed": "För att rymmas i filformatet sparades bara de sista {kept} av {total} ångra-stegen. Själva konstruktionen är komplett.",
   "status.savedProject": "Sparade redigerbar layerling-design (.lyl)",
   "status.savedToFile": "Sparad till {name}",
   "status.previousVersionKept": "Den tidigare versionen finns under ”{button}”.",
