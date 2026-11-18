@@ -17852,7 +17852,7 @@ export function LayerlingEditor({
     }
   }, [deliverExportFile, exportSource, projectName, stepExporting]);
 
-  const exportLylDesign = useCallback(async (exportName: string, historyLimit: LylHistoryLimit, target: LylExportTarget = "download") => {
+  const exportLylDesign = useCallback(async (exportName: string, historyLimit: LylHistoryLimit, target: LylExportTarget = "download", preparedBytes?: Uint8Array): Promise<void> => {
     if (lylExporting) return;
     if (target === "shared" && !onSaveSharedProject) {
       setNotice(t("status.sharedUnavailable"), true);
@@ -17862,11 +17862,12 @@ export function LayerlingEditor({
       setNotice(t("status.finishBeforeSave"));
       return;
     }
-    // The browser opens a file dialog only in answer to a click or a key press, so this comes
-    // before anything that takes time. A browser without it keeps the download.
+    // A new save picker can leave an empty file. Package first, then use a fresh click
+    // for the picker, which requires browser user activation.
     const projectId = projectInfoRef.current.projectId ?? "";
     let fileHandle: LylFileHandle | null = null;
     let pickedNewFile = false;
+    let chooseAfterPackaging = false;
     if (target === "file" || target === "fileAs") {
       // "Save designs as a download" skips the save dialog every time (Discussion #1449).
       if (!lylFileAccessSupported() || workspaceSettingsRef.current.lylAsDownload) {
@@ -17879,8 +17880,12 @@ export function LayerlingEditor({
             return;
           }
           if (!fileHandle) {
-            fileHandle = await pickLylFileToSave(projectExportFileName(exportName, "lyl"));
-            pickedNewFile = true;
+            if (preparedBytes) {
+              fileHandle = await pickLylFileToSave(projectExportFileName(exportName, "lyl"));
+              pickedNewFile = true;
+            } else {
+              chooseAfterPackaging = true;
+            }
           }
           // The backup folder may need the browser's permission again after a reload, and it is asked only while
           // the key press or click still counts: now, before anything slow.
@@ -17889,10 +17894,10 @@ export function LayerlingEditor({
           // dialog it could not use as closed; staying silent left people wondering where the file went).
           // The browser cannot tell a closed dialog from a file it would not hand over, and on some PCs the
           // dialog fails for every folder: a normal download still works there (Discussion #1449).
-          if (!fileHandle) {
+          if (!fileHandle && !chooseAfterPackaging) {
             setNotice(t("status.saveNothingChosen"), true, {
               label: t("status.saveAsDownload"),
-              run: () => void exportLylDesign(exportName, historyLimit, "download"),
+              run: () => void exportLylDesign(exportName, historyLimit, "download", preparedBytes),
             });
             return;
           }
@@ -17907,7 +17912,7 @@ export function LayerlingEditor({
     setNotice(target === "shared" ? t("status.packagingShared") : t("status.packagingProject"));
     try {
       // Every file carries the picture of the design for other programs to show (#1226); the server needs it.
-      const thumbnailDataUrl = await capturedDesignPicture();
+      const thumbnailDataUrl = preparedBytes ? "" : await capturedDesignPicture();
       if (target === "shared" && (!thumbnailDataUrl.startsWith("data:image/png;base64,") || thumbnailDataUrl.length <= 100)) {
         throw new Error("Could not capture the current project preview");
       }
@@ -17920,7 +17925,7 @@ export function LayerlingEditor({
       // A design written to the server under another name carries that name inside too, or it
       // would open under the old one while the overview shows the file name (#265).
       const packageName = target === "shared" ? exportName.trim().replace(/\.(lyl|skf)$/i, "") || projectName : projectName;
-      const bytes = await exportLylProject({
+      const bytes = preparedBytes ?? await exportLylProject({
         projectId: projectInfoRef.current.projectId,
         projectName: packageName,
         createdAt: projectCreatedAt,
@@ -17938,6 +17943,14 @@ export function LayerlingEditor({
         placementWorkplane: view ? view.placementWorkplane : placementWorkplane,
         sketchPlacementWorkplane: view ? view.placementWorkplane : placementWorkplane,
       });
+      if (chooseAfterPackaging) {
+        setTopPanel(null);
+        setNotice(t("status.projectReadyToSave"), "stay", {
+          label: t("export.saveProject"),
+          run: () => void exportLylDesign(exportName, historyLimit, "fileAs", bytes),
+        });
+        return;
+      }
       if (target === "shared" && onSaveSharedProject) {
         setNotice(await onSaveSharedProject({ exportName: exportName.trim() || projectName, bytes, thumbnailDataUrl }));
       } else if (fileHandle) {

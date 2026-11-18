@@ -2534,6 +2534,7 @@ export const MESSAGES_EN = {
   "status.sharedNoProject": "Open a design before saving it to the server",
   "status.serverSaveStopped": "Automatic saving stopped: the design changed on the server. Reload it or save it under a different name.",
   "status.packagingProject": "Packaging editable design, history, and deduplicated assets…",
+  "status.projectReadyToSave": "The packaged design is ready. Choose where to save this copy.",
   "status.savedProject": "Saved editable layerling design (.lyl)",
   "status.savedToFile": "Saved to {name}",
   "status.previousVersionKept": "The version before is under “{button}”.",

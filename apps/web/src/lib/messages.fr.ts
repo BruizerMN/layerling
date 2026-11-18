@@ -2521,6 +2521,7 @@ export const MESSAGES_FR: Partial<Record<MessageKey, string>> = {
   "status.sharedNoProject": "Ouvrir un design avant de l'enregistrer sur le serveur",
   "status.serverSaveStopped": "Sauvegarde automatique arrêtée : le design a changé sur le serveur. Rechargez-le ou enregistrez-le sous un autre nom.",
   "status.packagingProject": "Conception de packaging modifiable, historique et ressources dédupliquées…",
+  "status.projectReadyToSave": "Le projet est prêt. Choisissez où enregistrer cette copie.",
   "status.savedProject": "Conception layerling modifiable enregistrée (.lyl)",
   "status.savedToFile": "Enregistré dans {name}",
   "status.previousVersionKept": "La version précédente est dans « {button} ».",

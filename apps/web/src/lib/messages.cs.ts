@@ -2619,6 +2619,7 @@ export const MESSAGES_CS: Record<MessageKey, string> = {
   "status.sharedNoProject": "Před uložením na server otevřete projekt",
   "status.serverSaveStopped": "Automatické ukládání zastaveno: projekt se na serveru změnil. Načtěte jej znovu nebo uložte pod jiným názvem.",
   "status.packagingProject": "Balení upravitelného projektu, historie a podkladů bez duplicit…",
+  "status.projectReadyToSave": "Projekt je připravený. Vyberte, kam tuto kopii uložit.",
   "status.savedProject": "Uložen upravitelný projekt layerlingu (.lyl)",
   "status.savedToFile": "Uloženo do {name}",
   "status.previousVersionKept": "Předchozí verze je v „{button}“.",
