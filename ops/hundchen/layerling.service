@@ -1,0 +1,18 @@
+[Unit]
+Description=Layerling (HundchenLayerling fork, Next.js standalone) - loopback :3100, behind nginx
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/bin/layerling-releases/current
+Environment=NODE_ENV=production
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=3100
+Environment=NEXT_TELEMETRY_DISABLED=1
+Environment=LAYERLING_ALLOWED_ORIGINS=https://layerling.local
+ExecStart=%h/bin/layerling-node/current/bin/node apps/web/server.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

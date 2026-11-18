@@ -1,0 +1,12 @@
+[Unit]
+Description=Layerling - mDNS alias layerling.local (follows the VM current IP)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash %h/bin/layerling/ops/hundchen/mdns-alias.sh layerling.local
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
