@@ -25,6 +25,12 @@ export function debugStateRequested(search: string, storage: Pick<Storage, "getI
   }
 }
 
+/**
+ * The query string as the page was first loaded. Opening a design rewrites the address bar (`/?editor=1&project=...`), which
+ * drops `?debugState=1` before the editor mounts, so the request has to be taken from the first URL.
+ */
+const initialSearch = typeof window === "undefined" ? "" : window.location.search;
+
 export function readDebugStateRequested(): boolean {
   if (typeof window === "undefined") return false;
   let storage: Storage | null = null;
@@ -33,7 +39,7 @@ export function readDebugStateRequested(): boolean {
   } catch {
     storage = null;
   }
-  return debugStateRequested(window.location.search, storage);
+  return debugStateRequested(initialSearch, storage) || debugStateRequested(window.location.search, storage);
 }
 
 /**

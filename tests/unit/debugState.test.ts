@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEBUG_STATE_STORAGE_KEY, debugStateRequested } from "@/lib/debugState";
 
 const storageWith = (value: string | null) => ({ getItem: (key: string) => (key === DEBUG_STATE_STORAGE_KEY ? value : null) });
@@ -55,5 +55,29 @@ describe("the hidden scene mirrors stay gated in the sources", () => {
     const editor = read("components/LayerlingEditor.tsx");
     expect(editor).toMatch(/debugStateEnabled\s*\n?\s*\? JSON\.stringify/);
     expect(editor).toMatch(/debugStateEnabled \? `notice=/);
+  });
+});
+
+describe("readDebugStateRequested keeps a request made in the first URL", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("still answers yes after the address bar was rewritten for an open design", async () => {
+    const location = { search: "?debugState=1" };
+    vi.stubGlobal("window", { location, localStorage: { getItem: () => null } });
+    vi.resetModules();
+    const fresh = await import("@/lib/debugState");
+    expect(fresh.readDebugStateRequested()).toBe(true);
+    location.search = "?editor=1&project=project-1";
+    expect(fresh.readDebugStateRequested()).toBe(true);
+  });
+
+  it("answers no when neither the first URL nor storage asked", async () => {
+    vi.stubGlobal("window", { location: { search: "?editor=1" }, localStorage: { getItem: () => null } });
+    vi.resetModules();
+    const fresh = await import("@/lib/debugState");
+    expect(fresh.readDebugStateRequested()).toBe(false);
   });
 });
