@@ -16,5 +16,5 @@ cp -a apps/web/public "$R/apps/web/public"
 rm -rf "$R/node_modules/sharp" "$R/node_modules/@img" "$R/node_modules/typescript" "$R/apps/web/src" \
        "$R"/apps/web/.next/static/media/occt-wasm.*.wasm "$R/.codex" "$R/apps/web/.codex"
 ln -s "$HOME/layerling-data/codex" "$R/apps/web/.codex"
-echo "$C $(git rev-parse HEAD) $(grep -m1 "\"version\"" package.json | tr -d " \",")+HundchenLayerling" > "$R/RELEASE.txt"
+echo "$C $(git rev-parse HEAD) v$(sed -n "s/.*\"version\": \"\([^\"]*\)\".*/\1/p" package.json | head -1)+HundchenLayerling" > "$R/RELEASE.txt"
 echo "Built release: $C   (not live yet)  ->  ops/hundchen/rollback.sh $C"
