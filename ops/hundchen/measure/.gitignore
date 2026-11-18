@@ -1,0 +1,5 @@
+# measurement output and local scratch (never committed)
+runs/
+work/
+builds/
+artifacts/
