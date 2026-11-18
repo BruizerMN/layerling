@@ -18002,6 +18002,8 @@ export function LayerlingEditor({
       }
       setTopPanel(null);
     } catch (error) {
+      // The raw error, for diagnosis: the notice below is the friendly version and hides which limit was hit.
+      console.error("[layerling] .lyl export failed:", error);
       setNotice(error instanceof Error ? localizedError(error.message) : t("status.saveProjectFailed"));
     } finally {
       setLylExporting(false);
