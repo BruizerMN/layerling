@@ -68,3 +68,7 @@ typecheck clean; 635 files / 5,960 unit tests pass; perf round-trip of 21,833 pa
 
 ## Acceptance results (Foshay pedestal, Chrome on the Mac, app on this VM)
 15 assemblies imported (182 top-level objects, 21,833 nodes, tab ~1.5 GB) -> saved as one `.lyl` -> reopened -> counts, placement, groups, cutters and meshes verified identical -> edited copy saved and reopened with the edit present -> default-settings save auto-trimmed to 5 of 9 undo steps and verified. Originals untouched (sha256 verified). Test files: `~/Documents/Foshay-acceptance/` on the Mac (checksums, baseline, read-only golden copy).
+
+## Static frontend artifact (for the HundchenLayerling-macOS app)
+`ops/hundchen/build-static.sh [outdir]` builds the **static export** of the current commit into `~/bin/layerling-static/<commit9>/` and packages it as a deterministic `layerling-static-<ver>-<commit9>.tar.gz` with `.sha256`, `SHA256SUMS-files.txt`, `MANIFEST.json` and `build.log`. It never touches the deployed release or the running service. The same commit always gives the same bytes (build id = commit via `generateBuildId`; verified by building twice).
+Results of the first verified artifact (`d93a534a4`, sha256 `d3a08457...1a04`) are in its `VERIFICATION.md`. Not published to GitHub Releases without Bill's OK.
