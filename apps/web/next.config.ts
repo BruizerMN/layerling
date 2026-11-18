@@ -32,6 +32,8 @@ const appVersion: string = JSON.parse(readFileSync(path.resolve(process.cwd(), "
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: path.resolve(process.cwd()),
+  // Reproducible static export: the build script pins the build id to the source commit (LAYERLING_BUILD_ID); without it Next picks a random one, as before.
+  generateBuildId: async () => process.env.LAYERLING_BUILD_ID || null,
   devIndicators: false,
   // Keep the live development compiler isolated from `next build`. Sharing
   // `.next` lets a production verification build invalidate chunks used by a
