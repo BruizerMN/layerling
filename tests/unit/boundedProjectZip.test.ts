@@ -45,6 +45,12 @@ describe("bounded project ZIP", () => {
     expect(methods).toEqual({ "assets/attachment/a.jpg": 0, "project.json": 8 });
   });
 
+  it("rejects a stored archive whose headers push it past the archive limit", async () => {
+    const bytes = new Uint8Array(1024 * 1024);
+    await expect(boundedProjectZip({ "project.json": bytes }, 0, undefined, bytes.length))
+      .rejects.toThrow(".lyl file exceeds the 1 MB archive limit");
+  });
+
   it("writes a valid empty archive", async () => {
     expect(unzipSync(await boundedProjectZip({}))).toEqual({});
   });

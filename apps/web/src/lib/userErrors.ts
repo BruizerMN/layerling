@@ -24,7 +24,7 @@ export const ERROR_RULES: ErrorRule[] = [
   // A design from a newer layerling with something this one does not know yet (lylProject.ts).
   { pattern: /^This design was saved with layerling ([\d.]+), newer than this layerling ([\d.]+)/, key: "error.newerDesign", values: (m) => ({ saved: m[1], current: m[2] }) },
   // Saving a design in the browser (page.tsx): too big for the project file, or no room left
-  { pattern: /exceeds the 64 MB project file limit|too many stored assets for the project format/i, key: "error.projectTooLarge" },
+  { pattern: /exceeds the \d+ Mi?B project file limit|too many stored assets for the project format|exceeds the \d+ MB archive limit|expands beyond the 1 GB safety limit/i, key: "error.projectTooLarge" },
   { pattern: /quota/i, key: "error.storageFull" },
   // Drawing export (drawingExport.ts, drawingProjection.ts)
   { pattern: /more than 200 circular holes/i, key: "error.drawingTooManyHoles" },

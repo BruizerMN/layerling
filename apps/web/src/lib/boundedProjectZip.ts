@@ -6,7 +6,7 @@ import { AsyncZipDeflate, Zip, ZipDeflate, ZipPassThrough, type DeflateOptions }
  * Zips `files` at `level`. The paths in `stored` go in as they are, without deflate: files that are
  * compressed already (an attached photo or PDF) would barely shrink, and trying would cost each save.
  */
-export function boundedProjectZip(files: Record<string, Uint8Array>, level: DeflateOptions["level"] = 6, stored?: ReadonlySet<string>) {
+export function boundedProjectZip(files: Record<string, Uint8Array>, level: DeflateOptions["level"] = 6, stored?: ReadonlySet<string>, maxBytes = Infinity) {
   return new Promise<Uint8Array>((resolve, reject) => {
     const entries = Object.entries(files);
     const chunks: Uint8Array[] = [];
@@ -31,8 +31,9 @@ export function boundedProjectZip(files: Record<string, Uint8Array>, level: Defl
         return;
       }
       try {
-        chunks.push(data);
         length += data.byteLength;
+        if (length > maxBytes) throw new Error(`.lyl file exceeds the ${maxBytes / (1024 * 1024)} MB archive limit`);
+        chunks.push(data);
         if (final) {
           const bytes = new Uint8Array(length);
           let offset = 0;

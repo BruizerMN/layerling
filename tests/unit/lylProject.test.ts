@@ -643,7 +643,7 @@ describe("layerling .lyl project packages", () => {
     const oversizedName = "x".repeat(LYL_LIMITS.projectJsonBytes);
 
     await expect(exportLylProject(input([shape("box")], { projectName: oversizedName })))
-      .rejects.toThrow("Project data exceeds the 64 MB project file limit");
+      .rejects.toThrow("Project data exceeds the 256 MiB project file limit");
   });
 
   it("migrates the documented v0 JSON project without changing IDs", async () => {

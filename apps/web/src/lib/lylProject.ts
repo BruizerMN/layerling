@@ -70,9 +70,10 @@ export const LYL_MEDIA_TYPE = "application/vnd.layerling.project+zip";
 export const LYL_LIMITS = {
   archiveBytes: 512 * 1024 * 1024,
   expandedBytes: 1024 * 1024 * 1024,
-  projectJsonBytes: 64 * 1024 * 1024,
+  projectJsonBytes: 256 * 1024 * 1024,
+  legacyJsonBytes: 64 * 1024 * 1024,
   assetBytes: 256 * 1024 * 1024,
-  entries: 4096,
+  entries: 32_768,
   states: 5001,
   objectsPerState: 100_000,
   features: 300_000,
@@ -1050,8 +1051,27 @@ function activeProjectIndexes(state: LylStateV1) {
   return { features, groups, sketches, exactCad };
 }
 
+function projectJsonTooLarge() {
+  const limitMiB = LYL_LIMITS.projectJsonBytes / (1024 * 1024);
+  return new Error(`Project data exceeds the ${limitMiB} MiB project file limit. Export with fewer history steps.`);
+}
+
 function zipAsync(files: ArchiveFiles, level: NonNullable<LylProjectExportInput["compressionLevel"]> = 6, stored?: ReadonlySet<string>) {
-  return boundedProjectZip(files, level, stored);
+  const entries = Object.entries(files);
+  if (entries.length > LYL_LIMITS.entries) {
+    throw new Error("Project has too many stored assets for the project format. Export with fewer history steps.");
+  }
+  let expanded = 0;
+  for (const [path, bytes] of entries) {
+    if (path === "project.json") {
+      if (bytes.byteLength > LYL_LIMITS.projectJsonBytes) throw projectJsonTooLarge();
+    } else if (bytes.byteLength > LYL_LIMITS.assetBytes) {
+      throw new Error(`Asset '${path}' exceeds the expansion limit`);
+    }
+    expanded += bytes.byteLength;
+    if (expanded > LYL_LIMITS.expandedBytes) throw new Error(".lyl package expands beyond the 1 GB safety limit");
+  }
+  return boundedProjectZip(files, level, stored, LYL_LIMITS.archiveBytes);
 }
 
 function unzipAsync(bytes: Uint8Array) {
@@ -1118,12 +1138,13 @@ export async function exportLylProject(input: LylProjectExportInput) {
   const sourceKey = [...builder.sourceIdMap].map(([id, archiveId]) => `${id}>${archiveId}`).join(",")
     + "|" + [...sourceAssetsByArchiveId].map(([id, record]) => `${id}:${record.sourceFormat ?? ""}`).join(",");
   const stateTexts: string[] = [];
-  const freshStates = new Map<string, LylStateV1>();
+  let freshActive: LylStateV1 | undefined;
+  let stateTextLength = 0;
   const stateIdByFingerprint = new Map<string, string>();
   const historyEntries: LylProjectDocumentV1["history"]["entries"] = [];
   const reusedStates = new Map<string, NonNullable<ReturnType<typeof serializedStateCache.get>>>();
 
-  for (const entry of exportEntries) {
+  for (const [index, entry] of exportEntries.entries()) {
     let stateId = stateIdByFingerprint.get(entry.fingerprint);
     if (!stateId) {
       stateId = `state-${stateTexts.length + 1}`;
@@ -1136,9 +1157,11 @@ export async function exportLylProject(input: LylProjectExportInput) {
         const { result: state, used } = await builder.recording(() => serializeState(stateId as string, entry.shapes, builder, sourceAssetsByArchiveId, normalizeNotes(entry.notes)));
         const json = JSON.stringify(state);
         serializedStateCache.set(entry, { stateId, sourceKey, json, used });
-        freshStates.set(stateId, state);
+        if (index === hydrated.index) freshActive = state;
         stateTexts.push(json);
       }
+      stateTextLength += stateTexts[stateTexts.length - 1].length;
+      if (stateTextLength > LYL_LIMITS.projectJsonBytes) throw projectJsonTooLarge();
       stateIdByFingerprint.set(entry.fingerprint, stateId);
     }
     historyEntries.push({
@@ -1153,7 +1176,6 @@ export async function exportLylProject(input: LylProjectExportInput) {
   const activeStateIndex = sceneStateId ? Number(sceneStateId.slice("state-".length)) - 1 : -1;
   if (!sceneStateId || stateTexts[activeStateIndex] === undefined) throw new Error("Could not identify the active project state");
   // A state kept from an earlier save (after an undo, say) is not parsed again on every autosave: its indexes are kept with it.
-  const freshActive = freshStates.get(sceneStateId);
   const reusedActive = freshActive ? undefined : reusedStates.get(sceneStateId);
   const indexes = freshActive
     ? activeProjectIndexes(freshActive)
@@ -1210,19 +1232,37 @@ export async function exportLylProject(input: LylProjectExportInput) {
       ...(tapeMeasurements ? { tapeMeasurements } : {}),
     },
   };
-  // The states are already text; put them in where the placeholder stands. The
-  // result is the same text JSON.stringify would give for the whole document.
-  const projectJson = strToU8(JSON.stringify(document).replace(`"states":${JSON.stringify(STATES_PLACEHOLDER)}`, () => `"states":[${stateTexts.join(",")}]`));
-  if (projectJson.byteLength > LYL_LIMITS.projectJsonBytes) {
-    throw new Error("Project data exceeds the 64 MB project file limit. Export with fewer history steps or simplify the project.");
+  // Encode in sections to avoid constructing another string as large as the entire history.
+  const marker = `"states":${JSON.stringify(STATES_PLACEHOLDER)}`;
+  const metadataText = JSON.stringify(document);
+  const markerOffset = metadataText.indexOf(marker);
+  if (metadataText.length - marker.length + stateTextLength + stateTexts.length + 1 > LYL_LIMITS.projectJsonBytes) {
+    throw projectJsonTooLarge();
+  }
+  const sections = [
+    metadataText.slice(0, markerOffset) + '"states":[',
+    ...stateTexts,
+    "]" + metadataText.slice(markerOffset + marker.length),
+  ];
+  const encoded: Uint8Array[] = [];
+  let projectJsonLength = stateTexts.length - 1;
+  for (const section of sections) {
+    const bytes = strToU8(section);
+    projectJsonLength += bytes.length;
+    if (projectJsonLength > LYL_LIMITS.projectJsonBytes) throw projectJsonTooLarge();
+    encoded.push(bytes);
+  }
+  const projectJson = new Uint8Array(projectJsonLength);
+  let offset = 0;
+  for (const [index, bytes] of encoded.entries()) {
+    if (index > 1 && index <= stateTexts.length) projectJson[offset++] = 44; // comma between states
+    projectJson.set(bytes, offset);
+    offset += bytes.length;
   }
   builder.files["project.json"] = projectJson;
   for (const [path, bytes] of Object.entries(input.extraFiles ?? {})) {
     if (path in builder.files || !safeArchivePath(path)) throw new Error(`Cannot add '${path}' to the project package`);
     builder.files[path] = bytes;
-  }
-  if (Object.keys(builder.files).length > LYL_LIMITS.entries) {
-    throw new Error("Project has too many stored assets for the project format. Export with fewer history steps.");
   }
   // Attached pictures and PDF files are compressed already: they go in as they are (see `compressed`).
   const stored = new Set(builder.assets.filter((asset) => asset.kind === "attachment" && attachmentTypeForMediaType(asset.mediaType)?.compressed).map((asset) => asset.path));
@@ -2687,7 +2727,7 @@ export async function importLylProject(input: ArrayBuffer | Uint8Array, options:
   const bytes = projectInputBytes(input);
   const prefix = strFromU8(bytes.subarray(0, Math.min(bytes.length, 64))).trimStart();
   if (prefix.startsWith("{")) {
-    if (bytes.byteLength > LYL_LIMITS.projectJsonBytes) throw new Error("Legacy JSON project exceeds the supported size limit");
+    if (bytes.byteLength > LYL_LIMITS.legacyJsonBytes) throw new Error("Legacy JSON project exceeds the supported size limit");
     let raw: unknown;
     try {
       raw = JSON.parse(strFromU8(bytes));

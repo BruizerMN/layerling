@@ -5,7 +5,7 @@
 
 /** Whether a failed save was refused for the size of the package, not for another reason. */
 export function isProjectTooLargeError(error: unknown): boolean {
-  return error instanceof Error && /exceeds the 64 MB project file limit|too many stored assets for the project format/i.test(error.message);
+  return error instanceof Error && /exceeds the \d+ Mi?B project file limit|too many stored assets for the project format|exceeds the \d+ MB archive limit|expands beyond the 1 GB safety limit/i.test(error.message);
 }
 
 /**
