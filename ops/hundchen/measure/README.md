@@ -107,3 +107,31 @@ Recorded 2026-11-18 on the 2025 MacBook Air (32 GB, macOS 26.7.3), WKWebView ref
 - The dominant per-edit cost is unchanged: after one edit the main thread is blocked for ~3 s (longest frame gap ~2 s), the project list is written ~3 s later and the full-project IndexedDB repack finishes ~7.8 s later, with WebContent memory peaking ~6.7-7.0 GB while it runs. That work is what the host-mode steps remove.
 - Open peak is 8.2-9.6 GB; the 4.5 GB target needs the bounded unzip (step 2).
 
+
+## Soak test (consecutive openings, every outcome counted)
+
+`soak.py --label step2 --app builds/step2/LayerlingHarness.app --doc work/foshay-source.lyl --runs 50`
+
+A fresh process and WebKit data store per run. Each run waits for the editor (timeout 120 s), records open time, memory and the host's worker
+bookkeeping (`window.__workerStats`: blob workers created / alive at once / terminated), and every 10th run (plus the first and last) does a Save As and the
+acceptance compare. A run that does not finish is never retried or dropped: the page is probed (`probes/health.js`), the WebContent process is sampled, and the
+run is classified as a product stall or a harness/environment failure. A disclosed warm-up launch per freshly built host app comes first (macOS checks a new binary's
+first access to ~/Documents, which delayed the open request by seconds and once looked like a stalled opening).
+
+## Worker failure and stall tests
+
+`fault_tests.py --label step2-faults --app ... --doc ... --case throw:1:30 --case error:1:30 --case hang:1:30 --case hang:1:1`
+
+The host app can make the first N blob workers (the unpack phase) throw on creation, report an error, or never answer (`--worker-fault MODE[:EVERY[:LIMIT]]`).
+Each case does a Save As and the acceptance compare.
+
+## Chromium probe (browser compatibility on the Ubuntu VM)
+
+`node chromium_probe.mjs --url http://127.0.0.1:3111/ --probe probes/smoke-create.js` runs a probe in headless Chromium over the DevTools protocol;
+`--file design.lyl` puts a .lyl into the start page's file input and records open time and browser memory. Serve a static artifact with
+`python3 -m http.server` or the regular build with `next start` on a spare port (not the deployed service's port 3100), and stop it afterwards.
+Do not leave an old `next start` running while rebuilding: it serves a mixture of old and new chunks.
+
+## Environment record
+Every run records macOS version, swap in use, load, free memory and the state of the Parallels VMs (`prlctl list -a`). The Ubuntu development VM runs on the
+benchmarked Mac (Parallels, "Development"); with it running the Mac was holding about 7 GB of swap. Benchmark with the VM stopped.

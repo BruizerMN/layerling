@@ -32,7 +32,11 @@ class Run:
         m = re.search(r"used = ([\d.]+)M", swap)
         free = re.search(r"free percentage: (\d+)%", cmd("memory_pressure"))
         load = re.search(r"load averages?: ([\d.]+)", cmd("uptime"))
-        return {"swap_used_mb": float(m.group(1)) if m else None, "free_pct": int(free.group(1)) if free else None, "load1": float(load.group(1)) if load else None, "macos": cmd("sw_vers", "-productVersion")}
+        try:
+            vm = "; ".join(" ".join(l.split()) for l in cmd("prlctl", "list", "-a", "-o", "status,name").splitlines()[1:]) or "n/a"
+        except Exception:
+            vm = "n/a"
+        return {"vm": vm, "swap_used_mb": float(m.group(1)) if m else None, "free_pct": int(free.group(1)) if free else None, "load1": float(load.group(1)) if load else None, "macos": cmd("sw_vers", "-productVersion")}
 
     def log(self):
         f = self.work / "results" / "console.log"
