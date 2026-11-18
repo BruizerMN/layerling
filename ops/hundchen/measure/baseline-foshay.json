@@ -1,0 +1,11 @@
+{
+  "document": "Foshay-Pedestal-combined.lyl",
+  "sha256": "cb27f08c4e7d0801bab2b8b0cc10b662ddc793b8adf52ae5f440006029b35e4a",
+  "note": "Foshay Pedestal acceptance model: 15 assemblies combined, first save by the HundchenLayerling fork. Counts are for the current scene state.",
+  "scene": { "roots": 182, "nodes": 21833, "groups": 4639, "leaves": 17194, "assets": 8614, "features": 4639, "groupsList": 4639, "states": 8, "historyEntries": 8, "historyIndex": 7 },
+  "targets": {
+    "hosted_open_peak_webcontent_mb_max": 4500,
+    "hosted_settled_webcontent_mb_max": 2500,
+    "note": "Targets for the future hosted (native) mode, approved 2026-11-18. The current web app is expected to exceed the peak target until bounded unzip (step 2)."
+  }
+}
