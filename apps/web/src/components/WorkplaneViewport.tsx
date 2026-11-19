@@ -8713,7 +8713,8 @@ export function WorkplaneViewport({
         // Ctrl+W would close the tab. Option+W types a sign on the Mac, so the key's position counts too.
         event.preventDefault();
         resetPlacementWorkplane();
-      } else if (key === "w") {
+      } else if (key === "w" && !event.metaKey) {
+        // Cmd+W is the window's (the native app's File > Close): the page leaves it alone.
         event.preventDefault();
         if (!event.shiftKey || !setPlacementWorkplaneAtSelection()) togglePlacementWorkplane();
       } else if (key === "f" && event.shiftKey) {

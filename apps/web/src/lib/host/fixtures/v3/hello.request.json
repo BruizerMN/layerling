@@ -1,0 +1,1 @@
+{"id":"e1","session":"11111111-2222-3333-4444-555555555555","type":"hello","payload":{"editor":{"name":"layerling","version":"1.165.2","build":"abc123def"},"protocol":{"min":1,"max":3},"capabilities":["document.open","document.save"]}}

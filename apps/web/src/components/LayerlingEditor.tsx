@@ -8,7 +8,13 @@ import { bodyLocked, groupHeld, holdsShapeLock, patchFitsShapeLock, shapeLockBro
 import { ObjectListPanel } from "@/components/workplane/ObjectListPanel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { SAVED_VIEW_KEYS } from "@/lib/designView";
+import { readDesignView, readSavedViews, SAVED_VIEW_KEYS } from "@/lib/designView";
+import { readCornerRulers } from "@/lib/cornerRulerStore";
+import { readTape } from "@/lib/tapeStore";
+import { DocumentRevisionTracker, documentSignature, summarizeShapes, type RevisionState } from "@/lib/host/documentRevision";
+import { NativeSaveError, type NativeSaveApi, type NativePackage } from "@/lib/host/nativeSave";
+import type { SavePhase } from "@/lib/host/hostProtocol";
+import { subscribeTransientStore } from "@/lib/host/transientProject";
 import * as THREE from "three";
 import type { AppThemePreference, ResolvedAppTheme } from "@/lib/appTheme";
 import { getLanguage, numberLocale, t, type MessageKey } from "@/lib/i18n";
@@ -3067,6 +3073,8 @@ export function LayerlingEditor({
   initialPlacementWorkplane,
   nativeDocument = null,
   onNativeDocumentReady,
+  onNativeDocumentChange,
+  nativeApiRef,
   onHome,
   onOpenLylProjectFile,
   onBackUpAllDesigns,
@@ -3107,7 +3115,11 @@ export function LayerlingEditor({
    * cannot save it yet: writing the design out as a .lyl is turned off here (it would look like a save and save nothing), and the automatic
    * "Earlier versions" snapshots, which repack the design into browser storage, do not run.
    */
-  nativeDocument?: { fileName: string | null } | null;
+  nativeDocument?: { fileName: string | null; documentId: string; documentProjectId: string | null } | null;
+  /** Native documents (protocol 3): told whenever the persistent content changes (revision) or the dirty flag flips. */
+  onNativeDocumentChange?: (state: RevisionState) => void;
+  /** Native documents: receives the editor's packaging API for Save. */
+  nativeApiRef?: { current: NativeSaveApi | null };
   /** Native documents only: called once the editor has mounted and drawn its first frame (or after 2 s if the page is not being drawn). */
   onNativeDocumentReady?: () => void;
   onHome?: (leaving: { itemCount: number }) => void;
@@ -4928,6 +4940,106 @@ export function LayerlingEditor({
     setNotice(t("status.pivotSet"));
   }, [ownPivotShape, selectionKey]);
 
+  // ---- Native document (protocol 3): change tracking and packaging for Save --------------------------------------------------------------
+  const onNativeDocumentChangeRef = useRef(onNativeDocumentChange);
+  onNativeDocumentChangeRef.current = onNativeDocumentChange;
+  const nativeTrackerRef = useRef<DocumentRevisionTracker | null>(null);
+  const [nativeStoreVersion, setNativeStoreVersion] = useState(0);
+  /** The persistent content as one short string: reads refs only, computes no scene serialisation (the entry fingerprint exists already). */
+  const nativeSignature = useCallback(() => {
+    const entry = historyRef.current[historyIndexRef.current];
+    const runtimeId = projectInfoRef.current.projectId;
+    return documentSignature({
+      entryFingerprint: entry?.fingerprint ?? "",
+      attachments: attachmentsFingerprint(projectAttachmentsRef.current),
+      workspace: workspaceSettingsRef.current as unknown as Record<string, unknown>,
+      snapGrid: snapGridRef.current,
+      placementElevation: placementElevationRef.current,
+      placementWorkplane: placementWorkplaneFingerprint(placementWorkplaneRef.current),
+      savedViews: JSON.stringify(readSavedViews(runtimeId)),
+      cornerRulers: JSON.stringify(readCornerRulers(runtimeId)),
+      tape: JSON.stringify(readTape(runtimeId)),
+    });
+  }, []);
+  useEffect(() => {
+    if (!nativeDocument) return;
+    nativeTrackerRef.current ??= new DocumentRevisionTracker((state) => onNativeDocumentChangeRef.current?.(state));
+    nativeTrackerRef.current.update(nativeSignature());
+  }, [nativeDocument, nativeSignature, nativeStoreVersion, history, historyIndex, projectAttachments, workspaceSettings, snapGrid, placementElevation, placementWorkplane]);
+  useEffect(() => {
+    if (!nativeDocument) return;
+    // Saved views, corner rulers and tape measurements are document state kept in the in-memory store; the camera is not.
+    return subscribeTransientStore((key) => {
+      if (!key.startsWith("layerling.designView.")) setNativeStoreVersion((version) => version + 1);
+    });
+  }, [nativeDocument]);
+  useEffect(() => {
+    if (!nativeDocument || !nativeApiRef) return;
+    const api: NativeSaveApi = {
+      createPackage: async ({ fileName, signal, onPhase }): Promise<NativePackage> => {
+        const tracker = nativeTrackerRef.current;
+        if (!tracker) throw new NativeSaveError("internal", "The editor is not ready to save.");
+        const t0 = performance.now();
+        onPhase("wait");
+        // As exportLylDesign: not in the middle of a drag or while typing.
+        const deadline = Date.now() + 30_000;
+        while (projectInteractionActiveRef.current) {
+          if (signal.aborted) throw new NativeSaveError("cancelled", "The save was cancelled.");
+          if (Date.now() > deadline) throw new NativeSaveError("interaction-timeout", "The editor stayed busy; try saving again.");
+          await new Promise((resolve) => window.setTimeout(resolve, 50));
+        }
+        const t1 = performance.now();
+        onPhase("snapshot");
+        // The picture first (it may take a moment): a failed capture only means a file without a preview, never a failed save (D5).
+        const picture = await capturedDesignPicture();
+        const png = picture ? await projectThumbnailPngBytes(picture).catch(() => null) : null;
+        if (signal.aborted) throw new NativeSaveError("cancelled", "The save was cancelled.");
+        // ---- the snapshot: one synchronous block. Everything below is an immutable view; edits made while packaging stay unsaved. ----
+        tracker.update(nativeSignature());
+        const revision = tracker.revision;
+        const signature = tracker.signature;
+        const entry = historyRef.current[historyIndexRef.current];
+        const runtimeId = projectInfoRef.current.projectId;
+        const input = {
+          projectId: nativeDocument.documentProjectId ?? undefined,
+          projectName: fileName ?? projectInfoRef.current.projectName,
+          createdAt: projectInfoRef.current.projectCreatedAt,
+          modifiedAt: Date.now(),
+          extraFiles: lylThumbnailFiles(png),
+          shapes: shapesRef.current,
+          notes: notesRef.current,
+          // Only the current state is saved (D3); the live history is read, never changed.
+          history: entry ? [entry] : [],
+          historyIndex: 0,
+          assets: projectAssetsRef.current,
+          attachments: projectAttachmentsRef.current,
+          workspace: workspaceSettingsRef.current,
+          snapGrid: snapGridRef.current,
+          placementElevation: placementElevationRef.current,
+          placementWorkplane: placementWorkplaneRef.current,
+          sketchPlacementWorkplane: placementWorkplaneRef.current,
+          compressionLevel: 1 as const,
+          // The camera and the saved views live under the runtime id; the file carries the document's own id (the camera fix).
+          view: readDesignView(runtimeId),
+          savedViews: readSavedViews(runtimeId),
+          cornerRulers: readCornerRulers(runtimeId),
+          tapeMeasurements: readTape(runtimeId),
+        };
+        const stats = summarizeShapes(shapesRef.current);
+        const t2 = performance.now();
+        onPhase("serialize");
+        const bytes = await exportLylProject(input);
+        const t3 = performance.now();
+        return { bytes, revision, signature, stats, thumbnail: png !== null, waitMs: t1 - t0, snapshotMs: t2 - t1, serializeMs: t3 - t2 };
+      },
+      markSaved: (signature) => nativeTrackerRef.current?.markSaved(signature),
+    };
+    nativeApiRef.current = api;
+    return () => {
+      if (nativeApiRef.current === api) nativeApiRef.current = null;
+    };
+  }, [nativeApiRef, nativeDocument, nativeSignature]);
+
   // The host is told the document is open once the editor is on screen, not once the data is parsed.
   useEffect(() => {
     if (!nativeDocument || !onNativeDocumentReady) return;
@@ -4935,6 +5047,9 @@ export function LayerlingEditor({
     const finish = () => {
       if (done) return;
       done = true;
+      // What the editor shows now is the saved state: a freshly opened or new document is clean.
+      nativeTrackerRef.current ??= new DocumentRevisionTracker((state) => onNativeDocumentChangeRef.current?.(state));
+      nativeTrackerRef.current.baseline(nativeSignature());
       onNativeDocumentReady();
     };
     const timer = window.setTimeout(finish, 2000);
@@ -18718,6 +18833,10 @@ export function LayerlingEditor({
       const key = (event.key ?? "").toLowerCase();
       const shortcut = event.ctrlKey || event.metaKey;
 
+      // In the native app, Save and Save As belong to the host menu (Cmd+S, Shift+Cmd+S): the page
+      // leaves the key alone, without preventDefault, so WKWebView hands it back to AppKit.
+      if (nativeDocument && shortcut && key === "s") return;
+
       // Save works from anywhere in the editor, a field too; the browser's own "save page" has
       // nothing to do here. Behind the project overview the key stays the browser's.
       if (shortcut && key === "s" && !event.shiftKey && !event.altKey) {
@@ -19144,6 +19263,7 @@ export function LayerlingEditor({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
+    nativeDocument,
     closeHistoryView,
     closeClearanceCheck,
     closePrintCheck,

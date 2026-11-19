@@ -8,6 +8,8 @@ import { getHostBridge, subscribeToHostBridge, type HostBridge, type HostConnect
 import { parseDocumentDescriptor, type DocumentDescriptor } from "@/lib/host/hostDocument";
 import { classifyOpenError, loadNativeDocument, type NativeDocumentState } from "@/lib/host/nativeDocumentLoader";
 import { importLylProject } from "@/lib/lylProject";
+import type { RevisionState } from "@/lib/host/documentRevision";
+import { performNativeSave, type NativeSaveApi } from "@/lib/host/nativeSave";
 import { applyAppTheme, getAppThemePreference, readStoredAppTheme, resolveAppTheme, setAppTheme, subscribeToAppTheme, type AppThemePreference, type ResolvedAppTheme } from "@/lib/appTheme";
 import { localizedError } from "@/lib/userErrors";
 import { useLanguage } from "@/lib/useLanguage";
@@ -70,6 +72,14 @@ export function NativeDocumentShell() {
   const [phase, setPhase] = useState<Phase>({ kind: "connecting" });
   const startedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  /** The editor's packaging API (protocol 3) and the saves in flight, keyed by saveId. */
+  const nativeApiRef = useRef<NativeSaveApi | null>(null);
+  const savesRef = useRef(new Map<string, AbortController>());
+  /** The name shown for the document: the native file name is authoritative (D6), "Untitled" before the first save. */
+  const [displayName, setDisplayName] = useState<string | null>(null);
+  const changeStateRef = useRef<RevisionState | null>(null);
+  const changeTimerRef = useRef<number | null>(null);
+  const documentIdRef = useRef<string | null>(null);
   /** The document.opened payload, held until the editor has mounted (see onNativeDocumentReady). */
   const pendingReportRef = useRef<{ payload: Record<string, unknown>; shownAt: number } | null>(null);
   const [themePreference, setThemePreference] = useState<AppThemePreference>("system");
@@ -130,7 +140,36 @@ export function NativeDocumentShell() {
     const controller = new AbortController();
     abortRef.current = controller;
     const stopListening = bridge.onEvent((event) => {
-      if (event.type === "document.cancel") controller.abort();
+      if (event.type === "document.cancel") {
+        controller.abort();
+        savesRef.current.forEach((save) => save.abort());
+        return;
+      }
+      if (event.type === "document.renamed") {
+        setDisplayName(event.payload.fileName);
+        return;
+      }
+      if (event.type === "document.save.cancel") {
+        savesRef.current.get(event.payload.saveId)?.abort();
+        return;
+      }
+      if (event.type === "document.saved") {
+        nativeApiRef.current?.markSaved(event.payload.signature);
+        if (event.payload.fileName) setDisplayName(event.payload.fileName);
+        return;
+      }
+      if (event.type === "document.save") {
+        const api = nativeApiRef.current;
+        const save = new AbortController();
+        savesRef.current.set(event.payload.saveId, save);
+        if (!api) {
+          void bridge.sendSave("document.save.failed", { documentId: event.payload.documentId, saveId: event.payload.saveId, code: "internal", message: "The editor is not ready to save." });
+          savesRef.current.delete(event.payload.saveId);
+          return;
+        }
+        // The upload runs beside editing: the snapshot is immutable, later edits stay unsaved.
+        void performNativeSave(bridge, event.payload, api, save).finally(() => savesRef.current.delete(event.payload.saveId));
+      }
     });
     let documentId: string | null = null;
     void (async () => {
@@ -154,6 +193,8 @@ export function NativeDocumentShell() {
             },
           },
         );
+        documentIdRef.current = state.documentId;
+        setDisplayName(descriptor.kind === "file" ? name.replace(/\.[^./]+$/, "") : name);
         setPhase({ kind: "ready", document: state, fileName: descriptor.kind === "file" ? name : null });
         // Reported when the editor is on screen (reportOpened below), not now: "open" means ready to edit.
         pendingReportRef.current = {
@@ -168,6 +209,18 @@ export function NativeDocumentShell() {
       stopListening();
     };
   }, [bridge, connection, fail]);
+
+  /** The editor reports every change of persistent content; the host hears about it at most once per tick (the dirty flag flips at once). */
+  const handleNativeChange = (state: RevisionState) => {
+    changeStateRef.current = state;
+    if (changeTimerRef.current !== null || !bridge) return;
+    changeTimerRef.current = window.setTimeout(() => {
+      changeTimerRef.current = null;
+      const latest = changeStateRef.current;
+      const documentId = documentIdRef.current;
+      if (latest && documentId) void bridge.sendSave("document.changed", { documentId, revision: latest.revision, dirty: latest.dirty });
+    }, 0);
+  };
 
   const reportOpened = () => {
     const pending = pendingReportRef.current;
@@ -187,7 +240,9 @@ export function NativeDocumentShell() {
     <EditorBoundary onError={(error) => console.error("layerling: the editor stopped", error)}>
       <div className="editor-stage active">
         <LayerlingEditor
-          nativeDocument={{ fileName: phase.fileName }}
+          nativeDocument={{ fileName: phase.fileName, documentId: document.documentId, documentProjectId: document.documentProjectId }}
+          onNativeDocumentChange={handleNativeChange}
+          nativeApiRef={nativeApiRef}
           onNativeDocumentReady={reportOpened}
           initialAssets={document.assets}
           initialAttachments={document.attachments}
@@ -199,7 +254,7 @@ export function NativeDocumentShell() {
           initialPlacementElevation={document.placementElevation}
           initialPlacementWorkplane={document.placementWorkplane}
           projectId={document.runtimeProjectId}
-          projectName={document.projectName}
+          projectName={displayName ?? document.projectName}
           projectCreatedAt={document.createdAt}
           projectModifiedAt={document.modifiedAt}
           projectRevision={1}

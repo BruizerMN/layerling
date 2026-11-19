@@ -7,7 +7,8 @@ import { DOCUMENT_CAPABILITY, HOST_BOOTSTRAP_KEY, HOST_HANDLER_NAME, parseHostEv
 
 const v2Dir = path.resolve(__dirname, "../../apps/web/src/lib/host/fixtures/v2");
 const fx = (name: string) => JSON.parse(readFileSync(path.join(v2Dir, name), "utf8")) as Record<string, unknown>;
-const options = { editorVersion: "1.165.2", editorBuild: "abc123def", capabilities: [DOCUMENT_CAPABILITY] };
+// These tests play a protocol 1-2 editor against the v2 fixtures; protocol 3 is in hostSaveProtocol.test.ts.
+const options = { editorVersion: "1.165.2", editorBuild: "abc123def", capabilities: [DOCUMENT_CAPABILITY], range: { min: 1, max: 2 } };
 
 function harness(reply: (request: HostRequest) => unknown, bootstrap: unknown = fx("bootstrap.json")) {
   const posts: HostRequest[] = [];

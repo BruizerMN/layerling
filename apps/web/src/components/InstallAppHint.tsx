@@ -44,6 +44,8 @@ export function InstallAppHint({ variant = "dashboard" }: { variant?: "dashboard
 
   useEffect(() => {
     // Only where layerling really keeps itself for offline use: not in a build without a service worker, such as the Docker image.
+    // HundchenLayerling is already an app: its own window never offers to install the web app.
+    if (window.location.protocol === "layerling:") return;
     if (!offlineAvailable()) return;
     if (runsAsInstalledApp()) {
       // Chromium and Safari keep the storage of the app and of the browser's tabs together, so the app leaves a note for them.
