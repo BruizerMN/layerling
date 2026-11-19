@@ -310,6 +310,19 @@ export function projectSceneFingerprint(shapes: WorkplaneShape[], notes: Workpla
   );
 }
 
+/**
+ * The entries `editorHistoryEntry` built, with the fields they were built with. An entry that comes back to `hydrateEditorHistoryState`
+ * unchanged (the editor hands it the result of an earlier hydration) is canonical already: building it again would serialise the
+ * whole scene a second time, for nothing. Opening a large design did that about 37 times (step 4B memory investigation).
+ */
+const builtEntries = new WeakMap<object, {
+  shapes: WorkplaneShape[];
+  selectedIds: string[];
+  notes: WorkplaneNote[] | undefined;
+  placementWorkplane: PlacementWorkplane | undefined;
+  at: number | undefined;
+}>();
+
 export function editorHistoryEntry(
   shapes: WorkplaneShape[],
   selectedIds: string[],
@@ -337,6 +350,7 @@ export function editorHistoryEntry(
     entry.placementWorkplane = normalizedWorkplane;
   }
   if (typeof at === "number" && Number.isFinite(at)) entry.at = at;
+  builtEntries.set(entry, { shapes: entry.shapes, selectedIds: entry.selectedIds, notes: entry.notes, placementWorkplane: entry.placementWorkplane, at: entry.at });
   return entry;
 }
 
@@ -529,6 +543,20 @@ export function hydrateEditorHistoryState(
     const inheritedWorkplane = currentWorkplane ? placementWorkplaneFingerprint(currentWorkplane) : "";
     const normalized = storedEntries.map((entry) => {
       const cacheable = entry !== null && typeof entry === "object";
+      // Built by editorHistoryEntry and not touched since: rebuilding gives the same entry, unless a workplane would be inherited from
+      // `currentWorkplane` (an entry without one takes the current one when that is not the base plate).
+      const built = cacheable ? builtEntries.get(entry) : undefined;
+      if (
+        built
+        && built.shapes === entry.shapes
+        && built.selectedIds === entry.selectedIds
+        && built.notes === entry.notes
+        && built.placementWorkplane === entry.placementWorkplane
+        && built.at === entry.at
+        && (entry.placementWorkplane !== undefined || currentWorkplane === undefined || placementWorkplaneIsBase(currentWorkplane))
+      ) {
+        return entry;
+      }
       const cached = cacheable ? hydratedEntryCache.get(entry) : undefined;
       const inherited = entry?.placementWorkplane ? null : inheritedWorkplane;
       if (
