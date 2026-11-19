@@ -6,11 +6,16 @@ import { unzip, unzipSync, strFromU8, type UnzipFileInfo } from "fflate";
  * fflate's `unzip()` starts one Worker for every entry that expands to 512 KiB or more, all at once. A large design
  * has dozens of them (Foshay: 80 meshes plus project.json), and every Worker costs tens of MB before it inflates a
  * byte, so opening used to peak at several GB. Here
- *   - entries below `workerFromBytes` are inflated right here, in slices, handing the thread back between slices;
+ *   - entries below `workerFromBytes` are inflated right here, in one pass, while the Workers run beside it;
  *   - larger ones go to at most `maxWorkers` Workers at a time;
  *   - a Worker that fails, or does not answer within its time (`workerTimeoutMs` plus `workerMsPerMiB` per MiB), is
  *     terminated and its entry is inflated here instead, so a lost Worker can delay an opening but never hang it.
  * The files come back exactly as `unzip()` returns them (same bytes, same order as the ZIP directory).
+ *
+ * Never waits for a timer or a task in between. An earlier version handed the thread back with setTimeout(0) between slices; in a page that is
+ * hidden or behind another window the browser throttles timers (WebKit: one tick a second, then minutes), and the opening stalled for 92 s per tick
+ * (a message-channel yield stalled the same way). fflate's own unzip never waited either. The one timer left is the Worker watchdog: a throttled
+ * page delays it, it cannot block the pass that is running.
  */
 export interface ZipEntry {
   name: string;
@@ -32,8 +37,6 @@ export interface UnzipBoundedOptions {
   maxWorkers?: number;
   /** Entries expanding to at least this many bytes may use a Worker. Default 8 MiB. */
   workerFromBytes?: number;
-  /** Bytes (expanded) inflated in one go before the thread is handed back. Default 8 MiB. */
-  sliceBytes?: number;
   /** Time a Worker gets before it is given up on: this plus `workerMsPerMiB` per expanded MiB. Default 20 s + 250 ms/MiB. */
   workerTimeoutMs?: number;
   workerMsPerMiB?: number;
@@ -51,7 +54,6 @@ export interface InflateJob {
 export interface UnzipDeps {
   inflateHere(bytes: Uint8Array, names: ReadonlySet<string>): Record<string, Uint8Array>;
   inflateInWorker(bytes: Uint8Array, entry: ZipEntry): InflateJob;
-  yieldThread(): Promise<void>;
 }
 
 const MIB = 1024 * 1024;
@@ -111,7 +113,6 @@ export const defaultUnzipDeps: UnzipDeps = {
       },
     };
   },
-  yieldThread: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
 };
 
 class WorkerTimeout extends Error {
@@ -123,7 +124,6 @@ class WorkerTimeout extends Error {
 export async function unzipBounded(bytes: Uint8Array, options: UnzipBoundedOptions = {}, deps: UnzipDeps = defaultUnzipDeps): Promise<Record<string, Uint8Array>> {
   const maxWorkers = Math.max(1, Math.floor(options.maxWorkers ?? 2));
   const workerFromBytes = options.workerFromBytes ?? 8 * MIB;
-  const sliceBytes = Math.max(1, options.sliceBytes ?? 8 * MIB);
   const baseTimeout = options.workerTimeoutMs ?? 20_000;
   const perMiB = options.workerMsPerMiB ?? 250;
   const emit = options.onEvent ?? (() => undefined);
@@ -133,7 +133,7 @@ export async function unzipBounded(bytes: Uint8Array, options: UnzipBoundedOptio
   const large = wanted.filter((entry) => entry.method === 8 && entry.expandedSize >= workerFromBytes);
   const unpacked = new Map<string, Uint8Array>();
 
-  // Large entries first, in the background of the small ones' slices, so the biggest piece of work starts at once.
+  // Large entries first, so the biggest piece of work starts at once and runs beside the small ones.
   const active = new Set<InflateJob>();
   let aborted = false;
   let nextLarge = 0;
@@ -182,18 +182,10 @@ export async function unzipBounded(bytes: Uint8Array, options: UnzipBoundedOptio
   lanes.catch(() => undefined);
 
   try {
-    let index = 0;
-    while (index < small.length) {
-      if (aborted) break;
-      const slice: ZipEntry[] = [];
-      let bytesInSlice = 0;
-      while (index < small.length && slice.length < 512 && (slice.length === 0 || bytesInSlice + small[index].expandedSize <= sliceBytes)) {
-        bytesInSlice += small[index].expandedSize;
-        slice.push(small[index++]);
-      }
-      const done = deps.inflateHere(bytes, new Set(slice.map((entry) => entry.name)));
-      for (const entry of slice) unpacked.set(entry.name, done[entry.name]);
-      if (index < small.length) await deps.yieldThread();
+    // The small entries in one pass, here, while the Workers (if any) run beside it.
+    if (small.length > 0 && !aborted) {
+      const done = deps.inflateHere(bytes, new Set(small.map((entry) => entry.name)));
+      for (const entry of small) unpacked.set(entry.name, done[entry.name]);
     }
     await lanes;
   } catch (error) {

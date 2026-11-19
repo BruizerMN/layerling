@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { strToU8, unzipSync, zipSync, type Zippable } from "fflate";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { defaultUnzipDeps, readZipDirectory, unzipBounded, type InflateJob, type UnzipDeps, type UnzipEvent } from "@/lib/unzipBounded";
 
 const MIB = 1024 * 1024;
@@ -34,7 +34,6 @@ function manyEntries(count: number, size: number) {
 function fakeDeps(overrides: Partial<UnzipDeps> & { job?: (name: string, run: () => Uint8Array) => InflateJob }): UnzipDeps {
   return {
     inflateHere: defaultUnzipDeps.inflateHere,
-    yieldThread: defaultUnzipDeps.yieldThread,
     inflateInWorker: (bytes, entry) => {
       const run = () => defaultUnzipDeps.inflateHere(bytes, new Set([entry.name]))[entry.name];
       return overrides.job ? overrides.job(entry.name, run) : { promise: Promise.resolve(run()), cancel: () => undefined };
@@ -80,24 +79,40 @@ describe("unzipBounded gives exactly what unzipSync gives", () => {
     expect(same(got["assets/big2.bin"], compressible(10 * MIB, 5))).toBe(true);
   });
 
-  it("with many small entries starts no Worker at all", async () => {
+  it("with many small entries starts no Worker and inflates in a single pass", async () => {
     const { bytes, files } = manyEntries(3000, 2000);
     let workers = 0;
-    let yields = 0;
+    let passes = 0;
     const deps = fakeDeps({
       inflateInWorker: () => {
         workers += 1;
         throw new Error("no Worker expected");
       },
-      yieldThread: async () => {
-        yields += 1;
+      inflateHere: (data, names) => {
+        passes += 1;
+        return defaultUnzipDeps.inflateHere(data, names);
       },
     });
-    const got = await unzipBounded(bytes, { sliceBytes: 256 * 1024 }, deps);
+    const got = await unzipBounded(bytes, {}, deps);
     expect(workers).toBe(0);
-    expect(yields).toBeGreaterThan(5);
+    expect(passes).toBe(1);
     expect(Object.keys(got).length).toBe(3000);
     expect(same(got["e/1234.bin"], (files["e/1234.bin"] as [Uint8Array, unknown])[0])).toBe(true);
+  });
+
+  it("waits for no timer and no message task (a hidden page may not deliver one for minutes)", async () => {
+    const { bytes } = manyEntries(2000, 3000);
+    const timers = vi.spyOn(globalThis, "setTimeout");
+    const channels = vi.spyOn(globalThis, "MessageChannel");
+    try {
+      const got = await unzipBounded(bytes);
+      expect(Object.keys(got).length).toBe(2000);
+      expect(timers).not.toHaveBeenCalled();
+      expect(channels).not.toHaveBeenCalled();
+    } finally {
+      timers.mockRestore();
+      channels.mockRestore();
+    }
   });
 });
 
@@ -198,5 +213,11 @@ describe("the project package reader uses it", () => {
   it("no longer calls fflate's one-Worker-per-entry unzip", () => {
     expect(source).not.toMatch(/import \{[^}]*\bunzip\b[^}]*\} from "fflate"/);
     expect(source).toMatch(/unzipBounded\(/);
+  });
+
+  it("keeps timers and message tasks out of the unpacking path", () => {
+    const module = readFileSync(path.resolve(__dirname, "../../apps/web/src/lib/unzipBounded.ts"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    expect(module).not.toMatch(/yieldThread|MessageChannel|scheduler\.yield|requestIdleCallback/);
+    expect((module.match(/setTimeout\(/g) ?? []).length).toBe(1); // the Worker watchdog, and nothing else
   });
 });
