@@ -135,3 +135,14 @@ Do not leave an old `next start` running while rebuilding: it serves a mixture o
 ## Environment record
 Every run records macOS version, swap in use, load, free memory and the state of the Parallels VMs (`prlctl list -a`). The Ubuntu development VM runs on the
 benchmarked Mac (Parallels, "Development"); with it running the Mac was holding about 7 GB of swap. Benchmark with the VM stopped.
+
+## Host window rules (learned the hard way, 2026-11-18)
+- A benchmark run is only valid if the page is **visible**. The probes record `document.visibilityState` at page start in `window.__phase` (`start vis=visible`) and the host logs
+  `window[...]: isVisible=... occlusionVisible=... activeSpace=...`. A host window that opens on a macOS Space (desktop) you are not looking at, behind another window, or on a
+  sleeping display is "hidden" to WebKit: timers are throttled to one tick a second (and worse), threads run at background priority, and an opening takes 3-6x as long (baseline 77-93 s,
+  instead of ~16-28 s). The reference host uses `collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]`, a floating window, an App Nap opt-out, and runs under `caffeinate -dis`.
+- Never start the host through `open` for benchmarks: LaunchServices vets a freshly built ad-hoc bundle first (20-148 s). `run_measure.launch()` starts the executable directly.
+- Never wait for a timer or task between steps of the code being measured: a hidden page may not deliver one for minutes (the first Step 2 version yielded with `setTimeout(0)` and stalled).
+- The soak classifies a run that never becomes ready as a stall with diagnostics; read `diagnosis.page.phase` (in-page timestamps) before calling it a product failure or an environment failure.
+- Files that every run writes (Save As outputs) go to `/private/tmp/layerling-harness/` and are deleted after the check; the source document is opened in place, read-only. Backup and antivirus agents otherwise load the Mac and slow the very opening being measured.
+- Resume: `soak.py` and `ab.py` write `checkpoint.json` after every run; `touch runs/STOP` stops them cleanly after the current run; the same command resumes.

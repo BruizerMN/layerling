@@ -8,11 +8,18 @@ Per run (fresh WebKit data store, fresh work dir, document opened from a private
   jank/notice/working-copy-write timings, Save As + node-by-node comparison against the Foshay baseline.
 Results: runs/<label>/<stamp>-runN/summary.json (+ console.log, mem-timeline.csv, probe outputs).
 """
-import argparse, csv, json, pathlib, re, shutil, statistics, subprocess, sys, time, uuid
+import argparse, csv, json, os, pathlib, re, shutil, statistics, subprocess, sys, time, uuid
 
 H = pathlib.Path(__file__).resolve().parent
+SCRATCH = pathlib.Path(os.environ.get("LAYERLING_SCRATCH", "/private/tmp/layerling-harness"))  # big throwaway files (Save As outputs), outside the backup/index scope
 
 def sh(*a, **k): return subprocess.run(list(map(str, a)), **k)
+
+def launch(app, app_args):
+    """Start the host app's executable directly. Going through `open` (LaunchServices) on a freshly built, ad-hoc-signed bundle made macOS vet it first:
+    the whole launch was delayed by 20 s or more (148 s under load), which looked like a stalled opening. A direct start has no such delay."""
+    binary = pathlib.Path(app) / "Contents" / "MacOS" / "LayerlingHarness"
+    return subprocess.Popen([str(binary), *map(str, app_args)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 class Run:
     def __init__(self, app, doc, label, n, extra):
@@ -20,8 +27,11 @@ class Run:
         self.dir = H / "runs" / label / f"{time.strftime('%Y%m%d-%H%M%S')}-run{n}"
         self.work = self.dir / "work"
         for d in ("results", "control", "support"): (self.work / d).mkdir(parents=True, exist_ok=True)
-        self.copy = self.dir / "doc.lyl"
-        sh("cp", "-c", self.doc, self.copy)
+        # The source document is opened directly (read-only, never written: Save As goes elsewhere). Cloning 58 MB into every run directory made
+        # the backup agent and the antivirus scanner chew on new files each run, which loaded the Mac and slowed the openings being measured.
+        self.copy = self.doc
+        SCRATCH.mkdir(parents=True, exist_ok=True)
+        self.saveas = SCRATCH / f"{label}-{self.dir.name}-saveas.lyl"
         self.out = {"label": label, "run": n, "env": self.env()}
 
     @staticmethod
@@ -71,9 +81,9 @@ class Run:
     def go(self):
         sid = str(uuid.uuid4())
         sh("pkill", "-x", "LayerlingHarness"); time.sleep(1.5)
-        args = ["open", "-n", self.app, "--args", "-ApplePersistenceIgnoreState", "YES", "--poc-root", self.work, "--open", self.copy, "--store-id", sid, "--cleanup-stores"]
+        args = ["-ApplePersistenceIgnoreState", "YES", "--poc-root", self.work, "--open", self.copy, "--store-id", sid, "--cleanup-stores"]
         for kv in self.extra: args += ["--ls", kv]
-        sh(*args)
+        launch(self.app, args)
         try:
             self.wait(lambda: "document ready" in self.log(), 300, "document ready")
             o, r = self.t(r"open /"), self.t(r"document ready")
@@ -92,7 +102,7 @@ class Run:
                 self.out["edits"].append(e)
             self.out["lifetime_peak_mb"] = round(self.mem().get("webcontent_peak_mb", 0))
             # Save As to a new file, then verify fidelity against the Foshay baseline
-            sa = self.dir / "saveas.lyl"; res = self.work / "control" / "save.out.json"; res.unlink(missing_ok=True)
+            sa = self.saveas; res = self.work / "control" / "save.out.json"; res.unlink(missing_ok=True)
             self.request("saveas.request", str(sa)); self.wait(res.exists, 240, "save as")
             ss, sf = self.t(r"SAVE started", True), self.t(r"SAVE finished OK in")
             self.out["saveas_s"] = round(float(re.findall(r"SAVE finished OK in ([\d.]+)s", self.log())[-1]), 1) if sf else None

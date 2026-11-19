@@ -25,8 +25,7 @@ class OpenRun(rm.Run):
     def open_once(self, extra, ready_timeout, verify):
         sid = str(uuid.uuid4())
         rm.sh("pkill", "-x", "LayerlingHarness"); time.sleep(1.5)
-        args = ["open", "-n", self.app, "--args", "-ApplePersistenceIgnoreState", "YES", "--poc-root", self.work, "--open", self.copy, "--store-id", sid, "--cleanup-stores", *extra]
-        rm.sh(*args)
+        rm.launch(self.app, ["-ApplePersistenceIgnoreState", "YES", "--poc-root", self.work, "--open", self.copy, "--store-id", sid, "--cleanup-stores", *extra])
         self.out["vm"] = vm_state()
         status = "ok"; diag = None
         try:
@@ -37,7 +36,7 @@ class OpenRun(rm.Run):
             self.out["peak_mb"] = self.peak(o, r + 4); self.out["at_ready_mb"] = self.at(r); self.out["settled_mb"] = self.at(r + 4)
             self.out["workers"] = self.runjs("worker-stats.js", 30)
             if verify:
-                sa = self.dir / "saveas.lyl"; res = self.work / "control" / "save.out.json"; res.unlink(missing_ok=True)
+                sa = self.saveas; res = self.work / "control" / "save.out.json"; res.unlink(missing_ok=True)
                 self.request("saveas.request", str(sa)); self.wait(res.exists, 240, "save as")
                 self.out["verified"] = True
         except TimeoutError as e:
@@ -47,7 +46,9 @@ class OpenRun(rm.Run):
             (self.dir / "console.log").write_text(self.log())
             rm.sh("pkill", "-x", "LayerlingHarness")
         if verify and status == "ok":
-            r = rm.sh(sys.executable, H / "compare_lyl.py", self.doc, self.dir / "saveas.lyl", "--baseline", H / "baseline-foshay.json", "--expect-added", "0", "--json", capture_output=True, text=True)
+            r = rm.sh(sys.executable, H / "compare_lyl.py", self.doc, self.saveas, "--baseline", H / "baseline-foshay.json", "--expect-added", "0", "--json", capture_output=True, text=True)
+            try: self.saveas.unlink()  # the big verification file is not kept; its verdict is
+            except OSError: pass
             self.out["fidelity_pass"] = r.returncode == 0
             if r.returncode != 0: status = "fidelity-fail"
         self.out["status"] = status
@@ -84,7 +85,7 @@ def warm_up(app, doc):
     r = OpenRun(app, doc, "warmup", 0, [])
     sid = str(uuid.uuid4()); rm.sh("pkill", "-x", "LayerlingHarness"); time.sleep(1.5)
     t0 = time.time()
-    rm.sh("open", "-n", app, "--args", "-ApplePersistenceIgnoreState", "YES", "--poc-root", r.work, "--open", r.copy, "--store-id", sid)
+    rm.launch(app, ["-ApplePersistenceIgnoreState", "YES", "--poc-root", r.work, "--open", r.copy, "--store-id", sid])
     try: r.wait(lambda: "open /" in r.log(), 120, "open issued"); issued = r.t(r"open /")
     except TimeoutError: issued = None
     time.sleep(8); rm.sh("pkill", "-x", "LayerlingHarness"); marker.write_text("warmed\n")
@@ -99,22 +100,37 @@ def settle(max_s=300):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", required=True); ap.add_argument("--app", required=True); ap.add_argument("--doc", required=True)
-    ap.add_argument("--runs", type=int, default=50); ap.add_argument("--timeout", type=int, default=120); ap.add_argument("--verify-every", type=int, default=10)
+    ap.add_argument("--runs", type=int, default=50); ap.add_argument("--settle-max", type=int, default=300); ap.add_argument("--no-verify", action="store_true"); ap.add_argument("--timeout", type=int, default=120); ap.add_argument("--verify-every", type=int, default=10)
     ap.add_argument("extra", nargs="*")
     a = ap.parse_args()
     outdir = H / "runs" / a.label; outdir.mkdir(parents=True, exist_ok=True)
     jl = outdir / "soak.jsonl"
     print("warm-up:", warm_up(a.app, a.doc), flush=True)
-    start_env = settle(); print("settled:", start_env, flush=True)
+    start_env = settle(a.settle_max); print("settled:", start_env, flush=True)
+    import ab  # shared stop handling (signals, STOP files) and atomic checkpoint writes
+    ckp = outdir / "checkpoint.json"
+    state = json.loads(ckp.read_text()) if ckp.exists() else {"label": a.label, "runs_planned": a.runs, "attempts": 0, "ok": 0, "failures": [], "interrupted": [], "sessions": []}
+    state["runs_planned"] = a.runs
+    for d in sorted(outdir.glob("*")):
+        if d.is_dir() and not (d / "summary.json").exists() and d.name not in [x["dir"] for x in state["interrupted"]]:
+            state["interrupted"].append({"dir": d.name, "note": "run directory without a summary: stopped mid-run; not counted"})
+    session = {"started": time.strftime("%Y-%m-%d %H:%M:%S"), "env": rm.Run.env(), "resumed_from_attempt": state["attempts"]}
+    state["sessions"].append(session); ab.save_atomic(ckp, state)
     results = []
-    for n in range(1, a.runs + 1):
-        verify = n == 1 or n == a.runs or (a.verify_every and n % a.verify_every == 0)
+    for n in range(state["attempts"] + 1, a.runs + 1):
+        if ab.should_stop(a.label): print("STOP requested: checkpoint kept, resume later with the same command", flush=True); break
+        verify = (not a.no_verify) and (n == 1 or n == a.runs or (a.verify_every and n % a.verify_every == 0))
         r = OpenRun(a.app, a.doc, a.label, n, [])
         r.out["env"] = rm.Run.env()
         o = r.open_once(a.extra, a.timeout, verify)
         results.append(o)
+        state["attempts"] += 1
+        if o["status"] == "ok": state["ok"] += 1
+        else: state["failures"].append({"attempt": n, "status": o["status"], "dir": r.dir.name, "class": (o.get("diagnosis") or {}).get("class")})
+        ab.save_atomic(ckp, state)
         with open(jl, "a") as f: f.write(json.dumps({k: o.get(k) for k in ("label", "run", "status", "open_to_ready_s", "peak_mb", "at_ready_mb", "settled_mb", "workers", "env", "vm", "fidelity_pass", "verified")} | ({"diagnosis": o["diagnosis"]} if "diagnosis" in o else {})) + "\n")
         print(f"[{a.label} {n}/{a.runs}] {o['status']} open {o.get('open_to_ready_s')}s peak {o.get('peak_mb')} MB settled {o.get('settled_mb')} MB blob-workers-max {(o.get('workers') or {}).get('stats', {}).get('blobMaxAlive') if o.get('workers') else None}" + (f" [{o['diagnosis']['class']}]" if 'diagnosis' in o else ""), flush=True)
+    session["ended"] = time.strftime("%Y-%m-%d %H:%M:%S"); ab.save_atomic(ckp, state)
     ok = [r for r in results if r["status"] == "ok"]
     def st(k): v = [r[k] for r in ok if r.get(k) is not None]; return f"median {statistics.median(v):.1f} min {min(v)} max {max(v)}" if v else "n/a"
     print(f"SOAK {a.label}: {len(ok)}/{len(results)} ok; statuses { {s: sum(r['status']==s for r in results) for s in set(r['status'] for r in results)} }")
