@@ -45,9 +45,11 @@ export function ProjectNameField({
     if (nextName !== projectName) onProjectNameChange?.(nextName);
   };
   return (
-    <label ref={fieldRef} className={`toolbar-project-name-field ${className}`.trim()} title={t("editor.renameProject")}>
+    // Without a rename callback (the native app, where the file name decides) the name is shown, not edited.
+    <label ref={fieldRef} className={`toolbar-project-name-field ${className}`.trim()} title={onProjectNameChange ? t("editor.renameProject") : projectName}>
       <input
         ref={inputRef}
+        readOnly={!onProjectNameChange}
         aria-label={t("confirm.projectName")}
         value={draft}
         maxLength={80}
