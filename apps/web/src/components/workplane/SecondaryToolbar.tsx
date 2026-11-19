@@ -238,6 +238,7 @@ export function SecondaryToolbar({
   toolbarMode,
   projectName,
   onProjectNameChange,
+  hideProjectName = false,
   onToolbarModeChange,
   outlinerOpen,
   onToggleOutliner,
@@ -421,6 +422,8 @@ export function SecondaryToolbar({
   toolbarMode: ToolbarMode;
   projectName: string;
   onProjectNameChange?: (name: string) => void;
+  /** The native app: the document window already shows the name (and Save As renames), so the field is not drawn. */
+  hideProjectName?: boolean;
   onToolbarModeChange: (mode: ToolbarMode) => void;
   outlinerOpen: boolean;
   onToggleOutliner: () => void;
@@ -1910,8 +1913,9 @@ export function SecondaryToolbar({
             {t("editor.modeSketch")}
           </button>
         </div>
+        {/* The wrapper stays when the field is hidden: it is the flexible spacer that keeps the actions on the right. */}
         <div className="toolbar-project-name">
-          <ProjectNameField projectName={projectName} onProjectNameChange={onProjectNameChange} />
+          {hideProjectName ? null : <ProjectNameField projectName={projectName} onProjectNameChange={onProjectNameChange} />}
         </div>
         <div className="toolbar-title-row-actions">
           {/* Focus mode (Discussion #1554): this row and the footer make room, a small bar over the view keeps the tabs. */}
@@ -1982,7 +1986,7 @@ export function SecondaryToolbar({
           onSettings={() => window.dispatchEvent(new Event("layerling:open-workspace-settings"))}
           onLeave={() => onFocusModeChange(false)}
           showSearch={!simpleMode}
-          nameField={<ProjectNameField className="focus-mode-bar-name" projectName={projectName} onProjectNameChange={onProjectNameChange} />}
+          nameField={hideProjectName ? undefined : <ProjectNameField className="focus-mode-bar-name" projectName={projectName} onProjectNameChange={onProjectNameChange} />}
         />
       ) : null}
     </div>
