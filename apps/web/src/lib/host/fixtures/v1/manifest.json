@@ -1,0 +1,21 @@
+{
+  "protocol": 1,
+  "note": "Canonical messages of host protocol v1, tested by the editor (tests/unit/hostProtocol.test.ts) and by the native host (HostProtocolTests). 'direction' is who sends the file's message.",
+  "fixtures": [
+    { "file": "bootstrap.json", "kind": "bootstrap", "direction": "host-injected" },
+    { "file": "hello.request.json", "kind": "request", "direction": "editor" },
+    { "file": "hello.ok.response.json", "kind": "response", "direction": "host" },
+    { "file": "hello.unsupported.response.json", "kind": "response", "direction": "host" },
+    { "file": "ready.request.json", "kind": "request", "direction": "editor" },
+    { "file": "ready.ok.response.json", "kind": "response", "direction": "host" },
+    { "file": "ping.request.json", "kind": "request", "direction": "editor" },
+    { "file": "ping.ok.response.json", "kind": "response", "direction": "host" },
+    { "file": "host-ping.event.json", "kind": "event", "direction": "host" },
+    { "file": "pong.request.json", "kind": "request", "direction": "editor" },
+    { "file": "pong.ok.response.json", "kind": "response", "direction": "host" },
+    { "file": "error.bad-session.response.json", "kind": "response", "direction": "host" },
+    { "file": "error.protocol-mismatch.response.json", "kind": "response", "direction": "host" },
+    { "file": "error.bad-request.response.json", "kind": "response", "direction": "host" },
+    { "file": "error.not-ready.response.json", "kind": "response", "direction": "host" }
+  ]
+}
