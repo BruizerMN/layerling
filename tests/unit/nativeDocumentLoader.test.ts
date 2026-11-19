@@ -66,7 +66,7 @@ describe("a file document", () => {
     });
     expect(calls).toEqual(["fetch", "import", "relieve"]);
     expect(state.meshRelief).toEqual({ bodies: 3 });
-    expect(state.stats).toEqual({ rootObjects: 2, historyStates: 2 });
+    expect(state.stats).toMatchObject({ rootObjects: 2, historyStates: 2, nodes: 2, historyIndex: 1, meshObjects: 0, hasView: true });
     expect(state.documentProjectId).toBe("project-original-id");
     expect(state.runtimeProjectId).toBe(transientProjectId(file.documentId));
     expect(isTransientProjectId(state.runtimeProjectId)).toBe(true);

@@ -36,9 +36,46 @@ export interface NativeDocumentState {
   placementElevation: number;
   placementWorkplane: PlacementWorkplane;
   sketchPlacementWorkplane: PlacementWorkplane;
-  stats: { rootObjects: number; historyStates: number };
+  stats: DocumentStats;
   timings: { transferMs: number; importMs: number; hydrateMs: number };
   meshRelief: { bodies: number };
+}
+
+/** What the editor reports about the document it opened, so a test can compare it with the file's own contents (fidelity). */
+export interface DocumentStats {
+  rootObjects: number;
+  historyStates: number;
+  /** Counted in the current scene: every object, groups' children included. */
+  nodes?: number;
+  historyIndex?: number;
+  /** Distinct mesh objects across the scene and every undo state. */
+  meshObjects?: number;
+  sourceAssets?: number;
+  attachments?: number;
+  hasView?: boolean;
+  savedViews?: number;
+}
+
+export function summarizeDocument(restored: LylRestoredProject): DocumentStats {
+  const countNodes = (shapes: WorkplaneShape[]): number => shapes.reduce((n, shape) => n + 1 + countNodes(shape.groupedShapes ?? []), 0);
+  const meshes = new Set<object>();
+  const visit = (shape: WorkplaneShape) => {
+    if (shape.importedMesh) meshes.add(shape.importedMesh as object);
+    shape.groupedShapes?.forEach(visit);
+  };
+  restored.shapes.forEach(visit);
+  restored.history.forEach((entry) => entry.shapes.forEach(visit));
+  return {
+    rootObjects: restored.shapes.length,
+    historyStates: restored.history.length,
+    nodes: countNodes(restored.shapes),
+    historyIndex: restored.historyIndex,
+    meshObjects: meshes.size,
+    sourceAssets: restored.assets.length,
+    attachments: restored.attachments?.length ?? 0,
+    hasView: Boolean(restored.view),
+    savedViews: restored.savedViews ? Object.keys(restored.savedViews).length : 0,
+  };
 }
 
 export interface NativeDocumentDeps {
@@ -143,7 +180,7 @@ async function openFileDocument(
     placementElevation: restored.placementElevation,
     placementWorkplane: restored.placementWorkplane,
     sketchPlacementWorkplane: restored.sketchPlacementWorkplane,
-    stats: { rootObjects: restored.shapes.length, historyStates: restored.history.length },
+    stats: summarizeDocument(restored),
     timings: { transferMs: Math.round(t1 - t0), importMs: Math.round(t2 - t1), hydrateMs: Math.round(t3 - t2) },
     meshRelief: { bodies: relieved },
   };
