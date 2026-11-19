@@ -18833,6 +18833,10 @@ export function LayerlingEditor({
       const key = (event.key ?? "").toLowerCase();
       const shortcut = event.ctrlKey || event.metaKey;
 
+      // In the native app, Save and Save As belong to the host menu (Cmd+S, Shift+Cmd+S): the page
+      // leaves the key alone, without preventDefault, so WKWebView hands it back to AppKit.
+      if (nativeDocument && shortcut && key === "s") return;
+
       // Save works from anywhere in the editor, a field too; the browser's own "save page" has
       // nothing to do here. Behind the project overview the key stays the browser's.
       if (shortcut && key === "s" && !event.shiftKey && !event.altKey) {
@@ -19259,6 +19263,7 @@ export function LayerlingEditor({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
+    nativeDocument,
     closeHistoryView,
     closeClearanceCheck,
     closePrintCheck,
