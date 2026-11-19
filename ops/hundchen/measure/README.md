@@ -107,3 +107,67 @@ Recorded 2026-11-18 on the 2025 MacBook Air (32 GB, macOS 26.7.3), WKWebView ref
 - The dominant per-edit cost is unchanged: after one edit the main thread is blocked for ~3 s (longest frame gap ~2 s), the project list is written ~3 s later and the full-project IndexedDB repack finishes ~7.8 s later, with WebContent memory peaking ~6.7-7.0 GB while it runs. That work is what the host-mode steps remove.
 - Open peak is 8.2-9.6 GB; the 4.5 GB target needs the bounded unzip (step 2).
 
+
+## Soak test (consecutive openings, every outcome counted)
+
+`soak.py --label step2 --app builds/step2/LayerlingHarness.app --doc work/foshay-source.lyl --runs 50`
+
+A fresh process and WebKit data store per run. Each run waits for the editor (timeout 120 s), records open time, memory and the host's worker
+bookkeeping (`window.__workerStats`: blob workers created / alive at once / terminated), and every 10th run (plus the first and last) does a Save As and the
+acceptance compare. A run that does not finish is never retried or dropped: the page is probed (`probes/health.js`), the WebContent process is sampled, and the
+run is classified as a product stall or a harness/environment failure. A disclosed warm-up launch per freshly built host app comes first (macOS checks a new binary's
+first access to ~/Documents, which delayed the open request by seconds and once looked like a stalled opening).
+
+## Worker failure and stall tests
+
+`fault_tests.py --label step2-faults --app ... --doc ... --case throw:1:30 --case error:1:30 --case hang:1:30 --case hang:1:1`
+
+The host app can make the first N blob workers (the unpack phase) throw on creation, report an error, or never answer (`--worker-fault MODE[:EVERY[:LIMIT]]`).
+Each case does a Save As and the acceptance compare.
+
+## Chromium probe (browser compatibility on the Ubuntu VM)
+
+`node chromium_probe.mjs --url http://127.0.0.1:3111/ --probe probes/smoke-create.js` runs a probe in headless Chromium over the DevTools protocol;
+`--file design.lyl` puts a .lyl into the start page's file input and records open time and browser memory. Serve a static artifact with
+`python3 -m http.server` or the regular build with `next start` on a spare port (not the deployed service's port 3100), and stop it afterwards.
+Do not leave an old `next start` running while rebuilding: it serves a mixture of old and new chunks.
+
+## Environment record
+Every run records macOS version, swap in use, load, free memory and the state of the Parallels VMs (`prlctl list -a`). The Ubuntu development VM runs on the
+benchmarked Mac (Parallels, "Development"); with it running the Mac was holding about 7 GB of swap. Benchmark with the VM stopped.
+
+## Host window rules (learned the hard way, 2026-11-18)
+- A benchmark run is only valid if the page is **visible**. The probes record `document.visibilityState` at page start in `window.__phase` (`start vis=visible`) and the host logs
+  `window[...]: isVisible=... occlusionVisible=... activeSpace=...`. A host window that opens on a macOS Space (desktop) you are not looking at, behind another window, or on a
+  sleeping display is "hidden" to WebKit: timers are throttled to one tick a second (and worse), threads run at background priority, and an opening takes 3-6x as long (baseline 77-93 s,
+  instead of ~16-28 s). The reference host uses `collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]`, a floating window, an App Nap opt-out, and runs under `caffeinate -dis`.
+- Never start the host through `open` for benchmarks: LaunchServices vets a freshly built ad-hoc bundle first (20-148 s). `run_measure.launch()` starts the executable directly.
+- Never wait for a timer or task between steps of the code being measured: a hidden page may not deliver one for minutes (the first Step 2 version yielded with `setTimeout(0)` and stalled).
+- The soak classifies a run that never becomes ready as a stall with diagnostics; read `diagnosis.page.phase` (in-page timestamps) before calling it a product failure or an environment failure.
+- Files that every run writes (Save As outputs) go to `/private/tmp/layerling-harness/` and are deleted after the check; the source document is opened in place, read-only. Backup and antivirus agents otherwise load the Mac and slow the very opening being measured.
+- Resume: `soak.py` and `ab.py` write `checkpoint.json` after every run; `touch runs/STOP` stops them cleanly after the current run; the same command resumes.
+
+## Reference host app (`reference-host/`)
+A throwaway Swift/AppKit app that hosts a static Layerling build in a WKWebView (custom `layerling://` scheme, no server, no Node), with a file-based control channel and a 250 ms WebContent memory sampler.
+It exists only to run these measurements on macOS and moves to the macOS repository. Build it around an artifact: `reference-host/build-app.sh <artifact.tar.gz> builds/<label>` (Xcode's swiftc, macOS 14+).
+Useful flags: `--poc-root DIR` (results/control/support folders; default `$TMPDIR/layerling-reference-host`), `--open FILE.lyl`, `--store-id UUID` (isolated WebKit data store), `--ls KEY=VALUE` (inject localStorage),
+`--worker-fault MODE[:EVERY[:LIMIT]]` (throw | error | hang on blob workers), `--worker-cap N`, `--hide`, `--base-url URL --allow-net` (load an http URL, for smoke tests), `-ApplePersistenceIgnoreState YES` (always, or macOS may block the launch with a restore prompt).
+
+## Invalid-environment guard
+`soak.py` records `document.visibilityState` at page start (`window.__phase`). A run whose page was hidden (host window on another Space, covered, display asleep) is not a product result:
+it is recorded as status `invalid-environment`, never counted as ok or as a product stall, and the soak stops itself (writes `runs/<label>/STOP`) so the cause is fixed instead of averaged in.
+Check the host log lines `window[...]: ... occlusionVisible=true ... activeSpace=true` before trusting any run.
+
+## Save As -> reopen -> Save As round trip
+`python3 reopen_test.py builds/<label>/LayerlingHarness.app <Foshay.lyl>` opens the document, saves it with Save As (generation 1), opens that file in a fresh process, saves it again (generation 2) and compares
+original -> gen2 and gen1 -> gen2 with `compare_lyl.py` (0 nodes added/removed/changed, mesh blobs byte-identical, camera view preserved). Pass = every line says PASS.
+
+## Reproducing the Step 2 acceptance
+1. VM stopped if it runs on the benchmarked Mac (Parallels: `prlctl stop <vm>`); quit heavy apps; `caffeinate -dis` around every command below.
+2. Build the baseline and candidate artifacts on the Ubuntu VM (`ops/hundchen/build-static.sh`), copy them over, build a host per artifact.
+3. `python3 ab.py --tag ab --pairs 10 --variant baseline:builds/baseline/LayerlingHarness.app --variant step2:builds/step2/LayerlingHarness.app --doc work/foshay-source.lyl --verify-every 5`
+4. `python3 soak.py --label step2-soak --app builds/step2/LayerlingHarness.app --doc work/foshay-source.lyl --runs 50 --verify-every 10 --settle-max 300` (pass = 50/50 ok, 0 failures, 0 invalid-environment)
+5. `python3 fault_tests.py --label faults-step2 --app builds/step2/LayerlingHarness.app --doc work/foshay-source.lyl --timeout 260 --case throw:1:1 --case error:1:1 --case hang:1:1` (LIMIT 1 faults only the unpack worker; Step 2 opens one worker, so a larger limit also hits the repack's own workers)
+6. `python3 reopen_test.py builds/step2/LayerlingHarness.app work/foshay-source.lyl`
+7. `python3 run_measure.py --label edits-step2 --app builds/step2/LayerlingHarness.app --doc work/foshay-source.lyl --runs 2` (two edits, Save As, +2 nodes expected)
+Results of the 2026-11-19 acceptance are in `RESULTS-step2-bounded-unzip.md`; known limits and follow-ups in `FUTURE-WORK.md`.

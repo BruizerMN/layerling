@@ -1,7 +1,8 @@
 import { checkedTypefaceData, customFontName, isCustomFontId, textCharacters, typefaceSubset } from "@/lib/customFonts";
 import { customFontEntry, registerCustomFont } from "@/lib/textFonts";
-import { strFromU8, strToU8, unzip } from "fflate";
+import { strFromU8, strToU8 } from "fflate";
 import { boundedProjectZip } from "@/lib/boundedProjectZip";
+import { unzipBounded, type UnzipEvent } from "@/lib/unzipBounded";
 import { editorHistoryEntry, hydrateEditorHistoryState, type EditorHistoryEntry } from "@/lib/editorHistory";
 import { normalizePlacementWorkplane, placementWorkplaneIsBase, type PlacementWorkplane } from "@/lib/placementWorkplane";
 import { importedShapeFromObj } from "@/lib/objImport";
@@ -1074,28 +1075,27 @@ function zipAsync(files: ArchiveFiles, level: NonNullable<LylProjectExportInput[
   return boundedProjectZip(files, level, stored, LYL_LIMITS.archiveBytes);
 }
 
-function unzipAsync(bytes: Uint8Array) {
-  return new Promise<ArchiveFiles>((resolve, reject) => {
-    unzip(bytes, (error, files) => {
-      if (error) reject(error);
-      else resolve(files);
-    });
-  });
+/**
+ * Unpacking never starts a Worker per entry (fflate's unzip does, all at once: dozens of them on a large design, several GB
+ * before a byte is inflated). A Worker that fails or stalls is terminated and its entry inflated in place; see lib/unzipBounded.ts.
+ */
+function reportUnzipFallback(event: UnzipEvent) {
+  if (event.type === "fallback") console.warn(`[layerling] unzip worker for '${event.name}' ${event.reason === "timeout" ? "did not answer" : "failed"}; inflated in place (${event.message})`);
+}
+
+function unzipAsync(bytes: Uint8Array): Promise<ArchiveFiles> {
+  return unzipBounded(bytes, { onEvent: reportUnzipFallback });
 }
 
 /** Only the project.json of a package, or nothing when it cannot be read; the rest stays packed. */
-function unzipProjectJson(bytes: Uint8Array) {
-  return new Promise<Uint8Array | null>((resolve) => {
-    try {
-      inspectZipBeforeExpansion(bytes);
-    } catch {
-      resolve(null);
-      return;
-    }
-    unzip(bytes, { filter: (file) => file.name === "project.json" }, (error, files) => {
-      resolve(error ? null : files["project.json"] ?? null);
-    });
-  });
+async function unzipProjectJson(bytes: Uint8Array): Promise<Uint8Array | null> {
+  try {
+    inspectZipBeforeExpansion(bytes);
+    const files = await unzipBounded(bytes, { filter: (entry) => entry.name === "project.json", onEvent: reportUnzipFallback });
+    return files["project.json"] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function packagedLylProjectName(projectJson: Uint8Array | null) {
@@ -2620,13 +2620,8 @@ function sceneOnlyLylDocument(raw: unknown): { document: Record<string, unknown>
   };
 }
 
-function unzipOnly(bytes: Uint8Array, paths: Set<string>) {
-  return new Promise<ArchiveFiles>((resolve, reject) => {
-    unzip(bytes, { filter: (file) => paths.has(file.name) }, (error, files) => {
-      if (error) reject(error);
-      else resolve(files);
-    });
-  });
+function unzipOnly(bytes: Uint8Array, paths: Set<string>): Promise<ArchiveFiles> {
+  return unzipBounded(bytes, { filter: (entry) => paths.has(entry.name), onEvent: reportUnzipFallback });
 }
 
 async function readPackagedLyl(bytes: Uint8Array, currentStateOnly = false) {
