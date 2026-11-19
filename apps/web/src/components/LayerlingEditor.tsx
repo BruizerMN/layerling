@@ -194,6 +194,7 @@ import { revolveAxisShift } from "@/lib/revolveAxis";
 import { buildSketchRevolveMesh, DEFAULT_SKETCH_REVOLVE_SETTINGS, normalizeSketchRevolveSettings, type SketchRevolveMesh } from "@/lib/sketchRevolve";
 import { AppFooter } from "@/components/AppFooter";
 import { useFileAccept } from "@/lib/fileAccept";
+import { NATIVE_SAVE_UNAVAILABLE } from "@/lib/host/nativeStrings";
 import { exportLylProject, LYL_CREATED_WITH_VERSION, LYL_MEDIA_TYPE, lylThumbnailFiles } from "@/lib/lylProject";
 import { saveWithLessHistoryIfNeeded } from "@/lib/historyTrim";
 import { projectThumbnailPngBytes } from "@/lib/backupDownload";
@@ -17868,7 +17869,7 @@ export function LayerlingEditor({
 
   const exportLylDesign = useCallback(async (exportName: string, historyLimit: LylHistoryLimit, target: LylExportTarget = "download", preparedBytes?: Uint8Array): Promise<void> => {
     if (nativeDocument) {
-      setNotice("This document cannot be saved yet. Saving arrives in a later version of HundchenLayerling; until then, changes live only in this window.", true);
+      setNotice(NATIVE_SAVE_UNAVAILABLE, true);
       return;
     }
     if (lylExporting) return;
