@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Runs page probes in headless Chromium over the DevTools protocol (browser-compatibility checks on the Ubuntu VM).
-//   node chromium_probe.mjs --url http://127.0.0.1:3111/ --probe probes/smoke-create.js [--file /path/design.lyl --open-wait-ms 240000] [--samples chrome-rss.csv]
+//   node chromium_probe.mjs --url http://127.0.0.1:3111/ --probe probes/smoke-create.js [--init-script spoof.js] [--file /path/design.lyl --open-wait-ms 240000] [--samples chrome-rss.csv]
 // A probe is an async function body (use `return`), as for the macOS host. With --file the .lyl is put into the start page's file input
 // (the "Open a design" tile), the editor is awaited, and the renderer memory peak and open time are recorded.
 import { spawn } from "node:child_process";
@@ -55,6 +55,9 @@ let peak = { total: 0, renderer: 0 }; const timer = setInterval(() => { const m 
 try {
   const ws = await connect();
   await send(ws, "Page.enable"); await send(ws, "Runtime.enable"); await send(ws, "DOM.enable");
+  const hostLogs = [];
+  ws.addEventListener("message", (m) => { const d = JSON.parse(m.data); if (d.method === "Runtime.consoleAPICalled") { const text = d.params.args.map((a) => a.value ?? a.description).join(" "); if (text.includes("[layerling-host]")) hostLogs.push(`${d.params.type}: ${text.slice(0, 200)}`); } });
+  if (args["init-script"]) await send(ws, "Page.addScriptToEvaluateOnNewDocument", { source: fs.readFileSync(args["init-script"], "utf8") }); // runs before the page's own scripts, like a host's user script
   const errors = []; ws.addEventListener("message", (m) => { const d = JSON.parse(m.data); if (d.method === "Runtime.exceptionThrown") errors.push(d.params.exceptionDetails.exception?.description?.split("\n")[0] ?? d.params.exceptionDetails.text); if (d.method === "Runtime.consoleAPICalled" && d.params.type === "error") errors.push("console.error: " + d.params.args.map((a) => a.value ?? a.description).join(" ").slice(0, 200)); });
   await send(ws, "Page.navigate", { url: args.url });
   await sleep(4000);
@@ -80,6 +83,7 @@ try {
   }
   if (args.probe) out.probe = await evaluate(ws, fs.readFileSync(args.probe, "utf8"));
   out.pageErrors = errors.slice(0, 10);
+  if (args["init-script"]) out.hostLogs = hostLogs;
   out.rssPeakMB = Math.round(peak.total);
   ws.close();
 } catch (e) { out.failure = String(e); } finally { clearInterval(timer); proc.kill("SIGKILL"); }
