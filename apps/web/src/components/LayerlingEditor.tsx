@@ -19545,6 +19545,7 @@ export function LayerlingEditor({
   return (
     <div className={`layerling-editor ${historyViewState ? "history-view-active" : ""} ${focusMode.active ? "focus-mode" : ""}`}>
       <SecondaryToolbar
+        hideProjectName={Boolean(nativeDocument)}
         toolbarMode={toolbarMode}
         projectName={projectName}
         onProjectNameChange={onProjectNameChange}
