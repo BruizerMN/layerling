@@ -15,7 +15,7 @@ export interface NativePackage {
 
 export interface NativeSaveApi {
   /** Waits for a quiet moment, takes the snapshot, packages it (the same exportLylProject as the browser) and returns the .lyl bytes. */
-  createPackage(options: { fileName: string | null; signal: AbortSignal; onPhase: (phase: SavePhase) => void }): Promise<NativePackage>;
+  createPackage(options: { fileName: string | null; signal: AbortSignal; onPhase: (phase: SavePhase) => void; recovery?: boolean }): Promise<NativePackage>;
   /** The host committed the package: its signature is the saved one now. */
   markSaved(signature: string): void;
 }
@@ -98,7 +98,8 @@ export async function performNativeSave(bridge: HostBridge, event: SaveEventPayl
     void bridge.sendSave("document.save.progress", { documentId, saveId, phase, ...(loaded !== undefined ? { loaded } : {}), ...(total !== undefined ? { total } : {}) });
   };
   try {
-    const pack = await api.createPackage({ fileName: event.fileName, signal: controller.signal, onPhase: (phase) => progress(phase) });
+    // reason "recovery": the host keeps this package as a crash-recovery snapshot, not as the document file (no preview picture needed).
+    const pack = await api.createPackage({ fileName: event.fileName, signal: controller.signal, onPhase: (phase) => progress(phase), recovery: event.reason === "recovery" });
     if (controller.signal.aborted) throw new NativeSaveError("cancelled", "The save was cancelled.");
     const hashed = sha256Hex(pack.bytes);
     const t0 = now();

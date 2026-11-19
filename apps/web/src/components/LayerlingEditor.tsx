@@ -4976,7 +4976,7 @@ export function LayerlingEditor({
   useEffect(() => {
     if (!nativeDocument || !nativeApiRef) return;
     const api: NativeSaveApi = {
-      createPackage: async ({ fileName, signal, onPhase }): Promise<NativePackage> => {
+      createPackage: async ({ fileName, signal, onPhase, recovery }): Promise<NativePackage> => {
         const tracker = nativeTrackerRef.current;
         if (!tracker) throw new NativeSaveError("internal", "The editor is not ready to save.");
         const t0 = performance.now();
@@ -4991,7 +4991,8 @@ export function LayerlingEditor({
         const t1 = performance.now();
         onPhase("snapshot");
         // The picture first (it may take a moment): a failed capture only means a file without a preview, never a failed save (D5).
-        const picture = await capturedDesignPicture();
+        // A crash-recovery snapshot has no use for a preview picture: skipped, so it stays cheap.
+        const picture = recovery ? null : await capturedDesignPicture();
         const png = picture ? await projectThumbnailPngBytes(picture).catch(() => null) : null;
         if (signal.aborted) throw new NativeSaveError("cancelled", "The save was cancelled.");
         // ---- the snapshot: one synchronous block. Everything below is an immutable view; edits made while packaging stay unsaved. ----
