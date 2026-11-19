@@ -1,0 +1,1 @@
+{"id":"e1","ok":true,"type":"hello.ok","payload":{"protocol":3,"host":{"name":"HundchenLayerling","version":"0.3.0"},"capabilities":["document.open","document.save"]}}

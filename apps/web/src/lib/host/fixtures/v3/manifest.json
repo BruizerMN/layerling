@@ -1,0 +1,96 @@
+{
+  "protocol": 3,
+  "note": "Canonical messages added by host protocol v3 (saving). Used with fixtures/v1 and v2 (unchanged). The upload is not a protocol message: POST /__host__/save/<uploadToken>?offset=N, see README.",
+  "fixtures": [
+    {
+      "file": "bootstrap.json",
+      "kind": "bootstrap",
+      "direction": "host-injected"
+    },
+    {
+      "file": "hello.request.json",
+      "kind": "request",
+      "direction": "editor"
+    },
+    {
+      "file": "hello.ok.response.json",
+      "kind": "response",
+      "direction": "host"
+    },
+    {
+      "file": "hello.v2-fallback.ok.response.json",
+      "kind": "response",
+      "direction": "host"
+    },
+    {
+      "file": "document.changed.request.json",
+      "kind": "request",
+      "direction": "editor"
+    },
+    {
+      "file": "document.changed.ok.response.json",
+      "kind": "response",
+      "direction": "host"
+    },
+    {
+      "file": "save.progress.request.json",
+      "kind": "request",
+      "direction": "editor"
+    },
+    {
+      "file": "save.progress.ok.response.json",
+      "kind": "response",
+      "direction": "host"
+    },
+    {
+      "file": "save.commit.request.json",
+      "kind": "request",
+      "direction": "editor"
+    },
+    {
+      "file": "save.commit.ok.response.json",
+      "kind": "response",
+      "direction": "host"
+    },
+    {
+      "file": "save.failed.request.json",
+      "kind": "request",
+      "direction": "editor"
+    },
+    {
+      "file": "save.failed.ok.response.json",
+      "kind": "response",
+      "direction": "host"
+    },
+    {
+      "file": "save.event.json",
+      "kind": "event",
+      "direction": "host"
+    },
+    {
+      "file": "save.cancel.event.json",
+      "kind": "event",
+      "direction": "host"
+    },
+    {
+      "file": "saved.event.json",
+      "kind": "event",
+      "direction": "host"
+    },
+    {
+      "file": "renamed.event.json",
+      "kind": "event",
+      "direction": "host"
+    },
+    {
+      "file": "externalChange.event.json",
+      "kind": "event",
+      "direction": "host"
+    },
+    {
+      "file": "error.save-rejected.response.json",
+      "kind": "response",
+      "direction": "host"
+    }
+  ]
+}

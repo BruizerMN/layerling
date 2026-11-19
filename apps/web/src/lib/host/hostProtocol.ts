@@ -7,10 +7,13 @@
 
 /** The protocol versions this editor speaks. Raise MAX only together with the host and the README; MIN when a version is dropped. */
 export const HOST_PROTOCOL_MIN = 1;
-export const HOST_PROTOCOL_MAX = 2;
+export const HOST_PROTOCOL_MAX = 3;
 
 /** Protocol 2 adds native documents (docs: README.md, "Protocol v2"). Offered by the editor in `hello`, granted by the host in `hello.ok`. */
 export const DOCUMENT_CAPABILITY = "document.open";
+/** Protocol 3 adds saving (`document.save`): change tracking, the save exchange and its upload. */
+export const SAVE_CAPABILITY = "document.save";
+export const SAVE_PROTOCOL_MIN = 3;
 /** The first protocol version that carries the document messages. */
 export const DOCUMENT_PROTOCOL_MIN = 2;
 
@@ -41,6 +44,8 @@ export const HOST_ERROR_CODES = [
   "unsupported-capability",
   "no-such-document",
   "document-changed",
+  // protocol 3
+  "save-rejected",
 ] as const;
 export type HostErrorCode = (typeof HOST_ERROR_CODES)[number];
 
@@ -140,7 +145,66 @@ export interface DocumentFailedRequest {
   protocol: number;
   payload: { documentId: string; code: DocumentFailureCode; message: string };
 }
-export type HostRequest = HelloRequest | ReadyRequest | PingRequest | PongRequest | DocumentRequest | DocumentProgressRequest | DocumentOpenedRequest | DocumentFailedRequest;
+
+// --- protocol 3: saving ------------------------------------------------------------------------------------------------------------------
+
+export type SavePhase = "wait" | "snapshot" | "serialize" | "compress" | "upload";
+export const SAVE_FAILURE_CODES = ["serialize-failed", "too-large", "out-of-memory", "cancelled", "interaction-timeout", "upload-failed", "internal"] as const;
+export type SaveFailureCode = (typeof SAVE_FAILURE_CODES)[number];
+
+export interface DocumentChangedRequest {
+  id: string;
+  session: string;
+  type: "document.changed";
+  protocol: number;
+  /** `revision` grows with every persistent change; `dirty` says whether the document now differs from what was last saved (or opened). */
+  payload: { documentId: string; revision: number; dirty: boolean };
+}
+export interface SaveProgressRequest {
+  id: string;
+  session: string;
+  type: "document.save.progress";
+  protocol: number;
+  payload: { documentId: string; saveId: string; phase: SavePhase; loaded?: number; total?: number };
+}
+export interface SaveCommitRequest {
+  id: string;
+  session: string;
+  type: "document.save.commit";
+  protocol: number;
+  payload: {
+    documentId: string;
+    saveId: string;
+    /** The revision and signature of the snapshot that was packaged: what the host may call saved. */
+    revision: number;
+    signature: string;
+    byteLength: number;
+    sha256: string;
+    stats: { rootObjects: number; nodes: number; meshObjects: number };
+    timings: { waitMs: number; snapshotMs: number; serializeMs: number; uploadMs: number };
+    thumbnail: boolean;
+  };
+}
+export interface SaveFailedRequest {
+  id: string;
+  session: string;
+  type: "document.save.failed";
+  protocol: number;
+  payload: { documentId: string; saveId: string; code: SaveFailureCode; message: string };
+}
+export type HostRequest =
+  | HelloRequest
+  | ReadyRequest
+  | PingRequest
+  | PongRequest
+  | DocumentRequest
+  | DocumentProgressRequest
+  | DocumentOpenedRequest
+  | DocumentFailedRequest
+  | DocumentChangedRequest
+  | SaveProgressRequest
+  | SaveCommitRequest
+  | SaveFailedRequest;
 
 // --- host -> editor ---------------------------------------------------------------------------------------------------------------------
 
@@ -159,6 +223,10 @@ export type OkTypeFor = {
   "document.progress": "document.progress.ok";
   "document.opened": "document.opened.ok";
   "document.failed": "document.failed.ok";
+  "document.changed": "document.changed.ok";
+  "document.save.progress": "document.save.progress.ok";
+  "document.save.commit": "document.save.commit.ok";
+  "document.save.failed": "document.save.failed.ok";
 };
 
 export type ParsedResponse =
@@ -170,7 +238,16 @@ export type ParsedResponse =
 export type HostEvent =
   | { session: string; protocol: number; id: string; type: "ping"; payload: Record<string, never> }
   /** Protocol 2: the host is closing or reloading the document; the editor abandons an open in progress. */
-  | { session: string; protocol: number; id: string; type: "document.cancel"; payload: { documentId: string } };
+  | { session: string; protocol: number; id: string; type: "document.cancel"; payload: { documentId: string } }
+  /** Protocol 3: package the document now. `fileName` (no extension) is the native name the design takes. `uploadToken` names this save's upload endpoint. */
+  | { session: string; protocol: number; id: string; type: "document.save"; payload: { documentId: string; saveId: string; uploadToken: string; fileName: string | null; reason: string } }
+  | { session: string; protocol: number; id: string; type: "document.save.cancel"; payload: { documentId: string; saveId: string } }
+  /** The save was committed to the file: `signature` is now the saved one. */
+  | { session: string; protocol: number; id: string; type: "document.saved"; payload: { documentId: string; saveId: string; revision: number; signature: string; fileName: string | null } }
+  /** The native file name changed (first save, Save As, Finder rename); it is authoritative. */
+  | { session: string; protocol: number; id: string; type: "document.renamed"; payload: { documentId: string; fileName: string } }
+  /** The file was changed by another application (not reloaded automatically). */
+  | { session: string; protocol: number; id: string; type: "document.externalChange"; payload: { documentId: string } };
 
 // --- pure helpers -----------------------------------------------------------------------------------------------------------------------
 
@@ -238,6 +315,26 @@ export function parseHostEvent(value: unknown): HostEvent | { invalid: string } 
   if (value.type === "document.cancel") {
     if (!isText(value.payload.documentId)) return { invalid: "document.cancel needs a documentId" };
     return { session: value.session, protocol: value.protocol, id: value.id, type: "document.cancel", payload: { documentId: value.payload.documentId } };
+  }
+  const documentId = value.payload.documentId;
+  const saveId = value.payload.saveId;
+  const base = { session: value.session, protocol: value.protocol, id: value.id };
+  if (value.type === "document.save") {
+    if (!isText(documentId) || !isText(saveId) || !isText(value.payload.uploadToken)) return { invalid: "document.save needs documentId, saveId and uploadToken" };
+    return { ...base, type: "document.save", payload: { documentId, saveId, uploadToken: value.payload.uploadToken, fileName: typeof value.payload.fileName === "string" ? value.payload.fileName : null, reason: typeof value.payload.reason === "string" ? value.payload.reason : "save" } };
+  }
+  if (value.type === "document.save.cancel") {
+    return isText(documentId) && isText(saveId) ? { ...base, type: "document.save.cancel", payload: { documentId, saveId } } : { invalid: "document.save.cancel needs documentId and saveId" };
+  }
+  if (value.type === "document.saved") {
+    if (!isText(documentId) || !isText(saveId) || typeof value.payload.revision !== "number" || typeof value.payload.signature !== "string") return { invalid: "document.saved needs documentId, saveId, revision and signature" };
+    return { ...base, type: "document.saved", payload: { documentId, saveId, revision: value.payload.revision, signature: value.payload.signature, fileName: typeof value.payload.fileName === "string" ? value.payload.fileName : null } };
+  }
+  if (value.type === "document.renamed") {
+    return isText(documentId) && isText(value.payload.fileName) ? { ...base, type: "document.renamed", payload: { documentId, fileName: value.payload.fileName } } : { invalid: "document.renamed needs documentId and fileName" };
+  }
+  if (value.type === "document.externalChange") {
+    return isText(documentId) ? { ...base, type: "document.externalChange", payload: { documentId } } : { invalid: "document.externalChange needs documentId" };
   }
   return { invalid: `unknown event type "${String(value.type)}"` };
 }

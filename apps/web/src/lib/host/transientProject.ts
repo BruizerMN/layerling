@@ -17,10 +17,24 @@ const memory = new Map<string, string>();
 
 type KeyValueStore = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
+const changeListeners = new Set<(key: string) => void>();
+
+/** Told when something is written to the in-memory store (the editor tracks saved views, rulers and tape measurements as document state). */
+export function subscribeTransientStore(listener: (key: string) => void): () => void {
+  changeListeners.add(listener);
+  return () => changeListeners.delete(listener);
+}
+
 const memoryStore: KeyValueStore = {
   getItem: (key) => memory.get(key) ?? null,
-  setItem: (key, value) => void memory.set(key, value),
-  removeItem: (key) => void memory.delete(key),
+  setItem: (key, value) => {
+    memory.set(key, value);
+    changeListeners.forEach((listener) => listener(key));
+  },
+  removeItem: (key) => {
+    memory.delete(key);
+    changeListeners.forEach((listener) => listener(key));
+  },
 };
 
 /** The store for a design's per-project keys: memory for a native document, localStorage otherwise. */

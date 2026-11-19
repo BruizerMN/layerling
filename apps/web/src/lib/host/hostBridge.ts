@@ -2,6 +2,8 @@ import {
   EDITOR_NAME,
   DOCUMENT_CAPABILITY,
   DOCUMENT_PROTOCOL_MIN,
+  SAVE_CAPABILITY,
+  SAVE_PROTOCOL_MIN,
   HOST_BOOTSTRAP_KEY,
   HOST_HANDLER_NAME,
   HOST_PROTOCOL_MAX,
@@ -111,6 +113,10 @@ export interface HostBridge {
   onEvent(listener: (event: HostEvent) => void): () => void;
   /** True once connected with protocol 2 and the document capability granted. */
   supportsDocuments(): boolean;
+  /** Protocol 3: send a save-related message; refused locally unless protocol 3 and the `document.save` capability were negotiated. */
+  sendSave(type: SaveMessageType, payload: Record<string, unknown>): Promise<{ ok: true; payload: Record<string, unknown> } | { ok: false; failure: HostFailure }>;
+  /** True once connected with protocol 3 and the save capability granted. */
+  supportsSave(): boolean;
   getConnection(): HostConnection;
   subscribe(listener: (connection: HostConnection) => void): () => void;
   dispose(): void;
@@ -135,6 +141,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 export type DocumentMessageType = "document.request" | "document.progress" | "document.opened" | "document.failed";
+export type SaveMessageType = "document.changed" | "document.save.progress" | "document.save.commit" | "document.save.failed";
 
 export function createHostBridge(env: HostEnvironment | null, options: HostBridgeOptions): HostBridge {
   const editorRange: ProtocolRange = options.range ?? { min: HOST_PROTOCOL_MIN, max: HOST_PROTOCOL_MAX };
@@ -179,6 +186,9 @@ export function createHostBridge(env: HostEnvironment | null, options: HostBridg
   const documentsGranted = () =>
     (connection.state === "connected" || connection.state === "ready") && negotiated >= DOCUMENT_PROTOCOL_MIN && connection.capabilities.includes(DOCUMENT_CAPABILITY);
 
+  const saveGranted = () =>
+    (connection.state === "connected" || connection.state === "ready") && negotiated >= SAVE_PROTOCOL_MIN && connection.capabilities.includes(SAVE_CAPABILITY);
+
   const receive: HostReceiver = (event) => {
     if (connection.state !== "connected" && connection.state !== "ready") return { ok: false, code: "not-ready", message: "handshake not complete" };
     const parsed = parseHostEvent(event);
@@ -188,6 +198,13 @@ export function createHostBridge(env: HostEnvironment | null, options: HostBridg
     if (parsed.type === "document.cancel") {
       if (!documentsGranted()) return { ok: false, code: "bad-request", message: "document events were not negotiated" };
       env?.log("debug", `host event document.cancel ${parsed.payload.documentId}`);
+      eventListeners.forEach((listener) => listener(parsed));
+      return { ok: true };
+    }
+    if (parsed.type !== "ping") {
+      // protocol 3 events
+      if (!saveGranted()) return { ok: false, code: "bad-request", message: "save events were not negotiated" };
+      env?.log("debug", `host event ${parsed.type}`);
       eventListeners.forEach((listener) => listener(parsed));
       return { ok: true };
     }
@@ -251,7 +268,14 @@ export function createHostBridge(env: HostEnvironment | null, options: HostBridg
       eventListeners.add(listener);
       return () => eventListeners.delete(listener);
     },
+    async sendSave(type, payload) {
+      if (!saveGranted()) return { ok: false as const, failure: { code: "unsupported-capability" as const, message: "the host did not grant save support" } };
+      const request = { id: nextId(), session, type, protocol: negotiated, payload } as HostRequest;
+      const outcome = await exchange(request, `${type}.ok`);
+      return outcome.kind === "ok" ? { ok: true as const, payload: outcome.payload } : { ok: false as const, failure: outcome.failure };
+    },
     supportsDocuments: documentsGranted,
+    supportsSave: saveGranted,
 
     getConnection: () => connection,
     subscribe(listener) {
@@ -293,7 +317,7 @@ export function startHostBridge(win?: HostWindow): () => void {
   const bridge = createHostBridge(env, {
     editorVersion: process.env.NEXT_PUBLIC_APP_VERSION ?? "unknown",
     editorBuild: process.env.NEXT_PUBLIC_BUILD_ID ?? "unknown",
-    capabilities: [DOCUMENT_CAPABILITY],
+    capabilities: [DOCUMENT_CAPABILITY, SAVE_CAPABILITY],
   });
   activeBridge = bridge;
   bridgeListeners.forEach((listener) => listener(bridge));
