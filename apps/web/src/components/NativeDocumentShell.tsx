@@ -70,6 +70,8 @@ export function NativeDocumentShell() {
   const [phase, setPhase] = useState<Phase>({ kind: "connecting" });
   const startedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  /** The document.opened payload, held until the editor has mounted (see onNativeDocumentReady). */
+  const pendingReportRef = useRef<{ payload: Record<string, unknown>; shownAt: number } | null>(null);
   const [themePreference, setThemePreference] = useState<AppThemePreference>("system");
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedAppTheme>("light");
 
@@ -153,16 +155,11 @@ export function NativeDocumentShell() {
           },
         );
         setPhase({ kind: "ready", document: state, fileName: descriptor.kind === "file" ? name : null });
-        const reported = await bridge.send("document.opened", {
-          documentId: state.documentId,
-          projectId: state.documentProjectId,
-          projectName: state.projectName,
-          stats: state.stats,
-          timings: state.timings,
-          meshRelief: state.meshRelief,
-          repack: false,
-        });
-        if (!reported.ok) console.warn(`[layerling-host] document.opened was not accepted: ${reported.failure.code}: ${reported.failure.message}`);
+        // Reported when the editor is on screen (reportOpened below), not now: "open" means ready to edit.
+        pendingReportRef.current = {
+          shownAt: performance.now(),
+          payload: { documentId: state.documentId, projectId: state.documentProjectId, projectName: state.projectName, stats: state.stats, timings: state.timings, meshRelief: state.meshRelief, repack: false },
+        };
       } catch (error) {
         fail(bridge, documentId, error);
       }
@@ -171,6 +168,16 @@ export function NativeDocumentShell() {
       stopListening();
     };
   }, [bridge, connection, fail]);
+
+  const reportOpened = () => {
+    const pending = pendingReportRef.current;
+    if (!pending || !bridge) return;
+    pendingReportRef.current = null;
+    const timings = { ...(pending.payload.timings as Record<string, number>), mountMs: Math.round(performance.now() - pending.shownAt) };
+    void bridge.send("document.opened", { ...pending.payload, timings }).then((reported) => {
+      if (!reported.ok) console.warn(`[layerling-host] document.opened was not accepted: ${reported.failure.code}: ${reported.failure.message}`);
+    });
+  };
 
   if (phase.kind === "failed") return <Message title={phase.title} text={phase.text} />;
   if (phase.kind !== "ready") return <Message text={phase.kind === "opening" ? phase.text : "Connecting to HundchenLayerling…"} />;
@@ -181,6 +188,7 @@ export function NativeDocumentShell() {
       <div className="editor-stage active">
         <LayerlingEditor
           nativeDocument={{ fileName: phase.fileName }}
+          onNativeDocumentReady={reportOpened}
           initialAssets={document.assets}
           initialAttachments={document.attachments}
           initialShapes={document.shapes}

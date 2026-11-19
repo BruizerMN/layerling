@@ -3066,6 +3066,7 @@ export function LayerlingEditor({
   initialPlacementElevation = 0,
   initialPlacementWorkplane,
   nativeDocument = null,
+  onNativeDocumentReady,
   onHome,
   onOpenLylProjectFile,
   onBackUpAllDesigns,
@@ -3107,6 +3108,8 @@ export function LayerlingEditor({
    * "Earlier versions" snapshots, which repack the design into browser storage, do not run.
    */
   nativeDocument?: { fileName: string | null } | null;
+  /** Native documents only: called once the editor has mounted and drawn its first frame (or after 2 s if the page is not being drawn). */
+  onNativeDocumentReady?: () => void;
   onHome?: (leaving: { itemCount: number }) => void;
   onOpenLylProjectFile?: (file: File, shared?: undefined, fileHandle?: LylFileHandle, options?: { name?: string; onSlow?: (message: string) => void }) => Promise<{ ok: boolean; message: string } | void> | { ok: boolean; message: string } | void;
   /** "Back up all" of the start page, for the reminder in the status line; it starts with the save dialog. */
@@ -4924,6 +4927,25 @@ export function LayerlingEditor({
     else setRotationPivot({ selectionKey, point });
     setNotice(t("status.pivotSet"));
   }, [ownPivotShape, selectionKey]);
+
+  // The host is told the document is open once the editor is on screen, not once the data is parsed.
+  useEffect(() => {
+    if (!nativeDocument || !onNativeDocumentReady) return;
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      onNativeDocumentReady();
+    };
+    const timer = window.setTimeout(finish, 2000);
+    const frame = window.requestAnimationFrame(() => window.requestAnimationFrame(finish));
+    return () => {
+      window.clearTimeout(timer);
+      window.cancelAnimationFrame(frame);
+    };
+    // Once per mounted document.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Hands the shapes to the page above, which writes them to the browser's storage. */
   const emitProjectShapes = useCallback(
