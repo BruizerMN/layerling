@@ -1,5 +1,6 @@
 import { horizontalPlacementWorkplane, normalizePlacementWorkplane, type PlacementPoint, type PlacementWorkplane } from "@/lib/placementWorkplane";
 import { CORNER_RULER_DEFAULT_ARM_ELEVATION, cornerRulerFrameForWorkplane, keptCornerRulerArms, type CornerRulerAxis, type CornerRulerAxisModes, type CornerRulerFrame, type CornerRulerMode } from "@/lib/rulerDimensions";
+import { projectStorage } from "@/lib/host/transientProject";
 
 /**
  * The framing square a design keeps (#829): where it was set, on which workplane, which way its arms point and how it
@@ -111,7 +112,7 @@ export function savedCornerRuler<T extends SavedCornerRuler>(ruler: T): SavedCor
 export function readCornerRulers(projectId: string | null | undefined): SavedCornerRuler[] {
   if (!projectId) return [];
   try {
-    const stored = window.localStorage.getItem(CORNER_RULERS_STORAGE_PREFIX + projectId);
+    const stored = projectStorage(projectId).getItem(CORNER_RULERS_STORAGE_PREFIX + projectId);
     return (stored ? normalizeSavedCornerRulers(JSON.parse(stored)) : null) ?? [];
   } catch {
     return [];
@@ -122,8 +123,8 @@ export function writeCornerRulers(projectId: string | null | undefined, rulers: 
   if (!projectId) return;
   try {
     const kept = normalizeSavedCornerRulers(rulers?.map(savedCornerRuler) ?? null);
-    if (kept) window.localStorage.setItem(CORNER_RULERS_STORAGE_PREFIX + projectId, JSON.stringify(kept));
-    else window.localStorage.removeItem(CORNER_RULERS_STORAGE_PREFIX + projectId);
+    if (kept) projectStorage(projectId).setItem(CORNER_RULERS_STORAGE_PREFIX + projectId, JSON.stringify(kept));
+    else projectStorage(projectId).removeItem(CORNER_RULERS_STORAGE_PREFIX + projectId);
   } catch {
     // Without storage the framing square lasts until the design is left.
   }

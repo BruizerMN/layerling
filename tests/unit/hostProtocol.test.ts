@@ -17,9 +17,10 @@ const fixtureDir = path.resolve(__dirname, "../../apps/web/src/lib/host/fixtures
 const fixture = (name: string) => JSON.parse(readFileSync(path.join(fixtureDir, name), "utf8")) as Record<string, unknown>;
 
 describe("host protocol constants", () => {
-  it("speak version 1 only, and the fixtures say the same", () => {
-    expect([HOST_PROTOCOL_MIN, HOST_PROTOCOL_MAX]).toEqual([1, 1]);
+  it("speak versions 1 to 2, and the fixtures say the same", () => {
+    expect([HOST_PROTOCOL_MIN, HOST_PROTOCOL_MAX]).toEqual([1, 2]);
     expect(fixture("manifest.json").protocol).toBe(1);
+    expect(JSON.parse(readFileSync(path.join(fixtureDir, "../v2/manifest.json"), "utf8")).protocol).toBe(2);
   });
   it("list every error code the fixtures use", () => {
     for (const file of ["hello.unsupported", "error.bad-session", "error.protocol-mismatch", "error.bad-request", "error.not-ready"]) {

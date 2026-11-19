@@ -48,6 +48,7 @@ export function TopActionPanel({
   onExport,
   stlFileName = null,
   onExportLyl,
+  hideLylExport = false,
   onExportStep,
   onExportDrawing,
   drawingExporting,
@@ -89,6 +90,8 @@ export function TopActionPanel({
   /** The STL file this design exports into, once one was chosen (Chrome and Edge). */
   stlFileName?: string | null;
   onExportLyl: (exportName: string, historyLimit: LylHistoryLimit, target?: LylExportTarget) => void;
+  /** The native host's documents cannot be written out as a .lyl yet: the format is not offered. */
+  hideLylExport?: boolean;
   onExportStep: (exportName: string, toServer?: boolean) => void;
   onExportDrawing: (exportName: string, format: "svg" | "pdf", toServer?: boolean) => void;
   drawingExporting: boolean;
@@ -449,7 +452,7 @@ export function TopActionPanel({
                   : t(scopeLabel === "selected" ? "export.scopeSelected" : "export.scopeTotal", { count: shapeCount })}</span>
             </div>
             <div className="export-format-slider" data-format={exportFormat} role="radiogroup" aria-label={t("export.formatLabel")}>
-              {(["stl", "3mf", "obj", "step", "svg", "dxf", "png", "lyl", "drawing"] as const).map((format) => (
+              {(["stl", "3mf", "obj", "step", "svg", "dxf", "png", "lyl", "drawing"] as const).filter((format) => !(hideLylExport && format === "lyl")).map((format) => (
                 <button
                   key={format}
                   type="button"

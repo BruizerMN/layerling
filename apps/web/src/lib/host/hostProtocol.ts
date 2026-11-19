@@ -7,7 +7,12 @@
 
 /** The protocol versions this editor speaks. Raise MAX only together with the host and the README; MIN when a version is dropped. */
 export const HOST_PROTOCOL_MIN = 1;
-export const HOST_PROTOCOL_MAX = 1;
+export const HOST_PROTOCOL_MAX = 2;
+
+/** Protocol 2 adds native documents (docs: README.md, "Protocol v2"). Offered by the editor in `hello`, granted by the host in `hello.ok`. */
+export const DOCUMENT_CAPABILITY = "document.open";
+/** The first protocol version that carries the document messages. */
+export const DOCUMENT_PROTOCOL_MIN = 2;
 
 /** The page must be served from the host's custom URL scheme; http(s) and file pages never talk to a host. */
 export const HOST_SCHEME = "layerling:";
@@ -25,7 +30,18 @@ export interface ProtocolRange {
 }
 
 /** Errors a host answers with. Unknown codes from a newer host are read as "internal". */
-export const HOST_ERROR_CODES = ["unsupported-protocol", "protocol-mismatch", "bad-session", "bad-request", "not-ready", "internal"] as const;
+export const HOST_ERROR_CODES = [
+  "unsupported-protocol",
+  "protocol-mismatch",
+  "bad-session",
+  "bad-request",
+  "not-ready",
+  "internal",
+  // protocol 2
+  "unsupported-capability",
+  "no-such-document",
+  "document-changed",
+] as const;
 export type HostErrorCode = (typeof HOST_ERROR_CODES)[number];
 
 export interface HostError {
@@ -52,7 +68,8 @@ export interface HelloRequest {
   id: string;
   session: string;
   type: "hello";
-  payload: { editor: Described & { build: string }; protocol: ProtocolRange };
+  /** `capabilities` (protocol 2): what the editor can do for the host beyond the basics, for example "document.open". Omitted by a v1-only editor. */
+  payload: { editor: Described & { build: string }; protocol: ProtocolRange; capabilities?: string[] };
 }
 export interface ReadyRequest {
   id: string;
@@ -75,7 +92,55 @@ export interface PongRequest {
   protocol: number;
   payload: { inReplyTo: string };
 }
-export type HostRequest = HelloRequest | ReadyRequest | PingRequest | PongRequest;
+
+// --- protocol 2: documents -------------------------------------------------------------------------------------------------------------
+
+/** What the editor reports while it opens a document. */
+export type DocumentPhase = "transfer" | "unpack" | "build";
+/** Why an open failed, as the editor reports it. */
+export const DOCUMENT_FAILURE_CODES = ["transfer-failed", "invalid-package", "unsupported-version", "out-of-memory", "cancelled", "internal"] as const;
+export type DocumentFailureCode = (typeof DOCUMENT_FAILURE_CODES)[number];
+
+export interface DocumentRequest {
+  id: string;
+  session: string;
+  type: "document.request";
+  protocol: number;
+  payload: Record<string, never>;
+}
+export interface DocumentProgressRequest {
+  id: string;
+  session: string;
+  type: "document.progress";
+  protocol: number;
+  payload: { documentId: string; phase: DocumentPhase; loaded?: number; total?: number };
+}
+export interface DocumentOpenedRequest {
+  id: string;
+  session: string;
+  type: "document.opened";
+  protocol: number;
+  payload: {
+    documentId: string;
+    /** The project id the document carries (a file's metadata.projectId, or one made for a new document): document metadata, distinct from the transient runtime id. */
+    projectId: string | null;
+    projectName: string;
+    stats: { rootObjects: number; historyStates: number };
+    timings: { transferMs: number; importMs: number; hydrateMs: number };
+    /** Mesh relief (cadMeshRelief.ts): how many bodies it re-meshed while opening. Reported, never silent. */
+    meshRelief: { bodies: number };
+    /** Always false: nothing was written to the browser library. */
+    repack: false;
+  };
+}
+export interface DocumentFailedRequest {
+  id: string;
+  session: string;
+  type: "document.failed";
+  protocol: number;
+  payload: { documentId: string; code: DocumentFailureCode; message: string };
+}
+export type HostRequest = HelloRequest | ReadyRequest | PingRequest | PongRequest | DocumentRequest | DocumentProgressRequest | DocumentOpenedRequest | DocumentFailedRequest;
 
 // --- host -> editor ---------------------------------------------------------------------------------------------------------------------
 
@@ -85,7 +150,16 @@ export interface HelloOk {
   host: Described;
   capabilities: string[];
 }
-export type OkTypeFor = { hello: "hello.ok"; ready: "ready.ok"; ping: "ping.ok"; pong: "pong.ok" };
+export type OkTypeFor = {
+  hello: "hello.ok";
+  ready: "ready.ok";
+  ping: "ping.ok";
+  pong: "pong.ok";
+  "document.request": "document.request.ok";
+  "document.progress": "document.progress.ok";
+  "document.opened": "document.opened.ok";
+  "document.failed": "document.failed.ok";
+};
 
 export type ParsedResponse =
   | { kind: "ok"; type: string; payload: Record<string, unknown> }
@@ -93,13 +167,10 @@ export type ParsedResponse =
   | { kind: "invalid"; reason: string };
 
 /** Pushed by the host through `window.layerlingHostBridge.receive(event)`. The editor answers a ping with a "pong" request. */
-export interface HostEvent {
-  session: string;
-  protocol: number;
-  id: string;
-  type: "ping";
-  payload: Record<string, never>;
-}
+export type HostEvent =
+  | { session: string; protocol: number; id: string; type: "ping"; payload: Record<string, never> }
+  /** Protocol 2: the host is closing or reloading the document; the editor abandons an open in progress. */
+  | { session: string; protocol: number; id: string; type: "document.cancel"; payload: { documentId: string } };
 
 // --- pure helpers -----------------------------------------------------------------------------------------------------------------------
 
@@ -162,7 +233,11 @@ export function parseHelloOk(payload: Record<string, unknown>): HelloOk | null {
 export function parseHostEvent(value: unknown): HostEvent | { invalid: string } {
   if (!isRecord(value)) return { invalid: "event is not an object" };
   if (!isText(value.session) || !isVersionNumber(value.protocol) || !isText(value.id)) return { invalid: "event needs session, protocol and id" };
-  if (value.type !== "ping") return { invalid: `unknown event type "${String(value.type)}"` };
   if (!isRecord(value.payload)) return { invalid: "event has no payload object" };
-  return { session: value.session, protocol: value.protocol, id: value.id, type: "ping", payload: {} };
+  if (value.type === "ping") return { session: value.session, protocol: value.protocol, id: value.id, type: "ping", payload: {} };
+  if (value.type === "document.cancel") {
+    if (!isText(value.payload.documentId)) return { invalid: "document.cancel needs a documentId" };
+    return { session: value.session, protocol: value.protocol, id: value.id, type: "document.cancel", payload: { documentId: value.payload.documentId } };
+  }
+  return { invalid: `unknown event type "${String(value.type)}"` };
 }

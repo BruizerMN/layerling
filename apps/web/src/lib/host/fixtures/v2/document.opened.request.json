@@ -1,0 +1,1 @@
+{"id":"e4","session":"11111111-2222-3333-4444-555555555555","type":"document.opened","protocol":2,"payload":{"documentId":"d0c00002-aaaa-4bbb-8ccc-000000000002","projectId":"project-original-id","projectName":"Foshay","stats":{"rootObjects":182,"historyStates":8},"timings":{"transferMs":50,"importMs":9000,"hydrateMs":100},"meshRelief":{"bodies":0},"repack":false}}

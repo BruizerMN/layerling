@@ -3064,6 +3064,7 @@ export function LayerlingEditor({
   initialWorkspace,
   initialPlacementElevation = 0,
   initialPlacementWorkplane,
+  nativeDocument = null,
   onHome,
   onOpenLylProjectFile,
   onBackUpAllDesigns,
@@ -3099,6 +3100,12 @@ export function LayerlingEditor({
   initialWorkspace?: WorkplaneWorkspaceSettings;
   initialPlacementElevation?: number;
   initialPlacementWorkplane?: PlacementWorkplane;
+  /**
+   * Set by the native host's document window (components/NativeDocumentShell.tsx), never in a browser. The document belongs to the host, which
+   * cannot save it yet: writing the design out as a .lyl is turned off here (it would look like a save and save nothing), and the automatic
+   * "Earlier versions" snapshots, which repack the design into browser storage, do not run.
+   */
+  nativeDocument?: { fileName: string | null } | null;
   onHome?: (leaving: { itemCount: number }) => void;
   onOpenLylProjectFile?: (file: File, shared?: undefined, fileHandle?: LylFileHandle, options?: { name?: string; onSlow?: (message: string) => void }) => Promise<{ ok: boolean; message: string } | void> | { ok: boolean; message: string } | void;
   /** "Back up all" of the start page, for the reminder in the status line; it starts with the save dialog. */
@@ -17860,6 +17867,10 @@ export function LayerlingEditor({
   }, [deliverExportFile, exportSource, projectName, stepExporting]);
 
   const exportLylDesign = useCallback(async (exportName: string, historyLimit: LylHistoryLimit, target: LylExportTarget = "download", preparedBytes?: Uint8Array): Promise<void> => {
+    if (nativeDocument) {
+      setNotice("This document cannot be saved yet. Saving arrives in a later version of HundchenLayerling; until then, changes live only in this window.", true);
+      return;
+    }
     if (lylExporting) return;
     if (target === "shared" && !onSaveSharedProject) {
       setNotice(t("status.sharedUnavailable"), true);
@@ -18086,7 +18097,8 @@ export function LayerlingEditor({
     }
   };
   useEffect(() => {
-    if (!editorOpen) return;
+    // A native document has no browser snapshots: they repack the design into browser storage, and recovery will be the host's.
+    if (!editorOpen || nativeDocument) return;
     // The design as it opened is no change; the first snapshot comes after the first minutes of work.
     snapshotSourceRef.current = { shapes: shapesRef.current, notes: notesRef.current };
     snapshotAtRef.current = Date.now();
@@ -20615,6 +20627,7 @@ export function LayerlingEditor({
           onExport={(format, exportName, chooseFile, svgView, toServer, bridges) => void exportDesign(format, exportName, chooseFile, svgView, toServer, bridges)}
           stlFileName={topPanel === "export" && !workspaceSettings.stlAsDownload ? linkedStlFile(projectId ?? "")?.name ?? null : null}
           onExportLyl={exportLylDesign}
+          hideLylExport={Boolean(nativeDocument)}
           onExportStep={exportStepDesign}
           onExportDrawing={exportDrawingDesign}
           drawingExporting={drawingExporting}
