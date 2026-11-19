@@ -18,6 +18,7 @@ import "./dashboardSelect.css";
 import "./focusMode.css";
 import "./fileBackups.css";
 import { DiagnoseStrip } from "@/components/DiagnoseStrip";
+import { HostBridge } from "@/components/HostBridge";
 import { HtmlSettingsRestore } from "@/components/HtmlSettingsRestore";
 import { NewVersionNotice } from "@/components/NewVersionNotice";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
@@ -136,6 +137,7 @@ export default function RootLayout({
         <HtmlSettingsRestore />
         {children}
         <ServiceWorkerRegistration />
+        <HostBridge />
         <DiagnoseStrip />
         <NewVersionNotice />
       </body>

@@ -1,0 +1,1 @@
+{"id":"e1","ok":false,"error":{"code":"unsupported-protocol","message":"This host speaks protocol 2-3 only.","supported":{"min":2,"max":3}}}
