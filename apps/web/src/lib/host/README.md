@@ -68,3 +68,21 @@ New errors: `unsupported-capability`, `no-such-document`, `document-changed`. Th
 **Opening.** `lib/host/nativeDocumentLoader.ts`: the existing `importLylProject`, then the existing `relieveOverFineCadMeshes` (reported as `meshRelief.bodies`), then the editor is handed the in-memory scene. Nothing is written to IndexedDB, the project list or thumbnails; per-document camera/saved views/framing squares/tape live in memory for transient ids (`lib/host/transientProject.ts`); the automatic "Earlier versions" snapshots and the .lyl export are off for native documents (`LayerlingEditor nativeDocument` prop).
 
 Fixtures: `fixtures/v2/` (together with `fixtures/v1/`, unchanged).
+
+## Protocol v3: saving
+
+Capability `document.save` (offered in `hello` next to `document.open`; granted only with protocol >= 3). v1/v2 are unchanged.
+
+| Direction | Message | Payload |
+|---|---|---|
+| editor -> host | `document.changed` | `{documentId, revision, dirty}`: the persistent content changed or the dirty flag flipped (coalesced per tick) |
+| host -> editor | event `document.save` | `{documentId, saveId, uploadToken, fileName, reason}` |
+| editor -> host | `document.save.progress` | `{documentId, saveId, phase: wait|snapshot|serialize|compress|upload, loaded?, total?}` |
+| editor -> host | POST `layerling://app/__host__/save/<uploadToken>?offset=N` | raw bytes, 8 MiB sequential chunks; `200 {"next": N+len}`; wrong offset `409` |
+| editor -> host | `document.save.commit` | `{documentId, saveId, revision, signature, byteLength, sha256, stats, timings, thumbnail}`; the host answers `save-rejected` when byte count, SHA-256 or ZIP structure do not verify |
+| editor -> host | `document.save.failed` | `{documentId, saveId, code, message}` (`serialize-failed`, `too-large`, `out-of-memory`, `cancelled`, `interaction-timeout`, `upload-failed`, `internal`) |
+| host -> editor | events `document.save.cancel`, `document.saved {revision, signature, fileName}`, `document.renamed {fileName}`, `document.externalChange` | |
+
+The editor packages **its current state only** (one history entry, ZIP level 1, the document's own project id, camera/saved views/rulers/tape passed explicitly, a best-effort `thumbnail.png`) with the unchanged `exportLylProject`, from an immutable snapshot taken in one synchronous block; edits made while it packages stay unsaved. The dirty flag is `signature != savedSignature`, where the signature is built from the current history entry's existing fingerprint plus attachments, document settings (not preferences, see `documentRevision.ts`), saved views, rulers and tape: undoing back to the saved content is clean again; camera moves and selection never count. The native file name is authoritative (`document.renamed`); the editor's project-name field is read-only without a rename callback.
+
+Fixtures: `fixtures/v3/`.
