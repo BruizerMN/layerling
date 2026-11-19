@@ -41,6 +41,10 @@ ARCHIVE="layerling-static-$VER-$C9.tar.gz"
 ( cd "$OUT" && tar --sort=name --mtime="@$(git -C "$HOME/bin/layerling" show -s --format=%ct HEAD)" --owner=0 --group=0 --numeric-owner -cf - site | gzip -n -9 > "$ARCHIVE" )
 ( cd "$OUT" && sha256sum "$ARCHIVE" > "$ARCHIVE.sha256" )
 SHA="$(cut -d' ' -f1 "$OUT/$ARCHIVE.sha256")"
+# Host protocol range this editor speaks (single source: the constants in hostProtocol.ts).
+HP_MIN="$(grep -oP "^export const HOST_PROTOCOL_MIN = \K[0-9]+" apps/web/src/lib/host/hostProtocol.ts)"
+HP_MAX="$(grep -oP "^export const HOST_PROTOCOL_MAX = \K[0-9]+" apps/web/src/lib/host/hostProtocol.ts)"
+[ -n "$HP_MIN" ] && [ -n "$HP_MAX" ] || { echo "cannot read host protocol range" >&2; exit 1; }
 cat > "$OUT/MANIFEST.json" <<EOF
 {
   "artifact": "$ARCHIVE",
@@ -50,6 +54,7 @@ cat > "$OUT/MANIFEST.json" <<EOF
   "source_commit": "$COMMIT",
   "layerling_version": "$VER",
   "build_id": "$C9",
+  "host_protocol": { "min": $HP_MIN, "max": $HP_MAX },
   "node": "$(node -v)", "npm": "$(npm -v)", "next": "$(node -p 'require("next/package.json").version')",
   "files": $(wc -l < "$OUT/SHA256SUMS-files.txt"),
   "site_bytes": $(du -sb "$OUT/site" | cut -f1),
