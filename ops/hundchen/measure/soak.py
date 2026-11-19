@@ -9,7 +9,7 @@ A run that does not become ready is NOT retried and NOT dropped: diagnostics are
 WebContent process, a snapshot) and it is classified as a product stall or a harness/environment failure.
 Output: runs/<label>/soak.jsonl (one line per run) and a summary on stdout.
 """
-import argparse, json, pathlib, shutil, statistics, subprocess, sys, time, uuid
+import argparse, json, os, pathlib, shutil, statistics, subprocess, sys, time, uuid
 import run_measure as rm
 
 H = rm.H
@@ -35,6 +35,8 @@ class OpenRun(rm.Run):
             time.sleep(4)
             self.out["peak_mb"] = self.peak(o, r + 4); self.out["at_ready_mb"] = self.at(r); self.out["settled_mb"] = self.at(r + 4)
             self.out["workers"] = self.runjs("worker-stats.js", 30)
+            ph = (self.out["workers"] or {}).get("phase") or []
+            self.out["page_visible_at_start"] = bool(ph) and "vis=visible" in ph[0][1]
             if verify:
                 sa = self.saveas; res = self.work / "control" / "save.out.json"; res.unlink(missing_ok=True)
                 self.request("saveas.request", str(sa)); self.wait(res.exists, 240, "save as")
@@ -47,10 +49,13 @@ class OpenRun(rm.Run):
             rm.sh("pkill", "-x", "LayerlingHarness")
         if verify and status == "ok":
             r = rm.sh(sys.executable, H / "compare_lyl.py", self.doc, self.saveas, "--baseline", H / "baseline-foshay.json", "--expect-added", "0", "--json", capture_output=True, text=True)
-            try: self.saveas.unlink()  # the big verification file is not kept; its verdict is
-            except OSError: pass
+            if os.environ.get("KEEP_SAVEAS") != "1":
+              try: self.saveas.unlink()  # the big verification file is not kept; its verdict is
+              except OSError: pass
             self.out["fidelity_pass"] = r.returncode == 0
             if r.returncode != 0: status = "fidelity-fail"
+        if status == "ok" and self.out.get("page_visible_at_start") is False: status = "invalid-environment"
+        if status == "stall" and (diag or {}).get("class", "").startswith("environment"): status = "invalid-environment"
         self.out["status"] = status
         if diag: self.out["diagnosis"] = diag
         (self.dir / "summary.json").write_text(json.dumps(self.out, indent=1))
@@ -70,7 +75,10 @@ class OpenRun(rm.Run):
                 (self.dir / "webcontent-sample.txt").write_text(s)
                 d["sample_saved"] = True
         except Exception as e: d["memory_error"] = str(e)[:80]
-        if not d["page_loaded"]: d["class"] = "harness: app did not reach page load"
+        ph = (d.get("page") or {}).get("phase") or []
+        d["page_visible_at_start"] = bool(ph) and "vis=visible" in ph[0][1]
+        if ph and not d["page_visible_at_start"]: d["class"] = "environment: the host page was HIDDEN (window not on the active Space / covered?): not a valid run"
+        elif not d["page_loaded"]: d["class"] = "harness: app did not reach page load"
         elif not d["open_issued"]: d["class"] = "harness: open request never issued"
         elif d["webcontent_terminated"]: d["class"] = "product/environment: WebContent process terminated (memory?)"
         elif not d["page_responsive"]: d["class"] = "product: page unresponsive"
@@ -124,6 +132,9 @@ if __name__ == "__main__":
         r.out["env"] = rm.Run.env()
         o = r.open_once(a.extra, a.timeout, verify)
         results.append(o)
+        if o["status"] == "invalid-environment":
+            print("INVALID ENVIRONMENT: the page was hidden; stopping so this is fixed rather than counted. Check the window[...] log line (activeSpace/occlusionVisible).", flush=True)
+            (outdir / "STOP").write_text("invalid environment\n")
         state["attempts"] += 1
         if o["status"] == "ok": state["ok"] += 1
         else: state["failures"].append({"attempt": n, "status": o["status"], "dir": r.dir.name, "class": (o.get("diagnosis") or {}).get("class")})

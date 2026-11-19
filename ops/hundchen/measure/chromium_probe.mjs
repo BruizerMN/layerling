@@ -65,13 +65,17 @@ try {
     if (!nodeId) throw new Error("no file input on the start page");
     const t0 = Date.now();
     await send(ws, "DOM.setFileInputFiles", { nodeId, files: [args.file] });
+    if (args.background) { // switch to another tab right after the open starts, so the page under test is hidden (background-tab throttling)
+      await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" });
+      out.background = true;
+    }
     const waitMs = Number(args["open-wait-ms"] ?? 240000);
     let ready = false;
     while (Date.now() - t0 < waitMs) {
       ready = await evaluate(ws, `return !!(document.querySelector('canvas') && [...document.querySelectorAll('button')].some(x => x.getAttribute('aria-label') === 'Add shape'))`, 20000);
       if (ready === true) break; await sleep(500);
     }
-    out.open = { ready, ms: Date.now() - t0, rssPeakMB: Math.round(peak.total), rendererPeakMB: Math.round(peak.renderer) };
+    out.open = { ready, hiddenState: await evaluate(ws, "return document.visibilityState", 20000), ms: Date.now() - t0, rssPeakMB: Math.round(peak.total), rendererPeakMB: Math.round(peak.renderer) };
     await sleep(8000); const m = rssMB(); out.open.settledMB = Math.round(m.total); out.open.settledRendererMB = Math.round(m.renderer);
   }
   if (args.probe) out.probe = await evaluate(ws, fs.readFileSync(args.probe, "utf8"));
