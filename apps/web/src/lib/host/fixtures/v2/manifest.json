@@ -1,0 +1,86 @@
+{
+  "protocol": 2,
+  "note": "Canonical messages added by host protocol v2 (documents). Used together with fixtures/v1 (the v1 messages are unchanged). Tested by the editor (tests/unit/hostProtocol.test.ts, hostBridge.test.ts) and the native host (HostProtocolTests).",
+  "fixtures": [
+    {
+      "file": "bootstrap.json",
+      "kind": "bootstrap",
+      "direction": "host-injected"
+    },
+    {
+      "file": "hello.request.json",
+      "kind": "request",
+      "direction": "editor"
+    },
+    {
+      "file": "hello.ok.response.json",
+      "kind": "response",
+      "direction": "host"
+    },
+    {
+      "file": "hello.v1-fallback.ok.response.json",
+      "kind": "response",
+      "direction": "host"
+    },
+    {
+      "file": "document.request.json",
+      "kind": "request",
+      "direction": "editor"
+    },
+    {
+      "file": "document.request.new.ok.response.json",
+      "kind": "response",
+      "direction": "host"
+    },
+    {
+      "file": "document.request.file.ok.response.json",
+      "kind": "response",
+      "direction": "host"
+    },
+    {
+      "file": "document.progress.request.json",
+      "kind": "request",
+      "direction": "editor"
+    },
+    {
+      "file": "document.progress.ok.response.json",
+      "kind": "response",
+      "direction": "host"
+    },
+    {
+      "file": "document.opened.request.json",
+      "kind": "request",
+      "direction": "editor"
+    },
+    {
+      "file": "document.opened.ok.response.json",
+      "kind": "response",
+      "direction": "host"
+    },
+    {
+      "file": "document.failed.request.json",
+      "kind": "request",
+      "direction": "editor"
+    },
+    {
+      "file": "document.failed.ok.response.json",
+      "kind": "response",
+      "direction": "host"
+    },
+    {
+      "file": "document.cancel.event.json",
+      "kind": "event",
+      "direction": "host"
+    },
+    {
+      "file": "error.unsupported-capability.response.json",
+      "kind": "response",
+      "direction": "host"
+    },
+    {
+      "file": "error.no-such-document.response.json",
+      "kind": "response",
+      "direction": "host"
+    }
+  ]
+}

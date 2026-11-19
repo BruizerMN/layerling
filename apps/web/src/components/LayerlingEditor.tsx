@@ -194,6 +194,7 @@ import { revolveAxisShift } from "@/lib/revolveAxis";
 import { buildSketchRevolveMesh, DEFAULT_SKETCH_REVOLVE_SETTINGS, normalizeSketchRevolveSettings, type SketchRevolveMesh } from "@/lib/sketchRevolve";
 import { AppFooter } from "@/components/AppFooter";
 import { useFileAccept } from "@/lib/fileAccept";
+import { NATIVE_SAVE_UNAVAILABLE } from "@/lib/host/nativeStrings";
 import { exportLylProject, LYL_CREATED_WITH_VERSION, LYL_MEDIA_TYPE, lylThumbnailFiles } from "@/lib/lylProject";
 import { saveWithLessHistoryIfNeeded } from "@/lib/historyTrim";
 import { projectThumbnailPngBytes } from "@/lib/backupDownload";
@@ -3064,6 +3065,8 @@ export function LayerlingEditor({
   initialWorkspace,
   initialPlacementElevation = 0,
   initialPlacementWorkplane,
+  nativeDocument = null,
+  onNativeDocumentReady,
   onHome,
   onOpenLylProjectFile,
   onBackUpAllDesigns,
@@ -3099,6 +3102,14 @@ export function LayerlingEditor({
   initialWorkspace?: WorkplaneWorkspaceSettings;
   initialPlacementElevation?: number;
   initialPlacementWorkplane?: PlacementWorkplane;
+  /**
+   * Set by the native host's document window (components/NativeDocumentShell.tsx), never in a browser. The document belongs to the host, which
+   * cannot save it yet: writing the design out as a .lyl is turned off here (it would look like a save and save nothing), and the automatic
+   * "Earlier versions" snapshots, which repack the design into browser storage, do not run.
+   */
+  nativeDocument?: { fileName: string | null } | null;
+  /** Native documents only: called once the editor has mounted and drawn its first frame (or after 2 s if the page is not being drawn). */
+  onNativeDocumentReady?: () => void;
   onHome?: (leaving: { itemCount: number }) => void;
   onOpenLylProjectFile?: (file: File, shared?: undefined, fileHandle?: LylFileHandle, options?: { name?: string; onSlow?: (message: string) => void }) => Promise<{ ok: boolean; message: string } | void> | { ok: boolean; message: string } | void;
   /** "Back up all" of the start page, for the reminder in the status line; it starts with the save dialog. */
@@ -4916,6 +4927,25 @@ export function LayerlingEditor({
     else setRotationPivot({ selectionKey, point });
     setNotice(t("status.pivotSet"));
   }, [ownPivotShape, selectionKey]);
+
+  // The host is told the document is open once the editor is on screen, not once the data is parsed.
+  useEffect(() => {
+    if (!nativeDocument || !onNativeDocumentReady) return;
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      onNativeDocumentReady();
+    };
+    const timer = window.setTimeout(finish, 2000);
+    const frame = window.requestAnimationFrame(() => window.requestAnimationFrame(finish));
+    return () => {
+      window.clearTimeout(timer);
+      window.cancelAnimationFrame(frame);
+    };
+    // Once per mounted document.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Hands the shapes to the page above, which writes them to the browser's storage. */
   const emitProjectShapes = useCallback(
@@ -17860,6 +17890,10 @@ export function LayerlingEditor({
   }, [deliverExportFile, exportSource, projectName, stepExporting]);
 
   const exportLylDesign = useCallback(async (exportName: string, historyLimit: LylHistoryLimit, target: LylExportTarget = "download", preparedBytes?: Uint8Array): Promise<void> => {
+    if (nativeDocument) {
+      setNotice(NATIVE_SAVE_UNAVAILABLE, true);
+      return;
+    }
     if (lylExporting) return;
     if (target === "shared" && !onSaveSharedProject) {
       setNotice(t("status.sharedUnavailable"), true);
@@ -18086,7 +18120,8 @@ export function LayerlingEditor({
     }
   };
   useEffect(() => {
-    if (!editorOpen) return;
+    // A native document has no browser snapshots: they repack the design into browser storage, and recovery will be the host's.
+    if (!editorOpen || nativeDocument) return;
     // The design as it opened is no change; the first snapshot comes after the first minutes of work.
     snapshotSourceRef.current = { shapes: shapesRef.current, notes: notesRef.current };
     snapshotAtRef.current = Date.now();
@@ -20615,6 +20650,7 @@ export function LayerlingEditor({
           onExport={(format, exportName, chooseFile, svgView, toServer, bridges) => void exportDesign(format, exportName, chooseFile, svgView, toServer, bridges)}
           stlFileName={topPanel === "export" && !workspaceSettings.stlAsDownload ? linkedStlFile(projectId ?? "")?.name ?? null : null}
           onExportLyl={exportLylDesign}
+          hideLylExport={Boolean(nativeDocument)}
           onExportStep={exportStepDesign}
           onExportDrawing={exportDrawingDesign}
           drawingExporting={drawingExporting}

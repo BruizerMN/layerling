@@ -34,8 +34,8 @@ import {
 } from "@/lib/designFolders";
 import dynamic from "next/dynamic";
 import { importFailureReason, importFailureSummary, importModelFiles } from "@/lib/modelImport";
-import { loadTextFonts } from "@/lib/textFonts";
-import { loadStoredCustomFonts } from "@/lib/customFontStore";
+import { loadEditorModule } from "@/lib/editorModuleLoader";
+import { NativeDocumentShell } from "@/components/NativeDocumentShell";
 import { fetchServerDefaults, type NewDesignsOnServerSetting } from "@/lib/serverDefaults";
 import { setServerSimpleMode } from "@/lib/simpleMode";
 import { useSimpleMode } from "@/lib/useSimpleMode";
@@ -314,26 +314,6 @@ const EDITOR_SKELETON_MIN_DURATION_MS = 320;
  * geometry is built synchronously inside the editor. A failed attempt is
  * dropped so the next one fetches again.
  */
-let editorModulePromise: Promise<typeof import("@/components/LayerlingEditor")> | null = null;
-
-function loadEditorModule() {
-  // Fonts of one's own kept in this browser come along; without them the built-in ones still work.
-  editorModulePromise ??= Promise.all([
-    import("@/components/LayerlingEditor"),
-    loadTextFonts(),
-    loadStoredCustomFonts(),
-    // The 2D kernel builds the wider layers of a name tag and every text fill (#215); drawn before
-    // it is there, such a text stands as plain letters for a moment. It comes with the editor
-    // (0.6 MB, kept by the browser); should it fail, the editor opens and texts ask for it again.
-    import("@/lib/editorMeshCore").then((core) => core.getManifoldRuntime()).catch(() => undefined),
-  ])
-    .then(([editorModule]) => editorModule)
-    .catch((error) => {
-      editorModulePromise = null;
-      throw error;
-    });
-  return editorModulePromise;
-}
 
 const LayerlingEditor = dynamic(() => loadEditorModule().then((editorModule) => editorModule.LayerlingEditor), {
   ssr: false,
@@ -962,7 +942,7 @@ function projectNameFromFileName(fileName: string) {
   return fileName.replace(/\.[^.]+$/, "").trim() || "Imported design";
 }
 
-export default function Home() {
+function BrowserHome() {
   useLanguage();
   const [mounted, setMounted] = useState(false);
   // The project-list mirror in a hidden element is built only when asked for (?debugState=1; see lib/debugState.ts).
@@ -5390,4 +5370,18 @@ function StaticIntro() {
       </noscript>
     </main>
   );
+}
+
+/**
+ * The route. Served from the native host's own scheme (layerling:, only ever the HundchenLayerling app), the page is a document window: no
+ * start page, no browser library (components/NativeDocumentShell.tsx). Anywhere else it is the browser app exactly as before.
+ * The choice is made after mount so the browser start page's effects never run in a native window (and the static HTML stays what it was).
+ */
+export default function Page() {
+  const [mode, setMode] = useState<"pending" | "native" | "browser">("pending");
+  useEffect(() => {
+    setMode(window.location.protocol === "layerling:" ? "native" : "browser");
+  }, []);
+  if (mode === "pending") return <StaticIntro />;
+  return mode === "native" ? <NativeDocumentShell /> : <BrowserHome />;
 }

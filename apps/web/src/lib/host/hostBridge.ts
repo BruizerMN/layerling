@@ -1,5 +1,7 @@
 import {
   EDITOR_NAME,
+  DOCUMENT_CAPABILITY,
+  DOCUMENT_PROTOCOL_MIN,
   HOST_BOOTSTRAP_KEY,
   HOST_HANDLER_NAME,
   HOST_PROTOCOL_MAX,
@@ -12,6 +14,7 @@ import {
   parseHostEvent,
   parseHostResponse,
   type Described,
+  type HostEvent,
   type HostErrorCode,
   type HostRequest,
   type ProtocolRange,
@@ -87,6 +90,10 @@ export function readHostEnvironment(win: HostWindow | undefined): HostEnvironmen
 export interface HostBridgeOptions {
   editorVersion: string;
   editorBuild: string;
+  /** The protocol versions this bridge offers (default: everything this editor speaks). Tests use it to play a v1-only editor. */
+  range?: ProtocolRange;
+  /** Capabilities offered to the host in `hello` (protocol 2), for example "document.open". Omitted from `hello` when empty. */
+  capabilities?: string[];
   /** How long a reply may take before the attempt is recorded as failed (default 5000 ms). It only decides the failure; it gates nothing else. */
   timeoutMs?: number;
 }
@@ -95,6 +102,15 @@ export interface HostBridge {
   connect(): Promise<HostConnection>;
   markReady(): Promise<HostConnection>;
   ping(): Promise<{ ok: true; roundTripMs: number } | { ok: false; failure: HostFailure }>;
+  /**
+   * Sends a protocol 2 document message and returns the host's success payload or the failure. Refused locally (nothing is posted) unless the
+   * handshake negotiated protocol 2 AND the host granted the document capability.
+   */
+  send(type: DocumentMessageType, payload: Record<string, unknown>): Promise<{ ok: true; payload: Record<string, unknown> } | { ok: false; failure: HostFailure }>;
+  /** Host events other than ping (protocol 2: "document.cancel"). */
+  onEvent(listener: (event: HostEvent) => void): () => void;
+  /** True once connected with protocol 2 and the document capability granted. */
+  supportsDocuments(): boolean;
   getConnection(): HostConnection;
   subscribe(listener: (connection: HostConnection) => void): () => void;
   dispose(): void;
@@ -118,8 +134,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+export type DocumentMessageType = "document.request" | "document.progress" | "document.opened" | "document.failed";
+
 export function createHostBridge(env: HostEnvironment | null, options: HostBridgeOptions): HostBridge {
-  const editorRange: ProtocolRange = { min: HOST_PROTOCOL_MIN, max: HOST_PROTOCOL_MAX };
+  const editorRange: ProtocolRange = options.range ?? { min: HOST_PROTOCOL_MIN, max: HOST_PROTOCOL_MAX };
+  const offered = options.capabilities ?? [];
+  const eventListeners = new Set<(event: HostEvent) => void>();
   const timeoutMs = options.timeoutMs ?? 5000;
   let connection: HostConnection = { state: "inactive" };
   const listeners = new Set<(c: HostConnection) => void>();
@@ -156,12 +176,21 @@ export function createHostBridge(env: HostEnvironment | null, options: HostBridg
     return { kind: "ok", payload: parsed.payload };
   }
 
+  const documentsGranted = () =>
+    (connection.state === "connected" || connection.state === "ready") && negotiated >= DOCUMENT_PROTOCOL_MIN && connection.capabilities.includes(DOCUMENT_CAPABILITY);
+
   const receive: HostReceiver = (event) => {
     if (connection.state !== "connected" && connection.state !== "ready") return { ok: false, code: "not-ready", message: "handshake not complete" };
     const parsed = parseHostEvent(event);
     if ("invalid" in parsed) return { ok: false, code: "bad-request", message: parsed.invalid };
     if (parsed.session !== session) return { ok: false, code: "bad-session", message: "session does not match" };
     if (parsed.protocol !== negotiated) return { ok: false, code: "protocol-mismatch", message: `negotiated ${negotiated}, event says ${parsed.protocol}` };
+    if (parsed.type === "document.cancel") {
+      if (!documentsGranted()) return { ok: false, code: "bad-request", message: "document events were not negotiated" };
+      env?.log("debug", `host event document.cancel ${parsed.payload.documentId}`);
+      eventListeners.forEach((listener) => listener(parsed));
+      return { ok: true };
+    }
     env?.log("debug", `host ping ${parsed.id} -> pong`);
     // Answer with a request the host acknowledges; a failure is logged, never thrown into the host's script call.
     void exchange({ id: nextId(), session, type: "pong", protocol: negotiated, payload: { inReplyTo: parsed.id } }, "pong.ok").then((outcome) => {
@@ -179,7 +208,7 @@ export function createHostBridge(env: HostEnvironment | null, options: HostBridg
       session = bootstrap.session;
       env.log("debug", `hello -> ${bootstrap.host.name} ${bootstrap.host.version} (host speaks ${bootstrap.protocol.min}-${bootstrap.protocol.max}, editor ${editorRange.min}-${editorRange.max})`);
       const outcome = await exchange(
-        { id: nextId(), session, type: "hello", payload: { editor: { name: EDITOR_NAME, version: options.editorVersion, build: options.editorBuild }, protocol: editorRange } },
+        { id: nextId(), session, type: "hello", payload: { editor: { name: EDITOR_NAME, version: options.editorVersion, build: options.editorBuild }, protocol: editorRange, ...(offered.length > 0 ? { capabilities: offered } : {}) } },
         "hello.ok",
       );
       if (outcome.kind === "failed") return fail(outcome.failure);
@@ -212,6 +241,18 @@ export function createHostBridge(env: HostEnvironment | null, options: HostBridg
       return { ok: true as const, roundTripMs: Date.now() - sentAt };
     },
 
+    async send(type, payload) {
+      if (!documentsGranted()) return { ok: false as const, failure: { code: "unsupported-capability" as const, message: "the host did not grant document support" } };
+      const request = { id: nextId(), session, type, protocol: negotiated, payload } as HostRequest;
+      const outcome = await exchange(request, `${type}.ok`);
+      return outcome.kind === "ok" ? { ok: true as const, payload: outcome.payload } : { ok: false as const, failure: outcome.failure };
+    },
+    onEvent(listener) {
+      eventListeners.add(listener);
+      return () => eventListeners.delete(listener);
+    },
+    supportsDocuments: documentsGranted,
+
     getConnection: () => connection,
     subscribe(listener) {
       listeners.add(listener);
@@ -221,11 +262,19 @@ export function createHostBridge(env: HostEnvironment | null, options: HostBridg
       removeReceiver?.();
       removeReceiver = null;
       listeners.clear();
+      eventListeners.clear();
     },
   };
 }
 
 let activeBridge: HostBridge | null = null;
+const bridgeListeners = new Set<(bridge: HostBridge | null) => void>();
+
+/** Told when the bridge appears or goes away (a page can render before the layout's effect has started it). Never fires in a browser. */
+export function subscribeToHostBridge(listener: (bridge: HostBridge | null) => void): () => void {
+  bridgeListeners.add(listener);
+  return () => bridgeListeners.delete(listener);
+}
 
 /** The running bridge, or null when no native host is present (always null in a browser). */
 export function getHostBridge(): HostBridge | null {
@@ -244,11 +293,16 @@ export function startHostBridge(win?: HostWindow): () => void {
   const bridge = createHostBridge(env, {
     editorVersion: process.env.NEXT_PUBLIC_APP_VERSION ?? "unknown",
     editorBuild: process.env.NEXT_PUBLIC_BUILD_ID ?? "unknown",
+    capabilities: [DOCUMENT_CAPABILITY],
   });
   activeBridge = bridge;
+  bridgeListeners.forEach((listener) => listener(bridge));
   void bridge.connect().then((connection) => (connection.state === "connected" ? bridge.markReady() : connection));
   return () => {
     bridge.dispose();
-    if (activeBridge === bridge) activeBridge = null;
+    if (activeBridge === bridge) {
+      activeBridge = null;
+      bridgeListeners.forEach((listener) => listener(null));
+    }
   };
 }

@@ -6,7 +6,8 @@ import { HOST_BOOTSTRAP_KEY, HOST_HANDLER_NAME, HOST_RECEIVER_KEY, type HostRequ
 
 const fixtureDir = path.resolve(__dirname, "../../apps/web/src/lib/host/fixtures/v1");
 const fixture = (name: string) => JSON.parse(readFileSync(path.join(fixtureDir, name), "utf8")) as Record<string, unknown>;
-const options = { editorVersion: "1.165.2", editorBuild: "abc123def" };
+// The v1 tests play a v1-only editor (the shared v1 fixtures); protocol 2 is tested in hostDocumentProtocol.test.ts.
+const options = { editorVersion: "1.165.2", editorBuild: "abc123def", range: { min: 1, max: 1 } };
 
 /** The host's normal answers, built on the request's id. */
 function defaultReply(request: HostRequest): unknown {

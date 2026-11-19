@@ -1,3 +1,4 @@
+import { projectStorage } from "@/lib/host/transientProject";
 /**
  * The measurements of the tape measure a design keeps (#881): the points and the lines between them, and whether they are
  * shown. Kept like the framing square - per design, beside it in the browser and in a `.lyl` file -, never in the undo
@@ -141,7 +142,7 @@ export function highestTapeIdNumber(model: { points: readonly { id: string }[]; 
 export function readTape(projectId: string | null | undefined): SavedTape | null {
   if (!projectId) return null;
   try {
-    const stored = window.localStorage.getItem(TAPE_STORAGE_PREFIX + projectId);
+    const stored = projectStorage(projectId).getItem(TAPE_STORAGE_PREFIX + projectId);
     return stored ? normalizeSavedTape(JSON.parse(stored)) : null;
   } catch {
     return null;
@@ -152,8 +153,8 @@ export function writeTape(projectId: string | null | undefined, tape: SavedTape 
   if (!projectId) return;
   try {
     const kept = normalizeSavedTape(tape);
-    if (kept) window.localStorage.setItem(TAPE_STORAGE_PREFIX + projectId, JSON.stringify(kept));
-    else window.localStorage.removeItem(TAPE_STORAGE_PREFIX + projectId);
+    if (kept) projectStorage(projectId).setItem(TAPE_STORAGE_PREFIX + projectId, JSON.stringify(kept));
+    else projectStorage(projectId).removeItem(TAPE_STORAGE_PREFIX + projectId);
   } catch {
     // Without storage the measurements last until the design is left.
   }
