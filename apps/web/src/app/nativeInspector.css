@@ -292,3 +292,35 @@ html[data-native-chrome="on"] .native-inspector-dock .shape-inspector.docked {
 .native-inspector-dock .inspector-empty .inspector-name strong { color: var(--insp-muted); font-weight: 500; }
 .native-inspector-dock .inspector-empty .range-value-control input { color: var(--insp-muted); text-align: center; }
 .native-inspector-dock .inspector-empty-note { margin: 10px; color: var(--insp-muted); font-size: 11px; text-align: center; }
+
+/* ---- refinements after the first look ---- */
+html[data-native-chrome="on"] .native-inspector-dock .property-card,
+html[data-native-chrome="on"] .native-inspector-dock .property-card.collapsed,
+html[data-native-chrome="on"] .native-inspector-dock .property-card-header,
+html[data-native-chrome="on"] .native-inspector-dock .shape-state-card,
+html[data-native-chrome="on"] .native-inspector-dock .color-card {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html[data-native-chrome="on"] .native-inspector-dock .property-card { border-color: var(--insp-line) !important; }
+html[data-native-chrome="on"] .native-inspector-dock .property-card-header { color: var(--insp-fg) !important; }
+/* No coloured icons: section titles are text, aligned in one column. */
+.native-inspector-dock .property-card-title svg { display: none; }
+/* One row: name, slider, value - all three pinned to row 1. */
+.native-inspector-dock .range-property > .range-property-header > *,
+.native-inspector-dock .range-property > .range-control { grid-row: 1; }
+.native-inspector-dock .shape-state-card button > span:last-child { display: inline; white-space: nowrap; }
+.native-inspector-dock .shape-state-card button > span { line-height: 1; }
+/* Restrained slider: thin neutral track, small light thumb. */
+.native-inspector-dock .range-property input[type="range"] { -webkit-appearance: none; appearance: none; background: transparent; }
+.native-inspector-dock .range-property input[type="range"]::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: var(--insp-field-line); }
+.native-inspector-dock .range-property input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4.5px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid var(--insp-field-line);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
