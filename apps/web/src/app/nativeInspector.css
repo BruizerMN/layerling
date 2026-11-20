@@ -499,18 +499,39 @@ html[data-native-chrome="on"] .toolbar-mode-content.geometry { justify-content: 
 html[data-native-chrome="on"] .toolbar-mode-content .toolbar-section { background-image: none !important; background-color: transparent !important; }
 
 /*
- * Build 0013: native modeling ribbon refinements. Both are scoped to html[data-native-chrome="on"]; the browser keeps its multicoloured, tightly packed ribbon.
- *
- * Group outline: one indigo-blue for every group. Starting point: the approved Welcome artwork's edge colour rgb(0, 9, 38) = hsl(226 100% 7.5%).
- * That is too dark to read as an outline in the dark themes, so the hue is kept and the lightness lifted: hsl(226 72% 26%) = #132972 on the light
- * themes (12:1 against the ribbon), hsl(226 75% 64%) = #5e7fe8 on the dark ones (about 4:1). Only the outline uses it: group headings, icon colours,
- * selection fills, the fold chevron and hover colours keep the per-group --group-color.
+ * Build 0013: native modeling ribbon refinements, scoped to html[data-native-chrome="on"]; the browser keeps its multicoloured, tightly packed ribbon.
  */
-html[data-native-chrome="on"] { --native-ribbon-outline: #132972; }
-html[data-native-chrome="on"][data-theme="dark"] { --native-ribbon-outline: #5e7fe8; }
-html[data-native-chrome="on"] :is(.toolbar-section-tools, .toolbar-section .action-buttons) { border-color: var(--native-ribbon-outline); }
-
 /* Breathing room between the tool buttons of a group: 4 points more than the browser ribbon, nothing else changes (icons, hit targets, height, padding,
    the space between groups). The ribbon folds groups by measuring them, so the wider groups fold when they need to. */
 html[data-native-chrome="on"] .toolbar-section-tools { column-gap: 4px; }
 html[data-native-chrome="on"] .toolbar-section .action-buttons { column-gap: 7px; }
+
+/*
+ * Build 0013 corrections: the ribbon adopts the look of the vertical toolbar (.camera-controls). Its values are read from that toolbar's own computed styles
+ * (lib/nativeRibbonTokens.ts -> --native-rail-*), so every theme matches without copied colours. The fallbacks only cover the moment before the first read.
+ * Only backgrounds, outlines and headings change: icon colours, selected / hover / disabled states and the fold chevrons keep their own colours.
+ */
+html[data-native-chrome="on"] :is(.secondary-toolbar, .toolbar-mode-content, .sketch-toolbar-ribbon) {
+  background: var(--native-rail-bg-solid, #252525);
+  border-color: var(--native-rail-border, #404040);
+}
+html[data-native-chrome="on"] :is(.toolbar-section-tools, .toolbar-section .action-buttons) {
+  background: transparent;                                /* no per-group tint: the toolbar's group interiors are the toolbar's own colour */
+  border-width: 1px;                                      /* the vertical toolbar's group outline */
+  border-color: var(--native-rail-group-border, rgba(225, 225, 225, 0.2));
+}
+/* A folded group opens as a popover over the canvas: it needs a surface of its own. */
+html[data-native-chrome="on"] .toolbar-section[data-collapsed][data-open] > .toolbar-section-tools:not(.toolbar-collapse-box) {
+  background: var(--native-rail-bg-solid, #252525);
+  border-color: var(--native-rail-border, #404040);
+}
+html[data-native-chrome="on"] .toolbar-section-label {
+  color: color-mix(in srgb, var(--native-rail-ink, #c4c4c4) 78%, var(--native-rail-bg-solid, #252525));
+  text-shadow: none;
+}
+
+/* Icons: about 12% smaller than before, inside the same buttons (so hit targets, the 4 pt spacing and the ribbon height do not change), with a slightly lighter
+   stroke. The ribbon's icons are inline SVG drawn with stroke="currentColor" (stroke-width 2.6 on a 48-unit grid), so a CSS stroke-width overrides the attribute;
+   icon colours, opacity and the disabled/active states are untouched. */
+html[data-native-chrome="on"] :is(.toolbar-icon, .action-icon-button) :is(svg.toolbar-vector-art-icon, .toolbar-sprite-icon) { zoom: 0.88; }
+html[data-native-chrome="on"] :is(.toolbar-icon, .action-icon-button) svg.toolbar-vector-art-icon { stroke-width: 2.4; }
