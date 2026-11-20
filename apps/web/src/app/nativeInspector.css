@@ -511,21 +511,21 @@ html[data-native-chrome="on"] .toolbar-section .action-buttons { column-gap: 7px
  * (lib/nativeRibbonTokens.ts -> --native-rail-*), so every theme matches without copied colours. The fallbacks only cover the moment before the first read.
  * Only backgrounds, outlines and headings change: icon colours, selected / hover / disabled states and the fold chevrons keep their own colours.
  */
-html[data-native-chrome="on"] :is(.secondary-toolbar, .toolbar-mode-content, .sketch-toolbar-ribbon) {
+:root[data-native-chrome="on"] :is(.secondary-toolbar, .toolbar-mode-content, .sketch-toolbar-ribbon) {
   background: var(--native-rail-bg-solid, #252525);
   border-color: var(--native-rail-border, #404040);
 }
-html[data-native-chrome="on"] :is(.toolbar-section-tools, .toolbar-section .action-buttons) {
+:root[data-native-chrome="on"] :is(.toolbar-section-tools, .toolbar-section .action-buttons) {
   background: transparent;                                /* no per-group tint: the toolbar's group interiors are the toolbar's own colour */
   border-width: 1px;                                      /* the vertical toolbar's group outline */
   border-color: var(--native-rail-group-border, rgba(225, 225, 225, 0.2));
 }
 /* A folded group opens as a popover over the canvas: it needs a surface of its own. */
-html[data-native-chrome="on"] .toolbar-section[data-collapsed][data-open] > .toolbar-section-tools:not(.toolbar-collapse-box) {
+:root[data-native-chrome="on"] .toolbar-section[data-collapsed][data-open] > .toolbar-section-tools:not(.toolbar-collapse-box) {
   background: var(--native-rail-bg-solid, #252525);
   border-color: var(--native-rail-border, #404040);
 }
-html[data-native-chrome="on"] .toolbar-section-label {
+:root[data-native-chrome="on"] .toolbar-section-label {
   /* neutral grey: the toolbar's ink with its tint removed (Light and Classic inks are warm brown) */
   color: color-mix(in srgb, oklch(from var(--native-rail-ink, #c4c4c4) l 0 0) 78%, var(--native-rail-bg-solid, #252525));
   text-shadow: none;
@@ -534,5 +534,5 @@ html[data-native-chrome="on"] .toolbar-section-label {
 /* Icons: about 12% smaller than before, inside the same buttons (so hit targets, the 4 pt spacing and the ribbon height do not change), with a slightly lighter
    stroke. The ribbon's icons are inline SVG drawn with stroke="currentColor" (stroke-width 2.6 on a 48-unit grid), so a CSS stroke-width overrides the attribute;
    icon colours, opacity and the disabled/active states are untouched. */
-html[data-native-chrome="on"] :is(.toolbar-icon, .action-icon-button) :is(svg.toolbar-vector-art-icon, .toolbar-sprite-icon) { zoom: 0.88; }
-html[data-native-chrome="on"] :is(.toolbar-icon, .action-icon-button) svg.toolbar-vector-art-icon { stroke-width: 2.4; }
+:root[data-native-chrome="on"] :is(.toolbar-icon, .action-icon-button) :is(svg.toolbar-vector-art-icon, .toolbar-sprite-icon) { zoom: 0.88; }
+:root[data-native-chrome="on"] :is(.toolbar-icon, .action-icon-button) svg.toolbar-vector-art-icon { stroke-width: 2.4; }
