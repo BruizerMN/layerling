@@ -39,6 +39,7 @@ import { TopPanel } from "./TopActionPanel";
 import { useToolbarCollapse } from "./useToolbarCollapse";
 import { createHoverOpener, type HoverOpener } from "@/lib/hoverOpen";
 import { publishUiState, requestHostAction, subscribeNativeUiEvents } from "@/lib/host/nativeUi";
+import { toggleInspectorVisible, useInspectorVisible } from "@/lib/inspectorDock";
 
 
 /** Die Befehle der Suche, die im Verlaufsblick wach bleiben: sie aendern nichts am Entwurf. */
@@ -897,10 +898,11 @@ export function SecondaryToolbar({
   openPaletteRef.current = openPalette;
   // Native app (Build 0003): what the Model/View menus show, and the commands they send. The mode, focus mode and ribbon pin stay the toolbar's own
   // state; the menu is only a second way to reach the same functions as the buttons and the command search.
+  const inspectorVisible = useInspectorVisible();
   useEffect(() => {
     if (!nativeChrome) return;
-    publishUiState({ mode: toolbarMode === "sketch" ? "sketch" : "geometry", sketchEnabled: !historyViewActive, focusMode: Boolean(focusMode), ribbonPinned });
-  }, [nativeChrome, toolbarMode, historyViewActive, focusMode, ribbonPinned]);
+    publishUiState({ mode: toolbarMode === "sketch" ? "sketch" : "geometry", sketchEnabled: !historyViewActive, focusMode: Boolean(focusMode), ribbonPinned, inspectorVisible });
+  }, [nativeChrome, toolbarMode, historyViewActive, focusMode, ribbonPinned, inspectorVisible]);
   const nativeCommandRef = useRef<(command: string) => void>(() => undefined);
   nativeCommandRef.current = (command) => {
     switch (command) {
@@ -908,6 +910,7 @@ export function SecondaryToolbar({
       case "mode.sketch": if (!historyViewActive) selectToolbarMode("sketch"); break;
       case "focusMode.toggle": onFocusModeChange?.(!focusMode); break;
       case "ribbonPin.toggle": toggleRibbonPinned(); break;
+      case "inspector.toggle": toggleInspectorVisible(); break;
       case "search": openPalette(); break;
       case "guide": onGuide(); break;
       case "whatsNew": onWhatsNew?.(); break;

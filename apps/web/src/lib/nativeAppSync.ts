@@ -5,6 +5,7 @@ import { SIMPLE_MODE_STORAGE_KEY, setSimpleMode } from "@/lib/simpleMode";
 import { TOOLBAR_SIZE_STORAGE_KEY, normalizeToolbarSize, setToolbarSize } from "@/lib/toolbarSize";
 import { VIEW_CUBE_POSITION_STORAGE_KEY, normalizeViewCubePosition, setViewCubePosition } from "@/lib/viewCubePosition";
 import { normalizeShapeColors } from "@/lib/shapeColors";
+import { INSPECTOR_VISIBLE_STORAGE_KEY, refreshInspectorVisible } from "@/lib/inspectorDock";
 
 /**
  * Application-wide preferences that live in their own localStorage keys (theme, language, toolbar size, shape colours, view cube corner, simple mode)
@@ -24,6 +25,7 @@ export interface AppSyncActions {
   shapeColors(): void;
   viewCubePosition(): void;
   simpleMode(): void;
+  inspector(): void;
 }
 
 const read = (key: string): string | null => {
@@ -44,6 +46,7 @@ export const defaultAppSyncActions: AppSyncActions = {
   shapeColors: () => setShapeColors(normalizeShapeColors(read(SHAPE_COLORS_STORAGE_KEY))),
   viewCubePosition: () => setViewCubePosition(normalizeViewCubePosition(read(VIEW_CUBE_POSITION_STORAGE_KEY))),
   simpleMode: () => setSimpleMode(read(SIMPLE_MODE_STORAGE_KEY) === "on"),
+  inspector: () => refreshInspectorVisible(),
 };
 
 /** Runs the action for the key that changed (`null`: storage was cleared, everything is read again). Returns the names it ran. */
@@ -59,6 +62,7 @@ export function syncAppPreference(key: string | null, actions: AppSyncActions = 
   if (key === null || key === SHAPE_COLORS_STORAGE_KEY) run("shapeColors");
   if (key === null || key === VIEW_CUBE_POSITION_STORAGE_KEY) run("viewCubePosition");
   if (key === null || key === SIMPLE_MODE_STORAGE_KEY) run("simpleMode");
+  if (key === null || key === INSPECTOR_VISIBLE_STORAGE_KEY) run("inspector");
   return ran;
 }
 

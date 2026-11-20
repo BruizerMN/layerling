@@ -1,0 +1,294 @@
+/*
+ * The native app's Inspector (Build 0005): the existing React Inspector, docked at the right of the 3D view and restyled as a compact, information-dense
+ * panel in the manner of a Mac CAD / layout tool Inspector. Everything here is scoped to the native app (html[data-native-chrome="on"]) and to the dock,
+ * so the browser edition keeps its own look. Colours are neutral and follow the app theme through html[data-theme]; the theme system itself is not
+ * redesigned here (Build 0007 normalises it).
+ */
+.native-inspector-dock {
+  --insp-bg: #f5f5f6;
+  --insp-fg: #1d1d1f;
+  --insp-muted: #6e6e73;
+  --insp-line: #dcdce0;
+  --insp-field: #ffffff;
+  --insp-field-line: #c8c8cd;
+  --insp-hover: rgba(0, 0, 0, 0.06);
+  --insp-accent: #0a84ff;
+  --insp-accent-soft: rgba(10, 132, 255, 0.16);
+  position: fixed;
+  top: var(--editor-toolbar-height);
+  right: 0;
+  bottom: var(--editor-footer-height);
+  z-index: 4;
+  width: 296px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+  background: var(--insp-bg);
+  color: var(--insp-fg);
+  border-left: 1px solid var(--insp-line);
+  font: 11px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  scrollbar-width: thin;
+}
+html[data-theme="dark"] .native-inspector-dock {
+  --insp-bg: #252527;
+  --insp-fg: #e6e6e8;
+  --insp-muted: #98989e;
+  --insp-line: #38383b;
+  --insp-field: #19191b;
+  --insp-field-line: #47474b;
+  --insp-hover: rgba(255, 255, 255, 0.08);
+  --insp-accent-soft: rgba(10, 132, 255, 0.28);
+}
+/* The 3D view gives the dock its width, only while the user has the Inspector shown (and never in focus mode). */
+html[data-native-chrome="on"][data-inspector="on"]:not([data-focus-mode="on"]) .workplane-stage { width: calc(100vw - 296px); }
+html[data-focus-mode="on"] .native-inspector-dock { display: none; }
+
+/* ---- the panel ---- */
+html[data-native-chrome="on"] .native-inspector-dock .shape-inspector.docked {
+  position: static;
+  width: auto;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  zoom: 1;
+  padding: 0 0 12px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--insp-fg);
+  font: inherit;
+}
+.native-inspector-dock .shape-inspector-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 10px;
+  background: var(--insp-bg);
+  border-bottom: 1px solid var(--insp-line);
+}
+.native-inspector-dock .inspector-name { min-width: 0; flex: 1; display: flex; align-items: center; gap: 4px; }
+.native-inspector-dock .inspector-name strong,
+.native-inspector-dock .inspector-name strong.long-word {
+  overflow: hidden;
+  color: var(--insp-fg);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.native-inspector-dock .inspector-name-input { height: 20px; font: inherit; font-size: 12px; }
+.native-inspector-dock .inspector-header-actions { display: flex; align-items: center; gap: 2px; }
+.native-inspector-dock .inspector-header-icon,
+.native-inspector-dock .inspector-rename-button,
+.native-inspector-dock .inspector-help-link {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: var(--insp-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+}
+.native-inspector-dock .inspector-header-icon svg,
+.native-inspector-dock .inspector-rename-button svg { width: 13px; height: 13px; }
+.native-inspector-dock .inspector-header-icon:hover:not(:disabled),
+.native-inspector-dock .inspector-rename-button:hover:not(:disabled) { color: var(--insp-fg); background: var(--insp-hover); }
+.native-inspector-dock .inspector-header-icon.active { color: var(--insp-accent); background: var(--insp-accent-soft); }
+
+/* ---- Solid / Hole: a compact two-segment choice instead of two large tiles ---- */
+.native-inspector-dock .shape-state-card {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 6px;
+  margin: 0;
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--insp-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+.native-inspector-dock .shape-state-card button {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0 8px;
+  color: var(--insp-fg);
+  background: var(--insp-field);
+  border: 1px solid var(--insp-field-line);
+  border-radius: 5px;
+  box-shadow: none;
+  font: 500 11px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+.native-inspector-dock .shape-state-card button.active { background: var(--insp-accent-soft); border-color: var(--insp-accent); }
+.native-inspector-dock .shape-state-card button:disabled { opacity: 0.45; }
+.native-inspector-dock .shape-state-card .key-hint { color: var(--insp-muted); font-size: 10px; }
+.native-inspector-dock .large-solid-swatch,
+.native-inspector-dock .large-hole-swatch {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+.native-inspector-dock .shape-state-card .check-property { grid-column: 1 / -1; margin: 2px 0 0; }
+
+/* ---- sections: flat, divided, disclosure triangle on the left ---- */
+.native-inspector-dock .property-card {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--insp-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+.native-inspector-dock .property-card.collapsed { padding: 0; }
+.native-inspector-dock .property-card-header {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  height: 26px;
+  padding: 0 10px;
+  color: var(--insp-fg);
+  background: transparent;
+  border: 0;
+  font: 600 11px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+.native-inspector-dock .property-card-header:hover:not(:disabled) { background: var(--insp-hover); }
+.native-inspector-dock .property-card-header:disabled { opacity: 0.55; }
+.native-inspector-dock .property-card-header > svg { width: 10px; height: 10px; flex: 0 0 auto; color: var(--insp-muted); transform: rotate(180deg); }
+.native-inspector-dock .property-card-header > svg.collapsed { transform: rotate(90deg); }
+.native-inspector-dock .property-card-title { display: flex; align-items: center; gap: 6px; color: var(--insp-fg); font-size: 11px; font-weight: 600; }
+.native-inspector-dock .property-card-title svg { width: 13px; height: 13px; color: var(--insp-muted); stroke-width: 2; }
+.native-inspector-dock .property-list { display: grid; gap: 0; padding: 0 10px 8px; }
+.native-inspector-dock .property-hint,
+.native-inspector-dock .select-property-hint,
+.native-inspector-dock .cylinder-wrap-hint,
+.native-inspector-dock .property-card-note { margin: 2px 0 4px; color: var(--insp-muted); font-size: 10.5px; line-height: 1.35; font-weight: 400; }
+
+/* ---- one line per numeric property: name | slider | value ---- */
+.native-inspector-dock .range-property {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 76px;
+  align-items: center;
+  gap: 0 6px;
+  min-height: 24px;
+  padding: 1px 0;
+  color: var(--insp-muted);
+  font: 400 11px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+.native-inspector-dock .range-property-header { display: contents; }
+.native-inspector-dock .range-property-name { grid-column: 1; min-width: 0; overflow: hidden; color: var(--insp-muted); font-size: 11px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.native-inspector-dock .range-control { grid-column: 2; min-width: 0; }
+.native-inspector-dock .range-value-control {
+  grid-column: 3;
+  min-width: 0;
+  min-height: 22px;
+  padding: 0 5px;
+  gap: 3px;
+  color: var(--insp-muted);
+  background: var(--insp-field);
+  border: 1px solid var(--insp-field-line);
+  border-radius: 4px;
+  box-shadow: none;
+}
+.native-inspector-dock .range-value-control:focus-within { border-color: var(--insp-accent); box-shadow: 0 0 0 2px var(--insp-accent-soft); }
+.native-inspector-dock .range-value-control input {
+  width: 100%;
+  height: 20px;
+  color: var(--insp-fg);
+  font: 500 11px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.native-inspector-dock .range-value-unit { color: var(--insp-muted); font-size: 10px; font-weight: 400; }
+.native-inspector-dock .range-property input[type="range"] { height: 14px; margin: 0; accent-color: var(--insp-accent); }
+.native-inspector-dock .range-property input:disabled { opacity: 0.5; }
+
+/* ---- selects, text fields, toggles, colour fields ---- */
+.native-inspector-dock .select-property,
+.native-inspector-dock .text-property {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 6px;
+  min-height: 24px;
+  color: var(--insp-muted);
+  font: 400 11px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+.native-inspector-dock .select-property > span,
+.native-inspector-dock .text-property > span { color: var(--insp-muted); font-size: 11px; font-weight: 400; }
+.native-inspector-dock .select-property select,
+.native-inspector-dock .text-property input,
+.native-inspector-dock .shape-inspector input[type="text"]:not(.range-value-control input) {
+  height: 22px;
+  min-height: 22px;
+  padding: 0 6px;
+  color: var(--insp-fg);
+  background: var(--insp-field);
+  border: 1px solid var(--insp-field-line);
+  border-radius: 4px;
+  box-shadow: none;
+  font: 400 11px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+.native-inspector-dock .select-property-hint { grid-column: 1 / -1; }
+.native-inspector-dock .check-property {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 22px;
+  color: var(--insp-fg);
+  font: 400 11px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+.native-inspector-dock .check-property > span { color: var(--insp-fg); font-size: 11px; font-weight: 400; }
+.native-inspector-dock .check-property input[type="checkbox"] { width: 28px; height: 16px; margin: 0; accent-color: var(--insp-accent); }
+
+/* ---- buttons ---- */
+.native-inspector-dock .inspector-action-button,
+.native-inspector-dock .edit-sketch-button,
+.native-inspector-dock .property-defaults-actions button,
+.native-inspector-dock .property-card button.inspector-small-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 24px;
+  height: 24px;
+  margin: 6px 10px 0;
+  padding: 0 10px;
+  color: var(--insp-fg);
+  background: var(--insp-field);
+  border: 1px solid var(--insp-field-line);
+  border-radius: 5px;
+  box-shadow: none;
+  font: 500 11px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+.native-inspector-dock .property-defaults-actions { display: flex; gap: 6px; margin: 4px 0 0; }
+.native-inspector-dock .property-defaults-actions button { flex: 1; margin: 0; font-size: 10.5px; }
+.native-inspector-dock .inspector-action-button:hover:not(:disabled),
+.native-inspector-dock .edit-sketch-button:hover:not(:disabled) { background: var(--insp-hover); }
+.native-inspector-dock button:disabled { opacity: 0.5; }
+
+/* ---- colour picker card inside the Inspector ---- */
+.native-inspector-dock .color-card { margin: 0; padding: 8px 10px; background: transparent; border: 0; border-bottom: 1px solid var(--insp-line); border-radius: 0; box-shadow: none; }
+.native-inspector-dock .color-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+.native-inspector-dock .color-grid button { width: auto; height: 20px; border-radius: 4px; }
+
+/* ---- the empty state ---- */
+.native-inspector-dock .inspector-empty .inspector-name strong { color: var(--insp-muted); font-weight: 500; }
+.native-inspector-dock .inspector-empty .range-value-control input { color: var(--insp-muted); text-align: center; }
+.native-inspector-dock .inspector-empty-note { margin: 10px; color: var(--insp-muted); font-size: 11px; text-align: center; }

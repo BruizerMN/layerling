@@ -21,7 +21,7 @@ export const SAVE_PROTOCOL_MIN = 3;
  */
 export const UI_CAPABILITY = "ui.v1";
 /** Commands a host menu can send to a document page (`ui.command`). */
-export const UI_COMMANDS = ["mode.geometry", "mode.sketch", "focusMode.toggle", "ribbonPin.toggle", "search", "guide", "whatsNew", "shortcuts", "interactiveHelp", "settings.saveStartView", "settings.resetStartView", "settings.makeFitTest"] as const;
+export const UI_COMMANDS = ["mode.geometry", "mode.sketch", "focusMode.toggle", "ribbonPin.toggle", "search", "guide", "whatsNew", "shortcuts", "interactiveHelp", "inspector.toggle", "settings.saveStartView", "settings.resetStartView", "settings.makeFitTest"] as const;
 export type UiCommand = (typeof UI_COMMANDS)[number];
 /** The first protocol version that carries the document messages. */
 export const DOCUMENT_PROTOCOL_MIN = 2;
@@ -167,7 +167,7 @@ export interface UiStateRequest {
   session: string;
   type: "ui.state";
   protocol: number;
-  payload: { documentId: string; state: { mode: "geometry" | "sketch"; sketchEnabled: boolean; focusMode: boolean; ribbonPinned: boolean } };
+  payload: { documentId: string; state: { mode: "geometry" | "sketch"; sketchEnabled: boolean; focusMode: boolean; ribbonPinned: boolean; inspectorVisible?: boolean } };
 }
 /** Build 0003 (`ui.v1`): the page asks the host to open one of its windows (the Settings window or this document's Document Settings window). */
 export interface UiActionRequest {

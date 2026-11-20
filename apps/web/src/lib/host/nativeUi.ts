@@ -5,7 +5,7 @@ import type { HostEvent, UiCommand } from "@/lib/host/hostProtocol";
  * The page's side of the native shell's menus and Settings windows (capability `ui.v1`, hostProtocol.ts). Nothing here does anything in a browser:
  * without a host that granted `ui.v1` every function is a no-op, and the editor's own controls work as they always did.
  */
-export type NativeUiState = { mode: "geometry" | "sketch"; sketchEnabled: boolean; focusMode: boolean; ribbonPinned: boolean };
+export type NativeUiState = { mode: "geometry" | "sketch"; sketchEnabled: boolean; focusMode: boolean; ribbonPinned: boolean; inspectorVisible?: boolean };
 
 let documentId: string | null = null;
 let lastState = "";

@@ -1,4 +1,7 @@
 "use client";
+import { createPortal } from "react-dom";
+import { useInspectorDock } from "@/lib/inspectorDock";
+import { InspectorEmpty } from "@/components/workplane/InspectorEmpty";
 import { polygonCornerDragPatch } from "@/lib/roundedPolygonGeometry";
 import { holdsShapeLock } from "@/lib/shapeLock";
 import type { TextBlockOptions } from "@/lib/textBlock";
@@ -8779,6 +8782,91 @@ export function WorkplaneViewport({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [chooseSnapGrid, focusSelection, lookOntoWorkplane, onNotice, resetPlacementWorkplane, resetView, tapeToolsOpen, sectionViewOpen, setPlacementWorkplaneAtSelection, setProtractorActive, setTapeActive, setViewCubeFace, showDimensions, togglePlacementWorkplane, toggleProjection, zoomCamera]);
 
+  const inspectorDock = useInspectorDock();
+  const shapeInspectorNode = selectedShape && !splitActive && !modifierActive && !tapeMode && !tapeDeleteMode && !tapeMoveMode ? (
+        <ShapeInspector
+          docked={inspectorDock.enabled}
+          shape={shapeWithParametricSource(selectedShape)}
+          snap={snap}
+          snapOpen={snapOpen}
+          onUnitsChange={changeUnits}
+          workspace={workspace}
+          onUpdate={(patch, options) => {
+            clearMoveDimensions();
+            // Der Inspektor rechnet in der Urform; ein gedrehter Koerper wird
+            // daraus neu gebaut, also muss auch der Anker daher kommen.
+            const inspected = shapeWithParametricSource(selectedShape);
+            const resized = proportionLockRef.current && keepsProportionsForUpdate(inspected, options) ? patchWithKeptProportions(inspected, patch, options?.resizeAxis) : patch;
+            onUpdateShape(selectedShape.id, patchWithResizeAnchor(inspected, resized, options?.resizeAxis, lastResizeAnchorRef.current));
+          }}
+          proportionLock={proportionLock}
+          onProportionLockChange={changeProportionLock}
+          onBentTubeSegmentChange={changeBentTubeSegment}
+          onShapeDefaultsChange={(kind, entry) => {
+            changeWorkspace((current) => ({ ...current, shapeCustomizations: withShapeDefaults(current.shapeCustomizations, kind, entry) }));
+            // A new design starts with them too, not only this one (#483).
+            saveShapeDefaultsForNewDesigns(kind, entry);
+          }}
+          onSnapChange={chooseSnapGrid}
+          onSnapOpenChange={setSnapOpen}
+          onObjectSnapChange={changeObjectSnap}
+          onEditSketch={selectedShape.sketchProfile ? onEditSketch : undefined}
+          onOpenGroup={selectedShape.groupedShapes?.length && onOpenGroup ? () => onOpenGroup(selectedShape.id) : undefined}
+          onHullKeepHolesChange={selectedShape.groupOperation === "hull" && onHullKeepHolesChange ? (keepHoles) => onHullKeepHolesChange(selectedShape.id, keepHoles) : undefined}
+          onGroupHoleDiameters={selectedShape.groupedShapes?.length && onGroupHoleDiameters ? (change) => onGroupHoleDiameters(selectedShape.id, change) : undefined}
+          canSeparateParts={canSeparateParts}
+          onSeparateParts={onSeparateParts}
+          onWrapAroundCylinder={onWrapAroundCylinder}
+          onSurfaceTexture={onSurfaceTexture}
+          onRemoveSurfaceTexture={onRemoveSurfaceTexture}
+          surfaceTextureOpen={surfaceTextureOpen}
+          onSurfaceTextureOpenChange={onSurfaceTextureOpenChange}
+          surfaceFacePicking={surfaceFacePicking}
+          surfacePickedFaces={surfacePickedFaces}
+          surfaceFacesShown={surfaceFacesShown}
+          onSurfaceFacePick={onSurfaceFacePick}
+          surfaceRegionDrawing={surfaceRegionDrawing}
+          surfaceDrawnRegion={surfaceDrawnRegion}
+          onSurfaceRegionDraw={onSurfaceRegionDraw}
+          onVaseAccessories={onVaseAccessories}
+          onGridfinityKeys={onGridfinityKeys}
+          onGridfinitySplit={onGridfinitySplit}
+          onLayerText={onLayerText}
+          onTextTags={onTextTags}
+          onTextBlock={onTextBlock}
+          onFixKeyringTab={onFixKeyringTab}
+          onPortPresetWithScrewHoles={onPortPresetWithScrewHoles}
+          textLayerStack={textLayerStack}
+          iconTag={iconTag}
+          qrCode={qrCode}
+          sbcBoard={sbcBoard}
+          referenceImage={referenceImage}
+          onInteractionActiveChange={onInteractionActiveChange}
+          onSnapGridAwayChange={setInspectorSnapGridAway}
+        />
+      ) : null;
+  const selectionInspectorNode = selectedIds.length > 1 && !splitActive && !modifierActive && !tapeMode && !tapeDeleteMode && !tapeMoveMode && onSelectionHole && onSelectionColor && onSelectionLock ? (
+        <SelectionInspector
+          docked={inspectorDock.enabled}
+          shapes={shapes.filter((shape) => selectedIds.includes(shape.id))}
+          onSetHole={onSelectionHole}
+          onSetColor={onSelectionColor}
+          onUpdateShapes={onSelectionUpdateShapes}
+          onFitGridfinityOutline={onSelectionFitGridfinityOutline}
+          onToggleLocked={onSelectionLock}
+          onToggleHidden={onSelectionHide}
+          onInteractionActiveChange={onInteractionActiveChange}
+          workspace={workspace}
+          snap={snap}
+          snapOpen={snapOpen}
+          onSnapChange={chooseSnapGrid}
+          onSnapOpenChange={setSnapOpen}
+          onUnitsChange={changeUnits}
+          onObjectSnapChange={changeObjectSnap}
+          onSnapDockedChange={setSelectionSnapDocked}
+        />
+      ) : null;
+
   return (
     <main className="workplane-stage">
       <ViewCube getRig={getViewCubeRig} cubeRef={viewCubeRef} />
@@ -9620,90 +9708,15 @@ export function WorkplaneViewport({
         </div>
       </section>
 
-      {selectedShape && !splitActive && !modifierActive && !tapeMode && !tapeDeleteMode && !tapeMoveMode ? (
-        <ShapeInspector
-          shape={shapeWithParametricSource(selectedShape)}
-          snap={snap}
-          snapOpen={snapOpen}
-          onUnitsChange={changeUnits}
-          workspace={workspace}
-          onUpdate={(patch, options) => {
-            clearMoveDimensions();
-            // Der Inspektor rechnet in der Urform; ein gedrehter Koerper wird
-            // daraus neu gebaut, also muss auch der Anker daher kommen.
-            const inspected = shapeWithParametricSource(selectedShape);
-            const resized = proportionLockRef.current && keepsProportionsForUpdate(inspected, options) ? patchWithKeptProportions(inspected, patch, options?.resizeAxis) : patch;
-            onUpdateShape(selectedShape.id, patchWithResizeAnchor(inspected, resized, options?.resizeAxis, lastResizeAnchorRef.current));
-          }}
-          proportionLock={proportionLock}
-          onProportionLockChange={changeProportionLock}
-          onBentTubeSegmentChange={changeBentTubeSegment}
-          onShapeDefaultsChange={(kind, entry) => {
-            changeWorkspace((current) => ({ ...current, shapeCustomizations: withShapeDefaults(current.shapeCustomizations, kind, entry) }));
-            // A new design starts with them too, not only this one (#483).
-            saveShapeDefaultsForNewDesigns(kind, entry);
-          }}
-          onSnapChange={chooseSnapGrid}
-          onSnapOpenChange={setSnapOpen}
-          onObjectSnapChange={changeObjectSnap}
-          onEditSketch={selectedShape.sketchProfile ? onEditSketch : undefined}
-          onOpenGroup={selectedShape.groupedShapes?.length && onOpenGroup ? () => onOpenGroup(selectedShape.id) : undefined}
-          onHullKeepHolesChange={selectedShape.groupOperation === "hull" && onHullKeepHolesChange ? (keepHoles) => onHullKeepHolesChange(selectedShape.id, keepHoles) : undefined}
-          onGroupHoleDiameters={selectedShape.groupedShapes?.length && onGroupHoleDiameters ? (change) => onGroupHoleDiameters(selectedShape.id, change) : undefined}
-          canSeparateParts={canSeparateParts}
-          onSeparateParts={onSeparateParts}
-          onWrapAroundCylinder={onWrapAroundCylinder}
-          onSurfaceTexture={onSurfaceTexture}
-          onRemoveSurfaceTexture={onRemoveSurfaceTexture}
-          surfaceTextureOpen={surfaceTextureOpen}
-          onSurfaceTextureOpenChange={onSurfaceTextureOpenChange}
-          surfaceFacePicking={surfaceFacePicking}
-          surfacePickedFaces={surfacePickedFaces}
-          surfaceFacesShown={surfaceFacesShown}
-          onSurfaceFacePick={onSurfaceFacePick}
-          surfaceRegionDrawing={surfaceRegionDrawing}
-          surfaceDrawnRegion={surfaceDrawnRegion}
-          onSurfaceRegionDraw={onSurfaceRegionDraw}
-          onVaseAccessories={onVaseAccessories}
-          onGridfinityKeys={onGridfinityKeys}
-          onGridfinitySplit={onGridfinitySplit}
-          onLayerText={onLayerText}
-          onTextTags={onTextTags}
-          onTextBlock={onTextBlock}
-          onFixKeyringTab={onFixKeyringTab}
-          onPortPresetWithScrewHoles={onPortPresetWithScrewHoles}
-          textLayerStack={textLayerStack}
-          iconTag={iconTag}
-          qrCode={qrCode}
-          sbcBoard={sbcBoard}
-          referenceImage={referenceImage}
-          onInteractionActiveChange={onInteractionActiveChange}
-          onSnapGridAwayChange={setInspectorSnapGridAway}
-        />
-      ) : null}
+      {/* Native app: the Inspector is the docked panel (visibility is the user's: View > Show/Hide Inspector), never a panel that follows the selection. */}
+      {inspectorDock.enabled
+        ? inspectorDock.element
+          ? createPortal(shapeInspectorNode ?? selectionInspectorNode ?? <InspectorEmpty toolActive={Boolean(selectedShape) || selectedIds.length > 1} />, inspectorDock.element)
+          : null
+        : <>{shapeInspectorNode}{selectionInspectorNode}</>}
 
-      {selectedIds.length > 1 && !splitActive && !modifierActive && !tapeMode && !tapeDeleteMode && !tapeMoveMode && onSelectionHole && onSelectionColor && onSelectionLock ? (
-        <SelectionInspector
-          shapes={shapes.filter((shape) => selectedIds.includes(shape.id))}
-          onSetHole={onSelectionHole}
-          onSetColor={onSelectionColor}
-          onUpdateShapes={onSelectionUpdateShapes}
-          onFitGridfinityOutline={onSelectionFitGridfinityOutline}
-          onToggleLocked={onSelectionLock}
-          onToggleHidden={onSelectionHide}
-          onInteractionActiveChange={onInteractionActiveChange}
-          workspace={workspace}
-          snap={snap}
-          snapOpen={snapOpen}
-          onSnapChange={chooseSnapGrid}
-          onSnapOpenChange={setSnapOpen}
-          onUnitsChange={changeUnits}
-          onObjectSnapChange={changeObjectSnap}
-          onSnapDockedChange={setSelectionSnapDocked}
-        />
-      ) : null}
 
-      {(!selectedShape && !selectionSnapDocked) || inspectorSnapGridAway ? (
+      {inspectorDock.enabled || (!selectedShape && !selectionSnapDocked) || inspectorSnapGridAway ? (
         <div className="grid-settings">
           <SnapGridControl
             units={workspace.units}

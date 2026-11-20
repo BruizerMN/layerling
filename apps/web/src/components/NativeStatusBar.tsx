@@ -1,9 +1,10 @@
 "use client";
 
-import { Maximize2, Minus, Pin, PinOff, Plus } from "lucide-react";
+import { Maximize2, Minus, PanelRight, Pin, PinOff, Plus } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ZOOM_PRESET_PERCENTS, distanceFromPercent, distanceFromSlider, formatZoomPercent, getCameraController, getCameraStatus, parseZoomPercent, percentRange, sliderFromDistance, subscribeCameraStatus, zoomPercent, type CameraStatus } from "@/lib/cameraStatus";
 import { setFooterSnapSlot } from "@/lib/footerSnap";
+import { toggleInspectorVisible, useInspectorVisible } from "@/lib/inspectorDock";
 import { getUiState, runUiCommand, subscribeUiState } from "@/lib/host/nativeUi";
 
 /**
@@ -96,6 +97,7 @@ export function NativeStatusBar({
 }) {
   const camera = useSyncExternalStore(subscribeCameraStatus, getCameraStatus, () => null);
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
+  const inspectorShown = useInspectorVisible();
   const ui = useSyncExternalStore(subscribeUiState, getUiState, () => null);
   const controller = getCameraController();
   const position = camera ? sliderFromDistance(camera.distance, camera.minDistance, camera.maxDistance) : 0;
@@ -123,6 +125,9 @@ export function NativeStatusBar({
         </button>
         <button type="button" className="native-status-button" aria-label="Pin ribbon" title="Keep every ribbon group open (View menu)" aria-pressed={Boolean(ui?.ribbonPinned)} onClick={() => runUiCommand("ribbonPin.toggle")}>
           {ui?.ribbonPinned ? <Pin size={13} aria-hidden="true" /> : <PinOff size={13} aria-hidden="true" />}
+        </button>
+        <button type="button" className="native-status-button" aria-label="Inspector" title={inspectorShown ? "Hide Inspector (⌥⌘I)" : "Show Inspector (⌥⌘I)"} aria-pressed={inspectorShown} onClick={toggleInspectorVisible}>
+          <PanelRight size={13} aria-hidden="true" />
         </button>
         <span className="native-status-sep" aria-hidden="true" />
         {/* The Snap Grid selector and the mm/in chooser: the editor's own control, shown here (footerSnap.ts). */}

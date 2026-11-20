@@ -200,6 +200,7 @@ import { revolveAxisShift } from "@/lib/revolveAxis";
 import { buildSketchRevolveMesh, DEFAULT_SKETCH_REVOLVE_SETTINGS, normalizeSketchRevolveSettings, type SketchRevolveMesh } from "@/lib/sketchRevolve";
 import { AppFooter } from "@/components/AppFooter";
 import { NativeStatusBar } from "@/components/NativeStatusBar";
+import { NativeInspectorDock } from "@/components/NativeInspectorDock";
 import { readAppPrefs, subscribeAppPrefs, writeAppPrefs } from "@/lib/appPrefs";
 import { publishSettingsState, setNativeUiDocument, subscribeNativeUiEvents } from "@/lib/host/nativeUi";
 import { readStartView } from "@/lib/designView";
@@ -20187,6 +20188,7 @@ export function LayerlingEditor({
           onClose={closeShapeContextMenu}
         />
       ) : null}
+      {nativeDocument ? <NativeInspectorDock geometry={toolbarMode === "geometry"} /> : null}
       {nativeDocument ? (
         <NativeStatusBar
           objectCount={shapes.length}

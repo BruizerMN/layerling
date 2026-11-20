@@ -4519,6 +4519,7 @@ export function ShapeInspector({
   onProportionLockChange,
   onBentTubeSegmentChange,
   onShapeDefaultsChange,
+  docked = false,
 }: {
   shape: WorkplaneShape;
   snap: GridSize;
@@ -4595,6 +4596,8 @@ export function ShapeInspector({
   onBentTubeSegmentChange?: (shapeId: string, segment: number | null) => void;
   /** Saves the shape's values as the defaults of its kind, or removes them (null): the same "Shape defaults" the settings hold. */
   onShapeDefaultsChange?: (kind: WorkplaneShape["kind"], entry: ShapeCustomization | null) => void;
+  /** The native app's docked Inspector: no moving, no minimizing, no snap grid of its own (shown in the status bar); the panel is always there, the user shows and hides it. */
+  docked?: boolean;
 }) {
   useLanguage();
   const solidColor = shape.color;
@@ -5007,7 +5010,8 @@ export function ShapeInspector({
   const [colorOpen, setColorOpen] = useState(false);
   const { colors: recentColors, remember: rememberColor } = useRecentColors(SOLID_COLORS);
   const { colors: keptColors, toggle: toggleKeptColor } = useKeptColors();
-  const [minimized, setMinimized] = useState(false);
+  const [minimizedState, setMinimized] = useState(false);
+  const minimized = docked ? false : minimizedState;
   // The surface texture card opened from the toolbar is shown, not left in a folded panel.
   useEffect(() => {
     if (surfaceTextureOpen) setMinimized(false);
@@ -5023,7 +5027,7 @@ export function ShapeInspector({
 
   useEffect(() => () => onInteractionActiveChange?.(false), [onInteractionActiveChange]);
   // The snap grid control belongs to the inspector only while it is docked and open.
-  const snapGridAway = minimized || movable.moved;
+  const snapGridAway = docked ? false : minimized || movable.moved;
   useEffect(() => {
     onSnapGridAwayChange?.(snapGridAway);
     return () => onSnapGridAwayChange?.(false);
@@ -5041,20 +5045,20 @@ export function ShapeInspector({
     <SliderSnapContext.Provider value={snapGridStep(snap)}>
     <aside
       ref={inspectorRef}
-      className={`shape-inspector ${isSketchRevolve ? "sketch-revolve-inspector" : ""} ${shape.kind === "gear" ? "gear-inspector" : ""} ${minimized ? "minimized" : ""} ${movable.moved ? "floating" : ""} ${movable.dragging ? "moving" : ""}`}
-      style={movable.style}
+      className={`shape-inspector ${isSketchRevolve ? "sketch-revolve-inspector" : ""} ${shape.kind === "gear" ? "gear-inspector" : ""} ${minimized ? "minimized" : ""} ${docked ? "docked" : ""} ${movable.moved && !docked ? "floating" : ""} ${movable.dragging ? "moving" : ""}`}
+      style={docked ? undefined : movable.style}
       aria-label={t("inspector.settingsFor", { name: displayShapeName(shape) })}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <div className="shape-inspector-header movable" title={t("inspector.moveHint")} {...movable.handleProps}>
-        <button
+      <div className={docked ? "shape-inspector-header" : "shape-inspector-header movable"} title={docked ? undefined : t("inspector.moveHint")} {...(docked ? {} : movable.handleProps)}>
+        {docked ? null : <button
           className="inspector-header-icon"
           aria-label={minimized ? t("inspector.expand") : t("inspector.minimize")}
           aria-expanded={!minimized}
           onClick={() => setMinimized((current) => !current)}
         >
           {minimized ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-        </button>
+        </button>}
         <div className="inspector-name">
           {nameDraft !== null ? (
             <input
@@ -5827,7 +5831,7 @@ export function ShapeInspector({
           ) : null}
         </div>
       ) : null}
-      {!movable.moved ? (
+      {!movable.moved && !docked ? (
         <div className="inspector-snap-dock">
           <SnapGridControl units={workspace.units} onUnitsChange={onUnitsChange} customGrids={workspace.customSnapGrids} snap={snap} snapOpen={snapOpen} onSnapChange={onSnapChange} onSnapOpenChange={onSnapOpenChange} objectSnap={workspace.objectSnap} onObjectSnapChange={onObjectSnapChange} />
         </div>
@@ -9190,6 +9194,7 @@ export function SelectionInspector({
   onUnitsChange,
   onObjectSnapChange,
   onSnapDockedChange,
+  docked = false,
 }: {
   shapes: readonly WorkplaneShape[];
   onSetHole: (hole: boolean) => void;
@@ -9212,11 +9217,13 @@ export function SelectionInspector({
   onObjectSnapChange?: (enabled: boolean) => void;
   /** True while the snap grid is shown in this panel, so the free-standing control steps aside. */
   onSnapDockedChange?: (docked: boolean) => void;
+  /** The native app's docked Inspector (see ShapeInspector). */
+  docked?: boolean;
 }) {
   useLanguage();
   const movable = useMovablePanel<HTMLElement>("layerling.editor.inspectorPosition", INSPECTOR_PANEL);
   useEffect(() => {
-    onSnapDockedChange?.(!movable.moved);
+    onSnapDockedChange?.(docked ? false : !movable.moved);
     return () => onSnapDockedChange?.(false);
   }, [movable.moved, onSnapDockedChange]);
   const allHidden = shapes.length > 0 && shapes.every((shape) => shape.hidden);
@@ -9258,12 +9265,12 @@ export function SelectionInspector({
   return (
     <aside
       ref={movable.panelRef}
-      className={`shape-inspector selection-inspector ${movable.moved ? "floating" : ""} ${movable.dragging ? "moving" : ""}`}
-      style={movable.style}
+      className={`shape-inspector selection-inspector ${docked ? "docked" : ""} ${movable.moved && !docked ? "floating" : ""} ${movable.dragging ? "moving" : ""}`}
+      style={docked ? undefined : movable.style}
       aria-label={t("inspector.selectionTitle", { count: shapes.length })}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <div className="shape-inspector-header movable" title={t("inspector.moveHint")} {...movable.handleProps}>
+      <div className={docked ? "shape-inspector-header" : "shape-inspector-header movable"} title={docked ? undefined : t("inspector.moveHint")} {...(docked ? {} : movable.handleProps)}>
         <div className="inspector-name">
           <strong>{t("inspector.selectionTitle", { count: shapes.length })}</strong>
         </div>
@@ -9389,7 +9396,7 @@ export function SelectionInspector({
         </button>
       ) : null}
       <p className="selection-inspector-hint">{t("inspector.selectionHint")}</p>
-      {!movable.moved ? (
+      {!movable.moved && !docked ? (
         <div className="inspector-snap-dock">
           <SnapGridControl units={workspace.units} onUnitsChange={onUnitsChange} customGrids={workspace.customSnapGrids} snap={snap} snapOpen={snapOpen} onSnapChange={onSnapChange} onSnapOpenChange={onSnapOpenChange} objectSnap={workspace.objectSnap} onObjectSnapChange={onObjectSnapChange} />
         </div>
