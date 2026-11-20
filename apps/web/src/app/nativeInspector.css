@@ -526,7 +526,8 @@ html[data-native-chrome="on"] .toolbar-section[data-collapsed][data-open] > .too
   border-color: var(--native-rail-border, #404040);
 }
 html[data-native-chrome="on"] .toolbar-section-label {
-  color: color-mix(in srgb, var(--native-rail-ink, #c4c4c4) 78%, var(--native-rail-bg-solid, #252525));
+  /* neutral grey: the toolbar's ink with its tint removed (Light and Classic inks are warm brown) */
+  color: color-mix(in srgb, oklch(from var(--native-rail-ink, #c4c4c4) l 0 0) 78%, var(--native-rail-bg-solid, #252525));
   text-shadow: none;
 }
 
