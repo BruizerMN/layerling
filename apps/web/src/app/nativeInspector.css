@@ -433,3 +433,4 @@ html[data-native-chrome="on"] .native-inspector-dock .inspector-header-icon.acti
 /* ---- scrolling: the scrollbar never sits on content ---- */
 .native-inspector-dock { scrollbar-gutter: stable; padding-right: 8px; }
 .native-inspector-dock .shape-inspector-header { margin-right: -8px; padding-right: 18px; }
+.native-inspector-dock .property-card-header { box-sizing: border-box; max-width: 100%; }
