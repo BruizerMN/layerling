@@ -14,6 +14,8 @@ import { applyAppTheme, getAppThemePreference, readStoredAppTheme, resolveAppThe
 import { localizedError } from "@/lib/userErrors";
 import { useLanguage } from "@/lib/useLanguage";
 import { startNativeAppSync } from "@/lib/nativeAppSync";
+import { setLoadingName, setLoadingState } from "@/lib/host/nativeLoading";
+import { NativeLoadingScreen } from "@/components/NativeLoadingScreen";
 
 /**
  * The editor in a HundchenLayerling document window. Rendered INSTEAD of the browser start page whenever the page is served from the host's
@@ -22,7 +24,7 @@ import { startNativeAppSync } from "@/lib/nativeAppSync";
  * It owns no library: no dashboard, no project list, no IndexedDB project record, no thumbnails, no per-edit repack, no snapshots. The editor
  * is handed one in-memory document under a transient project id. See nativeDocumentLoader.ts.
  */
-const LayerlingEditor = dynamic(() => loadEditorModule().then((editorModule) => editorModule.LayerlingEditor), { ssr: false, loading: () => <Message text="Preparing the editor…" /> });
+const LayerlingEditor = dynamic(() => loadEditorModule().then((editorModule) => editorModule.LayerlingEditor), { ssr: false, loading: () => <NativeLoadingScreen /> });
 
 const remeshCadBrepLater = (brep: string, deflection: Parameters<typeof import("@/lib/editorSketchCad").remeshCadBrep>[1], capped: Parameters<typeof import("@/lib/editorSketchCad").remeshCadBrep>[2]) =>
   import("@/lib/editorSketchCad").then(({ remeshCadBrep }) => remeshCadBrep(brep, deflection, capped));
@@ -80,6 +82,8 @@ export function NativeDocumentShell() {
   const savesRef = useRef(new Map<string, AbortController>());
   /** The name shown for the document: the native file name is authoritative (D6), "Untitled" before the first save. */
   const [displayName, setDisplayName] = useState<string | null>(null);
+  /** The editor has mounted and reported itself ready: until then the loading screen stays over it (no blank or half-built editor shows through). */
+  const [editorOnScreen, setEditorOnScreen] = useState(false);
   const changeStateRef = useRef<RevisionState | null>(null);
   const changeTimerRef = useRef<number | null>(null);
   const documentIdRef = useRef<string | null>(null);
@@ -178,12 +182,14 @@ export function NativeDocumentShell() {
     void (async () => {
       try {
         setPhase({ kind: "opening", text: "Opening…" });
+        setLoadingState({ stage: "opening" });
         const reply = await bridge.send("document.request", {});
         if (!reply.ok) throw new Error(`${reply.failure.message} (${reply.failure.code})`);
         const descriptor: DocumentDescriptor | { invalid: string } = parseDocumentDescriptor(reply.payload.document);
         if ("invalid" in descriptor) throw new Error(`The host sent an unusable document description: ${descriptor.invalid}`);
         documentId = descriptor.documentId;
         const name = descriptor.kind === "file" ? descriptor.fileName : descriptor.displayName;
+        setLoadingName(name);
         const state = await loadNativeDocument(
           descriptor,
           { importLyl: (bytes) => importLylProject(bytes), relieve: (project) => relieveOverFineCadMeshes(project, remeshCadBrepLater) },
@@ -192,12 +198,15 @@ export function NativeDocumentShell() {
             onPhase: (step, loaded, total) => {
               const label = step === "transfer" ? "Reading the file" : step === "unpack" ? "Unpacking" : "Building the design";
               setPhase({ kind: "opening", text: `${label}…${step === "transfer" && loaded && total ? ` ${Math.round((loaded / total) * 100)}%` : ""}` });
+              // The loading screen shows the same stage; only the transfer carries measurements.
+              setLoadingState(step === "transfer" ? { stage: "transfer", loaded, total } : { stage: step });
               void bridge.send("document.progress", { documentId: descriptor.documentId, phase: step, ...(loaded !== undefined ? { loaded } : {}), ...(total !== undefined ? { total } : {}) });
             },
           },
         );
         documentIdRef.current = state.documentId;
         setDisplayName(descriptor.kind === "file" ? name.replace(/\.[^./]+$/, "") : name);
+        setLoadingState({ stage: "editor" });
         setPhase({ kind: "ready", document: state, fileName: descriptor.kind === "file" ? name : null });
         // Reported when the editor is on screen (reportOpened below), not now: "open" means ready to edit.
         pendingReportRef.current = {
@@ -226,6 +235,7 @@ export function NativeDocumentShell() {
   };
 
   const reportOpened = () => {
+    setEditorOnScreen(true);
     const pending = pendingReportRef.current;
     if (!pending || !bridge) return;
     pendingReportRef.current = null;
@@ -236,11 +246,12 @@ export function NativeDocumentShell() {
   };
 
   if (phase.kind === "failed") return <Message title={phase.title} text={phase.text} />;
-  if (phase.kind !== "ready") return <Message text={phase.kind === "opening" ? phase.text : "Connecting to HundchenLayerling…"} />;
+  if (phase.kind !== "ready") return <NativeLoadingScreen />;
 
   const document = phase.document;
   return (
     <EditorBoundary onError={(error) => console.error("layerling: the editor stopped", error)}>
+      {editorOnScreen ? null : <NativeLoadingScreen />}
       <div className="editor-stage active">
         <LayerlingEditor
           nativeDocument={{ fileName: phase.fileName, documentId: document.documentId, documentProjectId: document.documentProjectId }}
