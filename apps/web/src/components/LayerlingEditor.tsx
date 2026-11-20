@@ -18908,6 +18908,9 @@ export function LayerlingEditor({
       // leaves the key alone, without preventDefault, so WKWebView hands it back to AppKit.
       if (nativeDocument && shortcut && key === "s") return;
 
+      // Cmd+H stays macOS's Hide Application: left alone like Cmd+S. Hide Selected is Ctrl+H, Unhide All Cmd+Shift+H.
+      if (nativeDocument && event.metaKey && !event.ctrlKey && !event.shiftKey && key === "h") return;
+
       // Save works from anywhere in the editor, a field too; the browser's own "save page" has
       // nothing to do here. Behind the project overview the key stays the browser's.
       if (shortcut && key === "s" && !event.shiftKey && !event.altKey) {
@@ -19221,8 +19224,7 @@ export function LayerlingEditor({
         return;
       }
 
-      // In the native app Cmd+H stays macOS's Hide Application (the menu shows Ctrl+H for Hide Selected; Cmd+Shift+H is Unhide All).
-      if (shortcut && key === "h" && !(nativeDocument && event.metaKey && !event.ctrlKey && !event.shiftKey)) {
+      if (shortcut && key === "h") {
         event.preventDefault();
         if (event.shiftKey) {
           showHidden();
