@@ -1836,7 +1836,7 @@ export function WorkspaceSettingsModal({
             </div>
 
             <div className="workspace-modal-footer">
-              <span className="workspace-footer-hint">{t("workspace.footerHint")}</span>
+              <span className="workspace-footer-hint">{scope === "app" ? "These settings are yours: they apply to every document." : scope === "doc" ? "These settings belong to this document." : t("workspace.footerHint")}</span>
               <div className="workspace-footer-buttons">
                 {docShown && savedDefault ? (
                   <button
