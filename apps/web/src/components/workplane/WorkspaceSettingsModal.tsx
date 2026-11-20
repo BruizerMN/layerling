@@ -531,6 +531,8 @@ export function WorkspaceSettingsModal({
   onMoveDimensionsEnabledChange,
   onOriginDimensionsEnabledChange,
   onStartInPerspectiveChange,
+  showWelcome,
+  onShowWelcomeChange,
   hasStartView,
   onSaveStartView,
   onResetStartView,
@@ -552,6 +554,9 @@ export function WorkspaceSettingsModal({
   onMoveDimensionsEnabledChange: (enabled: boolean) => void;
   onOriginDimensionsEnabledChange: (enabled: boolean) => void;
   onStartInPerspectiveChange: (perspective: boolean) => void;
+  /** Native app only: the Welcome window preference, kept by the host (shown in Application Settings). */
+  showWelcome?: boolean;
+  onShowWelcomeChange?: (show: boolean) => void;
   /** Whether a start view of the user's own is set (#853). */
   hasStartView: boolean;
   onSaveStartView: () => void;
@@ -1044,6 +1049,13 @@ export function WorkspaceSettingsModal({
                     checked={startInPerspective}
                     onChange={onStartInPerspectiveChange}
                   />
+                  {onShowWelcomeChange ? (
+                    <WorkspaceToggle
+                      label="Show Welcome window at startup and when the last document closes"
+                      checked={showWelcome ?? true}
+                      onChange={onShowWelcomeChange}
+                    />
+                  ) : null}
                   <WorkspaceToggle
                     label={t("workspace.startWithScrollbars")}
                     checked={workspace.startWithScrollbars}

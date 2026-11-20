@@ -70,6 +70,20 @@ export function NativeSettingsPage({ bootstrap }: { bootstrap: SettingsBootstrap
   const [moveDimensions, setMoveDimensions] = useState(() => readFlag(MOVE_DIMENSIONS_KEY));
   const [originDimensions, setOriginDimensions] = useState(() => readFlag(ORIGIN_DIMENSIONS_KEY));
   const [startInPerspective, setStartInPerspective] = useState(() => readFlag(START_IN_PERSPECTIVE_KEY));
+  // The Welcome window preference lives in the host (it decides what a launch shows); Application Settings reads and writes it through the bridge.
+  const [showWelcome, setShowWelcome] = useState(true);
+  useEffect(() => {
+    if (scope !== "app") return;
+    const w = window as unknown as { layerlingSettingsPage?: { welcome?: (on: boolean) => void } };
+    w.layerlingSettingsPage = { welcome: (on) => setShowWelcome(Boolean(on)) };
+    void hostHandler()?.postMessage({ type: "welcome.get" }).then((reply) => {
+      const enabled = (reply as { enabled?: boolean } | null)?.enabled;
+      if (typeof enabled === "boolean") setShowWelcome(enabled);
+    });
+    return () => {
+      delete w.layerlingSettingsPage;
+    };
+  }, [scope]);
   const docRef = useRef<DocState | null>(null);
   docRef.current = doc;
 
@@ -151,6 +165,11 @@ export function NativeSettingsPage({ bootstrap }: { bootstrap: SettingsBootstrap
       moveDimensionsEnabled={moveDimensions}
       originDimensionsEnabled={originDimensions}
       startInPerspective={startInPerspective}
+      showWelcome={showWelcome}
+      onShowWelcomeChange={scope === "app" ? (on) => {
+        setShowWelcome(on);
+        void hostHandler()?.postMessage({ type: "welcome.set", enabled: on });
+      } : undefined}
       onWorkspaceChange={onWorkspaceChange}
       onSnapChange={onSnapChange}
       onThemePreferenceChange={setAppTheme}
