@@ -1,6 +1,6 @@
 "use client";
 
-import { formatBytes, loadingLabel, measuredFraction, useLoadingState } from "@/lib/host/nativeLoading";
+import { formatBytes, loadingLabel, measuredFraction, useLoadingState } from "../lib/host/nativeLoading";
 
 /**
  * The loading screen of a native document window (Build 0014): shown by NativeDocumentShell from the first paint until the editor is on screen.
@@ -33,10 +33,14 @@ export function NativeLoadingScreen() {
   const fraction = measuredFraction(state);
   const label = loadingLabel(state.stage);
   const percent = fraction === null ? null : Math.round(fraction * 100);
+  // The screen is replaced by itself as the shell moves from stage to stage (a new element each time): the fade-in belongs to the page's first moments only, measured
+  // from the page's start, so a later arrival shows at once instead of fading in again.
+  const elapsed = typeof performance === "undefined" ? 0 : performance.now();
+  const cardStyle = elapsed >= 700 ? { animation: "none", opacity: 1 } : { animationDelay: `${Math.max(0, Math.round(350 - elapsed))}ms` };
   return (
     <main className="native-loading" role="status" aria-live="polite" aria-label="Loading Project">
       <style>{STYLE}</style>
-      <div className="native-loading-card">
+      <div className="native-loading-card" style={cardStyle}>
         <svg className="native-loading-mark" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
           <path d="M24 5 43 15 24 25 5 15Z" opacity=".55" />
           <path d="M5 23 24 33 43 23" opacity=".8" />
