@@ -13,6 +13,7 @@ import { performNativeSave, type NativeSaveApi } from "@/lib/host/nativeSave";
 import { applyAppTheme, getAppThemePreference, readStoredAppTheme, resolveAppTheme, setAppTheme, subscribeToAppTheme, type AppThemePreference, type ResolvedAppTheme } from "@/lib/appTheme";
 import { localizedError } from "@/lib/userErrors";
 import { useLanguage } from "@/lib/useLanguage";
+import { startNativeAppSync } from "@/lib/nativeAppSync";
 
 /**
  * The editor in a HundchenLayerling document window. Rendered INSTEAD of the browser start page whenever the page is served from the host's
@@ -67,6 +68,8 @@ function useBridge(): HostBridge | null {
 
 export function NativeDocumentShell() {
   useLanguage();
+  // Application-wide preferences changed in another window (Settings, another document) apply here too, live (nativeAppSync.ts).
+  useEffect(() => startNativeAppSync(), []);
   const bridge = useBridge();
   const [connection, setConnection] = useState<HostConnection>({ state: "inactive" });
   const [phase, setPhase] = useState<Phase>({ kind: "connecting" });

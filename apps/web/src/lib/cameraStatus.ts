@@ -41,6 +41,23 @@ export function distanceFromSlider(position: number, min: number, max: number): 
   return max * Math.pow(min / max, p);
 }
 
+/** The percentage range the camera really allows (its own distance clamps), and the distance a typed percentage means: the same scale as the slider. */
+export function percentRange(minDistance: number, maxDistance: number) {
+  return { min: zoomPercent(maxDistance), max: zoomPercent(minDistance) };
+}
+export function distanceFromPercent(percent: number): number {
+  return (HOME_VIEW_DISTANCE * 100) / Math.max(percent, 1e-6);
+}
+/** "23", "23%", " 150 % " or "12.5" -> a number; anything else -> null. */
+export function parseZoomPercent(text: string): number | null {
+  const match = /^\s*(\d+(?:[.,]\d+)?|[.,]\d+)\s*%?\s*$/.exec(text);
+  if (!match) return null;
+  const value = Number(match[1].replace(",", "."));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+/** The preset percentages the camera can actually reach. */
+export const ZOOM_PRESET_PERCENTS = [10, 25, 50, 75, 100, 150, 200, 400, 800, 1600] as const;
+
 let status: CameraStatus | null = null;
 let controller: CameraController | null = null;
 const listeners = new Set<() => void>();

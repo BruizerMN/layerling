@@ -27,3 +27,29 @@ describe("status bar zoom scale", () => {
     expect(distanceFromSlider(2, min, max)).toBeCloseTo(min, 9);
   });
 });
+
+import { ZOOM_PRESET_PERCENTS, distanceFromPercent, parseZoomPercent, percentRange } from "@/lib/cameraStatus";
+
+describe("zoom percentage entry uses the slider's own scale and limits", () => {
+  it("parses what a person types", () => {
+    expect(parseZoomPercent("23")).toBe(23);
+    expect(parseZoomPercent(" 23% ")).toBe(23);
+    expect(parseZoomPercent("12,5 %")).toBe(12.5);
+    expect(parseZoomPercent(".5")).toBe(0.5);
+    for (const bad of ["", "abc", "-5", "0", "0%", "1e3", "10 20", "%"]) expect(parseZoomPercent(bad)).toBeNull();
+  });
+  it("a percentage and its distance are the same thing the readout shows", () => {
+    for (const p of [10, 23, 100, 400]) expect(zoomPercent(distanceFromPercent(p))).toBeCloseTo(p, 9);
+    expect(distanceFromPercent(100)).toBeCloseTo(HOME_VIEW_DISTANCE, 9);
+  });
+  it("the reachable range comes from the camera's own distance limits, and presets outside it are not offered", () => {
+    const range = percentRange(3, 9000);
+    expect(range.max).toBeCloseTo(zoomPercent(3), 9);
+    expect(range.min).toBeCloseTo(zoomPercent(9000), 9);
+    const offered = ZOOM_PRESET_PERCENTS.filter((p) => p >= range.min && p <= range.max);
+    expect(offered).toContain(100);
+    expect(offered).toContain(1600);
+    expect(Math.max(...offered)).toBeLessThanOrEqual(range.max);
+    expect(Math.min(...offered)).toBeGreaterThanOrEqual(range.min);
+  });
+});

@@ -845,6 +845,15 @@ export function SecondaryToolbar({
       // Blocked storage: the groups fold as the window needs.
     }
   }, []);
+  // Native app: the pin is an application preference; another window's change applies here too.
+  useEffect(() => {
+    if (!nativeChrome) return;
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === "layerling.editor.ribbonPinned" || event.key === null) setRibbonPinned(window.localStorage.getItem("layerling.editor.ribbonPinned") === "true");
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [nativeChrome]);
   const toggleRibbonPinned = () => {
     const next = !ribbonPinned;
     setRibbonPinned(next);

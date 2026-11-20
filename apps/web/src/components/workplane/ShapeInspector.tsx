@@ -1,5 +1,6 @@
 "use client";
 
+import { useFooterSnapSlot } from "@/lib/footerSnap";
 import { displayY, displayYTurn, insideZ, insideZTurn } from "@/lib/displayAxes";
 import { GuideHelpLink } from "@/components/GuideHelpLink";
 import { SnapGridMenuItems } from "@/components/workplane/SnapGridMenu";
@@ -8241,7 +8242,18 @@ function PropertyResetButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-export function SnapGridControl({
+/**
+ * The Snap Grid selector with its step menu and the mm/in chooser. In the native app it is shown in the status bar beside the zoom controls
+ * (footerSnap.ts); everywhere else, and in focus mode, it is where it always was. Same component, same state, same handlers.
+ */
+export function SnapGridControl(props: Parameters<typeof SnapGridRowInner>[0]) {
+  const footer = useFooterSnapSlot();
+  if (footer.target && !footer.owner) return null;
+  const row = <SnapGridRowInner {...props} />;
+  return footer.target ? createPortal(row, footer.target) : row;
+}
+
+function SnapGridRowInner({
   units,
   customGrids,
   snap,

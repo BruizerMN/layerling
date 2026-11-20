@@ -6,6 +6,7 @@ import { applyAppTheme, getAppThemePreference, readStoredAppTheme, resolveAppThe
 import { readAppPrefs, subscribeAppPrefs, writeAppPrefs } from "@/lib/appPrefs";
 import { effectiveWorkspace, splitWorkspace } from "@/lib/settingsScope";
 import { useLanguage } from "@/lib/useLanguage";
+import { startNativeAppSync } from "@/lib/nativeAppSync";
 import { DEFAULT_SNAP_GRID, DEFAULT_WORKPLANE_WORKSPACE, normalizeSnapGrid, normalizeWorkspaceSettings, readWorkspaceDefault, saveWorkspaceDefault } from "@/lib/workplaneSettings";
 import type { GridSize, WorkplaneWorkspaceSettings } from "@/types/layerling";
 
@@ -62,6 +63,7 @@ function hostHandler(): HostHandler | null {
 export function NativeSettingsPage({ bootstrap }: { bootstrap: SettingsBootstrap }) {
   useLanguage();
   const scope = bootstrap.scope;
+  useEffect(() => startNativeAppSync(), []);
   const [theme, setTheme] = useState<AppThemePreference>("system");
   const [prefsVersion, setPrefsVersion] = useState(0);
   const [doc, setDoc] = useState<DocState | null>(null);
