@@ -536,6 +536,8 @@ export function WorkspaceSettingsModal({
   onMakeDefault,
   onMakeFitTest,
   onClose,
+  scope,
+  embedded = false,
 }: {
   workspace: WorkspaceSettings;
   snap: GridSize;
@@ -557,7 +559,15 @@ export function WorkspaceSettingsModal({
   /** Puts the fit test on the plate (fitTest.ts); the window closes for it. */
   onMakeFitTest?: () => void;
   onClose: () => void;
+  /** Native app (Build 0003): which owner's settings this window shows - "app" (application preferences) or "doc" (the document's own); settingsScope.ts. Unset: everything, as in the browser. */
+  scope?: "app" | "doc";
+  /** Native Settings window: no backdrop, no card, no title bar of its own (the window has them). */
+  embedded?: boolean;
 }) {
+  const appShown = scope !== "doc";
+  const docShown = scope !== "app";
+  const navShown = (id: WorkspaceSettingsSection) => (visibleSections ? visibleSections.includes(id) : !(embedded && (id === "output" || id === "backups")));
+  const visibleSections: readonly WorkspaceSettingsSection[] | null = scope === "app" ? ["appearance", "controls", "ribbon", "measurement", "workplane"] : scope === "doc" ? ["appearance", "measurement", "workplane", "shapes", "history"] : null;
   const [defaultSaved, setDefaultSaved] = useState(false);
   // A default saved earlier or just now: what "Use my default" puts on this design (#754).
   const savedDefault = useMemo(() => readWorkspaceDefault(), [defaultSaved]);
@@ -782,14 +792,14 @@ export function WorkspaceSettingsModal({
   };
 
   return (
-    <div className="workspace-modal" role="dialog" aria-modal="true" aria-label={t("workspace.title")}>
+    <div className={embedded ? "workspace-modal embedded" : "workspace-modal"} role={embedded ? undefined : "dialog"} aria-modal={embedded ? undefined : "true"} aria-label={t("workspace.title")}>
       <div
         ref={movable.panelRef}
         className={`workspace-modal-card ${movable.moved ? "floating" : ""} ${movable.dragging ? "moving" : ""}`}
         style={movable.style}
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <header className="workspace-modal-header movable" title={t("panel.moveHint")} {...movable.handleProps}>
+        {embedded ? null : (<header className="workspace-modal-header movable" title={t("panel.moveHint")} {...movable.handleProps}>
           <strong>{t("workspace.title")}</strong>
           <div className="panel-header-actions">
             <GuideHelpLink section={SETTINGS_HELP_SECTION[activeSection]} />
@@ -797,52 +807,71 @@ export function WorkspaceSettingsModal({
               <X size={18} />
             </button>
           </div>
-        </header>
+        </header>)}
 
         <div className="workspace-modal-layout">
           <nav className="workspace-settings-nav" aria-label={t("workspace.sections")}>
+            {navShown("appearance") ? (
             <button className={activeSection === "appearance" ? "active" : ""} aria-current={activeSection === "appearance" ? "page" : undefined} onClick={() => setActiveSection("appearance")}>
               <Palette size={18} />
-              <span>{t("workspace.appearance")}</span>
+              <span>{scope === "doc" ? "Model" : t("workspace.appearance")}</span>
             </button>
+            ) : null}
+            {navShown("controls") ? (
             <button className={activeSection === "controls" ? "active" : ""} aria-current={activeSection === "controls" ? "page" : undefined} onClick={() => setActiveSection("controls")}>
               <MousePointer2 size={18} />
               <span>{t("workspace.controls")}</span>
             </button>
+            ) : null}
+            {navShown("output") ? (
             <button className={activeSection === "output" ? "active" : ""} aria-current={activeSection === "output" ? "page" : undefined} onClick={() => setActiveSection("output")}>
               <Download size={18} />
               <span>{t("workspace.output")}</span>
             </button>
+            ) : null}
+            {navShown("ribbon") ? (
             <button className={activeSection === "ribbon" ? "active" : ""} data-help={t("workspace.ribbon")} aria-current={activeSection === "ribbon" ? "page" : undefined} onClick={() => setActiveSection("ribbon")}>
               <PanelTop size={18} />
               <span>{t("workspace.ribbon")}</span>
             </button>
+            ) : null}
+            {navShown("measurement") ? (
             <button className={activeSection === "measurement" ? "active" : ""} aria-current={activeSection === "measurement" ? "page" : undefined} onClick={() => setActiveSection("measurement")}>
               <Ruler size={18} />
               <span>{t("workspace.measurement")}</span>
             </button>
+            ) : null}
+            {navShown("workplane") ? (
             <button className={activeSection === "workplane" ? "active" : ""} aria-current={activeSection === "workplane" ? "page" : undefined} onClick={() => setActiveSection("workplane")}>
               <Grid3X3 size={18} />
               <span>{t("workspace.workplane")}</span>
             </button>
+            ) : null}
+            {navShown("shapes") ? (
             <button className={activeSection === "shapes" ? "active" : ""} aria-current={activeSection === "shapes" ? "page" : undefined} onClick={() => setActiveSection("shapes")}>
               <BoxIcon size={18} />
               <span>{t("workspace.shapeDefaults")}</span>
             </button>
+            ) : null}
+            {navShown("history") ? (
             <button className={activeSection === "history" ? "active" : ""} data-help={t("workspace.savedHistory")} aria-current={activeSection === "history" ? "page" : undefined} onClick={() => setActiveSection("history")}>
               <History size={18} />
               <span>{t("workspace.history")}</span>
             </button>
+            ) : null}
+            {navShown("backups") ? (
             <button className={activeSection === "backups" ? "active" : ""} data-help={t("backups.settingsTitle")} aria-current={activeSection === "backups" ? "page" : undefined} onClick={() => setActiveSection("backups")}>
               <ArchiveRestore size={18} />
               <span>{t("backups.settingsTitle")}</span>
             </button>
+            ) : null}
           </nav>
 
           <div className="workspace-modal-content">
             <div className="workspace-modal-body">
               {activeSection === "appearance" ? (
                 <>
+                  {appShown ? (<>
                   <div className="workspace-section-heading">
                     <strong>{t("workspace.appearance")}</strong>
                     <span>{t("workspace.appearanceHint")}</span>
@@ -1031,6 +1060,9 @@ export function WorkspaceSettingsModal({
                     checked={workspace.showStepNotices}
                     onChange={(showStepNotices) => patchWorkspace({ showStepNotices })}
                   />
+                  </>) : null}
+                  {docShown ? (<>
+                  <div className="workspace-section-heading"><strong>Model</strong><span>Properties of this model rather than of the application.</span></div>
                   <div className="workspace-reset-row" data-help={t("workspace.startViewHint")}>
                     <span>{t("workspace.startView")}</span>
                     <div className="property-defaults-actions">
@@ -1043,6 +1075,8 @@ export function WorkspaceSettingsModal({
                       </button>
                     </div>
                   </div>
+                  </>) : null}
+                  {appShown ? (<>
                   <WorkspaceToggle
                     label={t("workspace.showShadows")}
                     description={workspace.fastMode ? t("workspace.offInFastMode") : undefined}
@@ -1158,6 +1192,8 @@ export function WorkspaceSettingsModal({
                       {t("workspace.classicLook")}
                     </button>
                   </div>
+                  </>) : null}
+                  {docShown ? (<>
                   <label className="workspace-range" data-help={t("workspace.overhangAngle", { angle: "{angle}" })}>
                     <span>{t("workspace.overhangAngle", { angle: workspace.overhangAngle })}</span>
                     <input
@@ -1206,6 +1242,7 @@ export function WorkspaceSettingsModal({
                     </label>
                   ) : null}
                   <p className="workspace-history-note">{t("workspace.booleanTriangleLimitNote")}</p>
+                  </>) : null}
                 </>
               ) : null}
 
@@ -1364,6 +1401,7 @@ export function WorkspaceSettingsModal({
                     <strong>{t("workspace.measurement")}</strong>
                     <span>{t("workspace.measurementHint")}</span>
                   </div>
+                  {docShown ? (<>
                   <WorkspaceSelect
                     label={t("workspace.units")}
                     value={workspace.units}
@@ -1421,6 +1459,8 @@ export function WorkspaceSettingsModal({
                       else if (!customSnapGrids.some((grid) => grid.size === current.size)) onSnapChange(workspace.units === "Imperial" ? "1/8 in" : DEFAULT_SNAP_GRID);
                     }}
                   />
+                  </>) : null}
+                  {appShown ? (<>
                   <WorkspaceToggle
                     label={t("workspace.startWithCornerRuler")}
                     description={t("workspace.startWithCornerRulerHint")}
@@ -1430,6 +1470,7 @@ export function WorkspaceSettingsModal({
                       writeStartWithCornerRuler(on);
                     }}
                   />
+                  </>) : null}
                 </>
               ) : null}
 
@@ -1439,6 +1480,7 @@ export function WorkspaceSettingsModal({
                     <strong>{t("workspace.workplane")}</strong>
                     <span>{t("workspace.workplaneHint")}</span>
                   </div>
+                  {docShown ? (<>
                   <label className="workspace-select" data-help={t("workspace.printer")}>
                     <span>{t("workspace.printer")}</span>
                     <select value={chosenPrinter?.id ?? ""} onChange={(event) => setPrinter(event.currentTarget.value)}>
@@ -1464,6 +1506,8 @@ export function WorkspaceSettingsModal({
                     printer={chosenPrinter?.id ?? ""}
                     printerName={chosenPrinter ? `${chosenPrinter.vendor} ${chosenPrinter.model}` : ""}
                   />
+                  </>) : null}
+                  {appShown ? (<>
                   <WorkspaceToggle
                     label={t("workspace.showPlateLabels")}
                     description={t("workspace.showPlateLabelsHint")}
@@ -1476,6 +1520,8 @@ export function WorkspaceSettingsModal({
                     checked={workspace.gridLinesGrow}
                     onChange={(gridLinesGrow) => patchWorkspace({ gridLinesGrow })}
                   />
+                  </>) : null}
+                  {docShown ? (<>
                   <WorkspaceSelect
                     label={t("workspace.size")}
                     value={workspace.sizePreset}
@@ -1519,13 +1565,19 @@ export function WorkspaceSettingsModal({
                       />
                     </label>
                   </div>
+                  </>) : null}
+                  {appShown ? (<>
                   <WorkspaceToggle
                     label={t("workspace.showGrid")}
                     checked={workspace.showGrid}
                     onChange={(showGrid) => patchWorkspace({ showGrid })}
                   />
+                  </>) : null}
+                  {docShown ? (<>
                   <WorkspaceSelect label={t("workspace.gridBlockSize")} value={workspace.gridBlockPreset} options={workspace.units === "Imperial" ? [...IMPERIAL_GRID_BLOCK_PRESETS, "Custom"] : GRID_BLOCK_PRESETS}
                     optionLabel={gridBlockPresetLabel} onChange={setGridBlockPreset} />
+                  </>) : null}
+                  {appShown ? (<>
                   <ColorSettingControl
                     label={t("workspace.gridColor")}
                     color={gridColor}
@@ -1533,6 +1585,8 @@ export function WorkspaceSettingsModal({
                     presets={GRID_COLOR_PRESETS}
                     onChange={(nextGridColor) => patchWorkspace({ gridColor: nextGridColor })}
                   />
+                  </>) : null}
+                  {docShown ? (<>
                   {workspace.units === "Imperial" ? null : (
                     <WorkspaceSelect
                       label={t("workspace.gridMajorEvery")}
@@ -1542,6 +1596,8 @@ export function WorkspaceSettingsModal({
                       onChange={(option) => patchWorkspace({ gridMajorInterval: option === "10" ? 10 : 5 })}
                     />
                   )}
+                  </>) : null}
+                  {appShown ? (<>
                   <ColorSettingControl
                     label={t("workspace.gridMajorColor")}
                     color={gridMajorColor}
@@ -1549,6 +1605,8 @@ export function WorkspaceSettingsModal({
                     presets={GRID_COLOR_PRESETS}
                     onChange={(nextColor) => patchWorkspace({ gridMajorColor: nextColor.toLowerCase() === derivedGridMajorColor.toLowerCase() ? "" : nextColor })}
                   />
+                  </>) : null}
+                  {docShown ? (<>
                   {workspace.gridBlockPreset === "Custom" ? (
                     <div className="workspace-dimensions workspace-grid-dimensions">
                       <label>
@@ -1574,6 +1632,7 @@ export function WorkspaceSettingsModal({
                       <span>{t("workspace.resetGrid")}</span>
                     </button>
                   </div>
+                  </>) : null}
                 </>
               ) : null}
 
@@ -1779,7 +1838,7 @@ export function WorkspaceSettingsModal({
             <div className="workspace-modal-footer">
               <span className="workspace-footer-hint">{t("workspace.footerHint")}</span>
               <div className="workspace-footer-buttons">
-                {savedDefault ? (
+                {docShown && savedDefault ? (
                   <button
                     className="make-default-button"
                     title={t("workspace.useMyDefaultHint")}
@@ -1792,7 +1851,8 @@ export function WorkspaceSettingsModal({
                     {t("workspace.useMyDefault")}
                   </button>
                 ) : null}
-                <SettingsFileButtons workspace={workspace} snap={snap} onWorkspaceChange={onWorkspaceChange} onSnapChange={onSnapChange} />
+                {appShown ? <SettingsFileButtons workspace={workspace} snap={snap} onWorkspaceChange={onWorkspaceChange} onSnapChange={onSnapChange} /> : null}
+                {docShown ? (
                 <button
                   className="make-default-button"
                   onClick={() => {
@@ -1802,12 +1862,13 @@ export function WorkspaceSettingsModal({
                 >
                   {defaultSaved ? t("workspace.defaultSaved") : t("workspace.makeDefault")}
                 </button>
+                ) : null}
               </div>
             </div>
           </div>
         </div>
       </div>
-      <button className="workspace-modal-backdrop" aria-label={t("workspace.close")} onClick={onClose} />
+      {embedded ? null : <button className="workspace-modal-backdrop" aria-label={t("workspace.close")} onClick={onClose} />}
     </div>
   );
 }

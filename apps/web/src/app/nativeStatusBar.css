@@ -1,0 +1,61 @@
+/* The native app's status bar (components/NativeStatusBar.tsx). It reuses the editor footer's slot (.dashboard-legal.editor-legal: fixed to the
+   bottom, --editor-footer-height, hidden by focus mode) and only restyles it like a macOS window's bottom bar. */
+.dashboard-legal.editor-legal.native-status-bar {
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 12px;
+  font: 11px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  color: var(--muted, #5f6368);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.native-status-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.native-status-info { flex: 1 1 auto; overflow: hidden; }
+.native-status-info .native-status-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.native-status-info .native-status-item[data-status="selection"] { max-width: 280px; }
+.native-status-controls { flex: 0 0 auto; }
+.native-status-sep { width: 1px; height: 12px; background: var(--border); opacity: 0.8; flex: 0 0 auto; }
+.native-status-button {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: default;
+}
+.native-status-button:hover:not(:disabled) { background: rgba(127, 127, 127, 0.18); }
+.native-status-button[aria-pressed="true"] { background: rgba(10, 132, 255, 0.18); color: #0a84ff; }
+.native-status-button:disabled { opacity: 0.4; }
+.native-zoom { display: flex; align-items: center; gap: 4px; }
+.native-zoom[data-disabled="true"] { opacity: 0.6; }
+.native-zoom-slider { width: 120px; height: 14px; margin: 0; accent-color: #0a84ff; }
+.native-zoom-value { min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; color: inherit; }
+
+/* The native Settings windows host the existing settings component without the browser dialog's frame (WorkspaceSettingsModal embedded). */
+.workspace-modal.embedded {
+  position: static;
+  inset: auto;
+  display: block;
+  height: 100vh;
+  padding: 0;
+  z-index: auto;
+}
+.workspace-modal.embedded .workspace-modal-card {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.workspace-modal.embedded .workspace-modal-layout { height: 100%; }

@@ -55,7 +55,8 @@ import { readCornerRulers, writeCornerRulers } from "@/lib/cornerRulerStore";
 import { highestTapeIdNumber, readTape, savedTape, writeTape } from "@/lib/tapeStore";
 import { rememberCameraView, useDesignViews } from "@/components/workplane/cameraViews";
 import { timedCameraDamping } from "@/lib/cameraInertia";
-import { fitCameraDepthRange, frameBounds, resetCamera, selectionBounds, startViewOf, setCameraOntoPlane, setCameraToViewDirection, setCameraToViewFace, stepCameraTurn, syncViewCube, toggleCameraProjection, zoomCameraBy } from "@/components/workplane/cameraRig";
+import { fitCameraDepthRange, frameBounds, resetCamera, selectionBounds, startViewOf, setCameraOntoPlane, setCameraToViewDirection, setCameraToViewFace, stepCameraTurn, syncViewCube, toggleCameraProjection, zoomCameraBy, viewDistanceOf, setViewDistance, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE } from "@/components/workplane/cameraRig";
+import { publishCameraStatus, registerCameraController } from "@/lib/cameraStatus";
 import { disposeCutPreviewResources, renderFrame } from "@/components/workplane/renderFrame";
 import { DIMENSION_FORMULA_FIELDS, formulaMatchesMillimeters, formulaToRemember, withFieldFormula } from "@/lib/fieldFormulas";
 import { displayToMillimeters, formatLengthMm, lengthDisplayUnit, measurementOptionLabel, millimetersToDisplay, parseLengthMm, parseMeasurementInput, resolveLengthMm, setLengthUnit } from "@/lib/measurementUnits";
@@ -3505,6 +3506,8 @@ export function WorkplaneViewport({
       const renderStart = performance.now();
       fitCameraDepthRange(state.camera, state.controls.target);
       renderFrame(state);
+      // The status bar's zoom readout; a no-op unless the distance really changed (cameraStatus.ts).
+      publishCameraStatus({ distance: viewDistanceOf(state), orthographic: state.camera instanceof THREE.OrthographicCamera, minDistance: CAMERA_MIN_DISTANCE, maxDistance: CAMERA_MAX_DISTANCE });
       const frameMs = performance.now() - renderStart;
       const perf = perfRef.current;
       perf.frameMs = frameMs;
@@ -3637,6 +3640,19 @@ export function WorkplaneViewport({
     writeStartView(null);
     setHasStartView(false);
   }, []);
+
+  // Native app: the Document Settings window's start-view and fit-test buttons act here, where the camera lives (Toolbar -> "layerling:settings-action").
+  useEffect(() => {
+    const onAction = (event: Event) => {
+      const action = (event as CustomEvent<string>).detail;
+      if (action === "settings.saveStartView") saveStartView();
+      else if (action === "settings.resetStartView") resetStartView();
+      else if (action === "settings.makeFitTest") onMakeFitTest?.();
+    };
+    window.addEventListener("layerling:settings-action", onAction);
+    return () => window.removeEventListener("layerling:settings-action", onAction);
+  }, [onMakeFitTest, resetStartView, saveStartView]);
+
 
   // The plate bar looks at one build plate or at all of them (Discussion #456), keeping the camera's direction.
   useEffect(() => {
@@ -8215,6 +8231,17 @@ export function WorkplaneViewport({
   }, [secondViewWindow]);
   const closeSecondView = useCallback(() => setSecondViewWindow(null), []);
   const getSelectedIds = useCallback(() => selectedIdsRef.current, []);
+
+  // The native status bar's zoom controls act on this camera through the same functions the view bar and the mouse use.
+  useEffect(() => {
+    registerCameraController({
+      setDistance: (distance) => { if (threeRef.current) setViewDistance(threeRef.current, distance); },
+      zoomIn: () => zoomCamera(ZOOM_STEP_IN),
+      zoomOut: () => zoomCamera(ZOOM_STEP_OUT),
+      home: () => resetView(),
+    });
+    return () => registerCameraController(null);
+  }, [resetView, zoomCamera]);
 
   const toggleProjection = useCallback(() => {
     const state = threeRef.current;

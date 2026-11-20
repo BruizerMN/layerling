@@ -36,6 +36,7 @@ import dynamic from "next/dynamic";
 import { importFailureReason, importFailureSummary, importModelFiles } from "@/lib/modelImport";
 import { loadEditorModule } from "@/lib/editorModuleLoader";
 import { NativeDocumentShell } from "@/components/NativeDocumentShell";
+import { NativeSettingsPage, type SettingsBootstrap } from "@/components/NativeSettingsPage";
 import { fetchServerDefaults, type NewDesignsOnServerSetting } from "@/lib/serverDefaults";
 import { setServerSimpleMode } from "@/lib/simpleMode";
 import { useSimpleMode } from "@/lib/useSimpleMode";
@@ -5379,9 +5380,15 @@ function StaticIntro() {
  */
 export default function Page() {
   const [mode, setMode] = useState<"pending" | "native" | "browser">("pending");
+  const [settings, setSettings] = useState<SettingsBootstrap | null>(null);
   useEffect(() => {
-    setMode(window.location.protocol === "layerling:" ? "native" : "browser");
+    // A native Settings window is the same page with the host's settings bootstrap injected (it has no document and no editor).
+    const bootstrap = (window as unknown as { __layerlingSettingsBootstrap?: unknown }).__layerlingSettingsBootstrap as { scope?: unknown; documentId?: unknown } | undefined;
+    const native = window.location.protocol === "layerling:";
+    if (native && bootstrap && (bootstrap.scope === "app" || bootstrap.scope === "doc")) setSettings({ scope: bootstrap.scope, documentId: typeof bootstrap.documentId === "string" ? bootstrap.documentId : undefined });
+    setMode(native ? "native" : "browser");
   }, []);
   if (mode === "pending") return <StaticIntro />;
+  if (mode === "native" && settings) return <NativeSettingsPage bootstrap={settings} />;
   return mode === "native" ? <NativeDocumentShell /> : <BrowserHome />;
 }

@@ -332,6 +332,33 @@ export function zoomCameraBy(state: CameraRig, scale: number) {
   state.needsRender = true;
 }
 
+/** How far the view is from what it looks at, in mm: for an orthographic camera, the distance a perspective camera would need to frame the same height. */
+export function viewDistanceOf(state: CameraRig): number {
+  if (state.camera instanceof THREE.OrthographicCamera) {
+    return (state.camera.top - state.camera.bottom) / 2 / Math.max(state.camera.zoom, 1e-6) / Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV / 2));
+  }
+  return state.camera.position.distanceTo(state.controls.target);
+}
+
+/** The status bar's zoom slider: moves the camera to this view distance, keeping its direction, target and projection. */
+export function setViewDistance(state: CameraRig, distance: number) {
+  state.cameraTurn = null;
+  const next = clamp(distance, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE);
+  if (state.camera instanceof THREE.OrthographicCamera) {
+    const range = orthographicZoomRange(state.camera);
+    const halfHeight = (state.camera.top - state.camera.bottom) / 2;
+    state.camera.zoom = clamp(halfHeight / (next * Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV / 2))), range.min, range.max);
+  } else {
+    const offset = state.camera.position.clone().sub(state.controls.target);
+    if (offset.lengthSq() === 0) offset.copy(CAMERA_HOME).sub(CAMERA_TARGET);
+    offset.setLength(next);
+    state.camera.position.copy(state.controls.target).add(offset);
+  }
+  state.camera.updateProjectionMatrix();
+  state.controls.update();
+  state.needsRender = true;
+}
+
 /** The box around the bodies with these ids, or null when none of them is drawn. */
 export function selectionBounds(state: Pick<ThreeState, "shapeRecords">, ids: readonly string[]) {
   const bounds = new THREE.Box3();

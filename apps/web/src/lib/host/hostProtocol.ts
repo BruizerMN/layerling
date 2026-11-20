@@ -14,6 +14,15 @@ export const DOCUMENT_CAPABILITY = "document.open";
 /** Protocol 3 adds saving (`document.save`): change tracking, the save exchange and its upload. */
 export const SAVE_CAPABILITY = "document.save";
 export const SAVE_PROTOCOL_MIN = 3;
+/**
+ * Additive capability (Build 0003, no protocol version change): the native shell's menus and Settings windows talk to the document page.
+ * Offered by the editor in `hello`, granted by the host in `hello.ok`; needs protocol 3 and the document capability. A host or editor without
+ * it simply never sends these messages.
+ */
+export const UI_CAPABILITY = "ui.v1";
+/** Commands a host menu can send to a document page (`ui.command`). */
+export const UI_COMMANDS = ["mode.geometry", "mode.sketch", "focusMode.toggle", "ribbonPin.toggle", "search", "guide", "whatsNew", "shortcuts", "interactiveHelp", "settings.saveStartView", "settings.resetStartView", "settings.makeFitTest"] as const;
+export type UiCommand = (typeof UI_COMMANDS)[number];
 /** The first protocol version that carries the document messages. */
 export const DOCUMENT_PROTOCOL_MIN = 2;
 
@@ -152,6 +161,30 @@ export type SavePhase = "wait" | "snapshot" | "serialize" | "compress" | "upload
 export const SAVE_FAILURE_CODES = ["serialize-failed", "too-large", "out-of-memory", "cancelled", "interaction-timeout", "upload-failed", "internal"] as const;
 export type SaveFailureCode = (typeof SAVE_FAILURE_CODES)[number];
 
+/** Build 0003 (`ui.v1`): what the native menus need to know about the document page. Sent on change only. */
+export interface UiStateRequest {
+  id: string;
+  session: string;
+  type: "ui.state";
+  protocol: number;
+  payload: { documentId: string; state: { mode: "geometry" | "sketch"; sketchEnabled: boolean; focusMode: boolean; ribbonPinned: boolean } };
+}
+/** Build 0003 (`ui.v1`): the page asks the host to open one of its windows (the Settings window or this document's Document Settings window). */
+export interface UiActionRequest {
+  id: string;
+  session: string;
+  type: "ui.action";
+  protocol: number;
+  payload: { documentId: string; action: "openSettings" | "openDocumentSettings" };
+}
+/** Build 0003 (`ui.v1`): the document's own settings, for its Document Settings window. Sent only while that window is watching. */
+export interface SettingsStateRequest {
+  id: string;
+  session: string;
+  type: "settings.state";
+  protocol: number;
+  payload: { documentId: string; workspace: Record<string, unknown>; snap: string; hasStartView: boolean };
+}
 export interface DocumentChangedRequest {
   id: string;
   session: string;
@@ -202,6 +235,9 @@ export type HostRequest =
   | DocumentOpenedRequest
   | DocumentFailedRequest
   | DocumentChangedRequest
+  | UiStateRequest
+  | UiActionRequest
+  | SettingsStateRequest
   | SaveProgressRequest
   | SaveCommitRequest
   | SaveFailedRequest;
@@ -224,6 +260,9 @@ export type OkTypeFor = {
   "document.opened": "document.opened.ok";
   "document.failed": "document.failed.ok";
   "document.changed": "document.changed.ok";
+  "ui.state": "ui.state.ok";
+  "ui.action": "ui.action.ok";
+  "settings.state": "settings.state.ok";
   "document.save.progress": "document.save.progress.ok";
   "document.save.commit": "document.save.commit.ok";
   "document.save.failed": "document.save.failed.ok";
@@ -246,6 +285,12 @@ export type HostEvent =
   | { session: string; protocol: number; id: string; type: "document.saved"; payload: { documentId: string; saveId: string; revision: number; signature: string; fileName: string | null } }
   /** The native file name changed (first save, Save As, Finder rename); it is authoritative. */
   | { session: string; protocol: number; id: string; type: "document.renamed"; payload: { documentId: string; fileName: string } }
+  /** Build 0003 (`ui.v1`): a menu command for this document page. */
+  | { session: string; protocol: number; id: string; type: "ui.command"; payload: { documentId: string; command: UiCommand } }
+  /** Build 0003 (`ui.v1`): the Document Settings window changed these document settings; the page applies them like its own settings window did. */
+  | { session: string; protocol: number; id: string; type: "settings.apply"; payload: { documentId: string; workspace: Record<string, unknown>; snap: string | null } }
+  /** Build 0003 (`ui.v1`): the Document Settings window opened or closed; the page sends `settings.state` while it is open. */
+  | { session: string; protocol: number; id: string; type: "settings.watch"; payload: { documentId: string; watching: boolean } }
   /** The file was changed by another application (not reloaded automatically). */
   | { session: string; protocol: number; id: string; type: "document.externalChange"; payload: { documentId: string } };
 
@@ -322,6 +367,19 @@ export function parseHostEvent(value: unknown): HostEvent | { invalid: string } 
   if (value.type === "document.save") {
     if (!isText(documentId) || !isText(saveId) || !isText(value.payload.uploadToken)) return { invalid: "document.save needs documentId, saveId and uploadToken" };
     return { ...base, type: "document.save", payload: { documentId, saveId, uploadToken: value.payload.uploadToken, fileName: typeof value.payload.fileName === "string" ? value.payload.fileName : null, reason: typeof value.payload.reason === "string" ? value.payload.reason : "save" } };
+  }
+  if (value.type === "ui.command") {
+    return isText(documentId) && typeof value.payload.command === "string" && (UI_COMMANDS as readonly string[]).includes(value.payload.command)
+      ? { ...base, type: "ui.command", payload: { documentId, command: value.payload.command as UiCommand } }
+      : { invalid: "ui.command needs documentId and a known command" };
+  }
+  if (value.type === "settings.apply") {
+    return isText(documentId) && isRecord(value.payload.workspace)
+      ? { ...base, type: "settings.apply", payload: { documentId, workspace: value.payload.workspace, snap: typeof value.payload.snap === "string" ? value.payload.snap : null } }
+      : { invalid: "settings.apply needs documentId and a workspace object" };
+  }
+  if (value.type === "settings.watch") {
+    return isText(documentId) && typeof value.payload.watching === "boolean" ? { ...base, type: "settings.watch", payload: { documentId, watching: value.payload.watching } } : { invalid: "settings.watch needs documentId and watching" };
   }
   if (value.type === "document.save.cancel") {
     return isText(documentId) && isText(saveId) ? { ...base, type: "document.save.cancel", payload: { documentId, saveId } } : { invalid: "document.save.cancel needs documentId and saveId" };

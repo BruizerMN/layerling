@@ -7,6 +7,8 @@ import type { LylRestoredProject } from "@/lib/lylProject";
 import { horizontalPlacementWorkplane, type PlacementWorkplane } from "@/lib/placementWorkplane";
 import { DEFAULT_SNAP_GRID, DEFAULT_WORKPLANE_WORKSPACE, readWorkspaceDefault } from "@/lib/workplaneSettings";
 import { seedStartCornerRuler, writeCornerRulers } from "@/lib/cornerRulerStore";
+import { readAppPrefs, type AppPrefs } from "@/lib/appPrefs";
+import { effectiveWorkspace } from "@/lib/settingsScope";
 import { writeDesignView, writeSavedViews } from "@/lib/designView";
 import { writeTape } from "@/lib/tapeStore";
 import type { GridSize, ProjectAsset, ProjectAttachment, WorkplaneNote, WorkplaneShape, WorkplaneWorkspaceSettings } from "@/types/layerling";
@@ -86,6 +88,8 @@ export interface NativeDocumentDeps {
   fetchBytes?: typeof fetchDocumentBytes;
   now?: () => number;
   createId?: () => string;
+  /** Test seam: the application preferences (default: the real store). */
+  appPrefs?: () => AppPrefs;
 }
 
 export interface NativeDocumentOptions {
@@ -114,7 +118,8 @@ function newDocumentState(documentId: string, runtimeProjectId: string, displayN
     modifiedAt: stamp,
     shapes: [],
     assets: [],
-    workspace: saved?.workspace ?? DEFAULT_WORKPLANE_WORKSPACE,
+    // Document keys from the new-document defaults, application keys from the application's own preferences (settingsScope.ts).
+    workspace: effectiveWorkspace(saved?.workspace ?? DEFAULT_WORKPLANE_WORKSPACE, (deps.appPrefs ?? readAppPrefs)()),
     snapGrid: saved?.snap ?? DEFAULT_SNAP_GRID,
     placementElevation: 0,
     placementWorkplane: horizontalPlacementWorkplane(),
@@ -175,7 +180,8 @@ async function openFileDocument(
     historyIndex: restored.historyIndex,
     assets: restored.assets,
     attachments: restored.attachments,
-    workspace: restored.workspace,
+    // The file's own application keys are dropped HERE, before the editor ever sees the workspace (settingsScope.ts).
+    workspace: effectiveWorkspace(restored.workspace, (deps.appPrefs ?? readAppPrefs)()),
     snapGrid: restored.snapGrid,
     placementElevation: restored.placementElevation,
     placementWorkplane: restored.placementWorkplane,

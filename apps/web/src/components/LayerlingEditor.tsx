@@ -199,6 +199,11 @@ import { applySketchCorners } from "@/lib/sketchFilletChamfer";
 import { revolveAxisShift } from "@/lib/revolveAxis";
 import { buildSketchRevolveMesh, DEFAULT_SKETCH_REVOLVE_SETTINGS, normalizeSketchRevolveSettings, type SketchRevolveMesh } from "@/lib/sketchRevolve";
 import { AppFooter } from "@/components/AppFooter";
+import { NativeStatusBar } from "@/components/NativeStatusBar";
+import { readAppPrefs, subscribeAppPrefs, writeAppPrefs } from "@/lib/appPrefs";
+import { publishSettingsState, setNativeUiDocument, subscribeNativeUiEvents } from "@/lib/host/nativeUi";
+import { readStartView } from "@/lib/designView";
+import { documentSettingsView, effectiveWorkspace, splitWorkspace } from "@/lib/settingsScope";
 import { useFileAccept } from "@/lib/fileAccept";
 import { NATIVE_SAVE_UNAVAILABLE } from "@/lib/host/nativeStrings";
 import { exportLylProject, LYL_CREATED_WITH_VERSION, LYL_MEDIA_TYPE, lylThumbnailFiles } from "@/lib/lylProject";
@@ -4952,7 +4957,8 @@ export function LayerlingEditor({
     return documentSignature({
       entryFingerprint: entry?.fingerprint ?? "",
       attachments: attachmentsFingerprint(projectAttachmentsRef.current),
-      workspace: workspaceSettingsRef.current as unknown as Record<string, unknown>,
+      // Native app: only the document's own settings count (settingsScope.ts); application preferences never make a document modified.
+      workspace: documentSettingsView(workspaceSettingsRef.current) as unknown as Record<string, unknown>,
       snapGrid: snapGridRef.current,
       placementElevation: placementElevationRef.current,
       placementWorkplane: placementWorkplaneFingerprint(placementWorkplaneRef.current),
@@ -5328,6 +5334,8 @@ export function LayerlingEditor({
   const updateProjectWorkspaceSettings = useCallback(
     (settings: { workspace: WorkplaneWorkspaceSettings; snap: GridSize }) => {
       const nextWorkspace = normalizeWorkspaceSettings(settings.workspace);
+      // Native app: an edit of an application preference belongs to the application, not to this document (settingsScope.ts).
+      if (nativeDocument) writeAppPrefs(splitWorkspace(nextWorkspace).app);
       const workspaceBefore = workspaceSettingsRef.current;
       workspaceSettingsRef.current = nextWorkspace;
       // Plates of another size (another printer): the bodies on the later plates keep their spot on theirs (#456).
@@ -5355,8 +5363,61 @@ export function LayerlingEditor({
         sketchPlacementWorkplane: placementWorkplaneRef.current,
       });
     },
-    [onProjectWorkspaceChange, placementElevation, projectId],
+    [nativeDocument, onProjectWorkspaceChange, placementElevation, projectId],
   );
+
+  // Native app: a change of the application preferences (this window's Settings window, or another document window) reaches this editor live,
+  // through the same fingerprint-guarded path as any hydration, and never counts as a change of the document (settingsScope.ts).
+  useEffect(() => {
+    if (!nativeDocument) return;
+    return subscribeAppPrefs(() => {
+      const next = effectiveWorkspace(workspaceSettingsRef.current, readAppPrefs());
+      if (workplaneSettingsFingerprint(workspaceSettingsRef.current, snapGridRef.current) === workplaneSettingsFingerprint(next, snapGridRef.current)) return;
+      workspaceSettingsRef.current = next;
+      setWorkspaceSettings(next);
+    });
+  }, [nativeDocument]);
+
+  // Native app: the Document Settings window edits THIS document's own settings (settingsScope.ts) through the host. The page sends the settings
+  // while that window watches, and applies what it sends back exactly as its own settings window would, so dirty state and recovery need no special case.
+  const settingsWatchedRef = useRef(false);
+  const publishDocumentSettings = useCallback(() => {
+    if (!settingsWatchedRef.current) return;
+    publishSettingsState({
+      workspace: documentSettingsView(workspaceSettingsRef.current) as Record<string, unknown>,
+      snap: snapGridRef.current,
+      hasStartView: readStartView() !== null,
+    });
+  }, []);
+  useEffect(() => {
+    if (!nativeDocument) return;
+    setNativeUiDocument(nativeDocument.documentId);
+    const off = subscribeNativeUiEvents((event) => {
+      if (event.type === "settings.watch") {
+        settingsWatchedRef.current = event.payload.watching;
+        publishDocumentSettings();
+      } else if (event.type === "settings.apply") {
+        const patch = splitWorkspace(event.payload.workspace).doc;
+        const merged = normalizeWorkspaceSettings({ ...workspaceSettingsRef.current, ...patch });
+        // Only the document's own keys can come through this door (application keys belong to the application).
+        const next = effectiveWorkspace(merged, readAppPrefs());
+        const snap = event.payload.snap ? normalizeSnapGrid(event.payload.snap) : snapGridRef.current;
+        updateProjectWorkspaceSettings({ workspace: next, snap });
+      }
+    });
+    return () => {
+      off();
+      setNativeUiDocument(null);
+    };
+  }, [nativeDocument, publishDocumentSettings, updateProjectWorkspaceSettings]);
+  useEffect(() => {
+    if (!nativeDocument) return;
+    publishDocumentSettings();
+    // A start view saved or reset from the window changes no state here; read again shortly after the viewport has acted.
+    const again = () => window.setTimeout(publishDocumentSettings, 80);
+    window.addEventListener("layerling:settings-action", again);
+    return () => window.removeEventListener("layerling:settings-action", again);
+  }, [nativeDocument, workspaceSettings, snapGrid, publishDocumentSettings]);
 
   useEffect(() => {
     if (!projectId || !onProjectWorkspaceChange) return;
@@ -19547,6 +19608,7 @@ export function LayerlingEditor({
     <div className={`layerling-editor ${historyViewState ? "history-view-active" : ""} ${focusMode.active ? "focus-mode" : ""}`}>
       <SecondaryToolbar
         hideProjectName={Boolean(nativeDocument)}
+        nativeChrome={Boolean(nativeDocument)}
         toolbarMode={toolbarMode}
         projectName={projectName}
         onProjectNameChange={onProjectNameChange}
@@ -20122,7 +20184,16 @@ export function LayerlingEditor({
           onClose={closeShapeContextMenu}
         />
       ) : null}
-      <AppFooter variant="editor" version={LYL_CREATED_WITH_VERSION} onBugReport={() => void saveBugReport()} />
+      {nativeDocument ? (
+        <NativeStatusBar
+          objectCount={shapes.length}
+          selectionLabel={selectedShapes.length === 0 ? "Nothing selected" : selectedShapes.length === 1 ? displayShapeName(selectedShapes[0]) : `${selectedShapes.length} selected`}
+          unitsLabel={lengthDisplayUnit(workspaceSettings).label}
+          plateLabel={`${workspaceSettings.width} × ${workspaceSettings.depth} mm`}
+        />
+      ) : (
+        <AppFooter variant="editor" version={LYL_CREATED_WITH_VERSION} onBugReport={() => void saveBugReport()} />
+      )}
       {historyViewState && toolbarMode === "geometry" ? (
         <HistoryViewOverlay
           index={historyViewState.index}

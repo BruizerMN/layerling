@@ -38,6 +38,7 @@ import type { ShapeAsset, SketchOperation, WorkplaneWorkspaceSettings } from "@/
 import { TopPanel } from "./TopActionPanel";
 import { useToolbarCollapse } from "./useToolbarCollapse";
 import { createHoverOpener, type HoverOpener } from "@/lib/hoverOpen";
+import { publishUiState, requestHostAction, subscribeNativeUiEvents } from "@/lib/host/nativeUi";
 
 
 /** Die Befehle der Suche, die im Verlaufsblick wach bleiben: sie aendern nichts am Entwurf. */
@@ -239,6 +240,7 @@ export function SecondaryToolbar({
   projectName,
   onProjectNameChange,
   hideProjectName = false,
+  nativeChrome = false,
   onToolbarModeChange,
   outlinerOpen,
   onToggleOutliner,
@@ -424,6 +426,8 @@ export function SecondaryToolbar({
   onProjectNameChange?: (name: string) => void;
   /** The native app: the document window already shows the name (and Save As renames), so the field is not drawn. */
   hideProjectName?: boolean;
+  /** The native macOS app: the browser's title row (brand, mode tabs, utility buttons, theme, language, gear) is left out; the Model/View/Help menus, the status bar and Settings take over. */
+  nativeChrome?: boolean;
   onToolbarModeChange: (mode: ToolbarMode) => void;
   outlinerOpen: boolean;
   onToggleOutliner: () => void;
@@ -876,6 +880,43 @@ export function SecondaryToolbar({
   };
   const openPaletteRef = useRef(openPalette);
   openPaletteRef.current = openPalette;
+  // Native app (Build 0003): what the Model/View menus show, and the commands they send. The mode, focus mode and ribbon pin stay the toolbar's own
+  // state; the menu is only a second way to reach the same functions as the buttons and the command search.
+  useEffect(() => {
+    if (!nativeChrome) return;
+    publishUiState({ mode: toolbarMode === "sketch" ? "sketch" : "geometry", sketchEnabled: !historyViewActive, focusMode: Boolean(focusMode), ribbonPinned });
+  }, [nativeChrome, toolbarMode, historyViewActive, focusMode, ribbonPinned]);
+  const nativeCommandRef = useRef<(command: string) => void>(() => undefined);
+  nativeCommandRef.current = (command) => {
+    switch (command) {
+      case "mode.geometry": selectToolbarMode("geometry"); break;
+      case "mode.sketch": if (!historyViewActive) selectToolbarMode("sketch"); break;
+      case "focusMode.toggle": onFocusModeChange?.(!focusMode); break;
+      case "ribbonPin.toggle": toggleRibbonPinned(); break;
+      case "search": openPalette(); break;
+      case "guide": onGuide(); break;
+      case "whatsNew": onWhatsNew?.(); break;
+      case "shortcuts": onShortcuts(); break;
+      case "interactiveHelp": onInteractiveHelp(); break;
+      case "settings.saveStartView":
+      case "settings.resetStartView":
+      case "settings.makeFitTest":
+        window.dispatchEvent(new CustomEvent("layerling:settings-action", { detail: command }));
+        break;
+    }
+  };
+  useEffect(() => {
+    if (!nativeChrome) return;
+    const onWindowCommand = (event: Event) => nativeCommandRef.current(String((event as CustomEvent<string>).detail));
+    window.addEventListener("layerling:ui-command", onWindowCommand);
+    const off = subscribeNativeUiEvents((event) => {
+      if (event.type === "ui.command") nativeCommandRef.current(event.payload.command);
+    });
+    return () => {
+      window.removeEventListener("layerling:ui-command", onWindowCommand);
+      off();
+    };
+  }, [nativeChrome]);
   useEffect(() => {
     // Ctrl/Cmd+K opens the command search from anywhere in the editor, also
     // while a field has the focus - the browsers' own use of the key (a search
@@ -1322,7 +1363,7 @@ export function SecondaryToolbar({
       plain("export", t("editor.export"), fileGroup, true, () => onTopPanel("export"), { icon: ToolbarVectorExportIcon }),
       plain("file-backups", t("backups.title"), fileGroup, true, () => window.dispatchEvent(new Event(OPEN_FILE_BACKUPS_EVENT)), { icon: ArchiveRestore, keywords: ["backup", "backups", "version", "versions", "restore", "sicherung", "fassung", "wiederherstellen"] }),
       plain("attachments", t("editor.attachments"), fileGroup, true, () => onTopPanel("attachments"), { icon: ToolbarAttachmentsIcon, keywords: ["attachment", "file", "notes", "instructions", "readme", "anhang", "datei"] }),
-      plain("settings", t("editor.workspaceSettings"), t("editor.group.help"), true, () => window.dispatchEvent(new Event("layerling:open-workspace-settings")), { icon: ToolbarSettingsIcon }),
+      plain("settings", t("editor.workspaceSettings"), t("editor.group.help"), true, () => { if (!(nativeChrome && requestHostAction("openSettings"))) window.dispatchEvent(new Event("layerling:open-workspace-settings")); }, { icon: ToolbarSettingsIcon }),
       plain("focus-mode", focusMode ? t("focusMode.leave") : t("focusMode.enter"), t("shortcuts.group.view"), Boolean(onFocusModeChange), () => onFocusModeChange?.(!focusMode), { icon: focusMode ? Minimize2 : Maximize2, active: focusMode }),
       plain("mode-sketch", t("palette.switchSketch"), t("palette.group.mode"), true, () => selectToolbarMode("sketch")),
       ...helpCommands,
@@ -1868,6 +1909,7 @@ export function SecondaryToolbar({
           </div>
         )}
       </div>
+      {nativeChrome ? null : (
       <div className="toolbar-title-row">
         {/* The brand, in the same corner as on the start page. Not a link:
             leaving the editor is not something to trigger by accident. */}
@@ -1975,6 +2017,7 @@ export function SecondaryToolbar({
           </button>
         </div>
       </div>
+      )}
       {focusMode && onFocusModeChange ? (
         <FocusModeBar
           toolbarMode={toolbarMode === "sketch" ? "sketch" : "geometry"}
@@ -1983,7 +2026,7 @@ export function SecondaryToolbar({
           onHome={onHome}
           homeDisabled={toolbarMode !== "geometry"}
           onSearch={openPalette}
-          onSettings={() => window.dispatchEvent(new Event("layerling:open-workspace-settings"))}
+          onSettings={() => { if (!(nativeChrome && requestHostAction("openSettings"))) window.dispatchEvent(new Event("layerling:open-workspace-settings")); }}
           onLeave={() => onFocusModeChange(false)}
           showSearch={!simpleMode}
           nameField={hideProjectName ? undefined : <ProjectNameField className="focus-mode-bar-name" projectName={projectName} onProjectNameChange={onProjectNameChange} />}

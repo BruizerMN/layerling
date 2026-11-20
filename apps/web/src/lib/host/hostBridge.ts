@@ -4,6 +4,7 @@ import {
   DOCUMENT_PROTOCOL_MIN,
   SAVE_CAPABILITY,
   SAVE_PROTOCOL_MIN,
+  UI_CAPABILITY,
   HOST_BOOTSTRAP_KEY,
   HOST_HANDLER_NAME,
   HOST_PROTOCOL_MAX,
@@ -117,6 +118,10 @@ export interface HostBridge {
   sendSave(type: SaveMessageType, payload: Record<string, unknown>): Promise<{ ok: true; payload: Record<string, unknown> } | { ok: false; failure: HostFailure }>;
   /** True once connected with protocol 3 and the save capability granted. */
   supportsSave(): boolean;
+  /** Build 0003 (`ui.v1`): send a menu-state or settings-state message; refused locally unless the host granted `ui.v1`. */
+  sendUi(type: UiMessageType, payload: Record<string, unknown>): Promise<{ ok: true; payload: Record<string, unknown> } | { ok: false; failure: HostFailure }>;
+  /** True once the host granted `ui.v1`. */
+  supportsUi(): boolean;
   getConnection(): HostConnection;
   subscribe(listener: (connection: HostConnection) => void): () => void;
   dispose(): void;
@@ -141,6 +146,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 export type DocumentMessageType = "document.request" | "document.progress" | "document.opened" | "document.failed";
+export type UiMessageType = "ui.state" | "ui.action" | "settings.state";
 export type SaveMessageType = "document.changed" | "document.save.progress" | "document.save.commit" | "document.save.failed";
 
 export function createHostBridge(env: HostEnvironment | null, options: HostBridgeOptions): HostBridge {
@@ -189,6 +195,8 @@ export function createHostBridge(env: HostEnvironment | null, options: HostBridg
   const saveGranted = () =>
     (connection.state === "connected" || connection.state === "ready") && negotiated >= SAVE_PROTOCOL_MIN && connection.capabilities.includes(SAVE_CAPABILITY);
 
+  const uiGranted = () => saveGranted() && connection.state !== "failed" && connection.state !== "inactive" && connection.state !== "connecting" && connection.capabilities.includes(UI_CAPABILITY);
+
   const receive: HostReceiver = (event) => {
     if (connection.state !== "connected" && connection.state !== "ready") return { ok: false, code: "not-ready", message: "handshake not complete" };
     const parsed = parseHostEvent(event);
@@ -198,6 +206,12 @@ export function createHostBridge(env: HostEnvironment | null, options: HostBridg
     if (parsed.type === "document.cancel") {
       if (!documentsGranted()) return { ok: false, code: "bad-request", message: "document events were not negotiated" };
       env?.log("debug", `host event document.cancel ${parsed.payload.documentId}`);
+      eventListeners.forEach((listener) => listener(parsed));
+      return { ok: true };
+    }
+    if (parsed.type === "ui.command" || parsed.type === "settings.apply" || parsed.type === "settings.watch") {
+      if (!uiGranted()) return { ok: false, code: "bad-request", message: "ui events were not negotiated" };
+      env?.log("debug", `host event ${parsed.type}`);
       eventListeners.forEach((listener) => listener(parsed));
       return { ok: true };
     }
@@ -274,6 +288,13 @@ export function createHostBridge(env: HostEnvironment | null, options: HostBridg
       const outcome = await exchange(request, `${type}.ok`);
       return outcome.kind === "ok" ? { ok: true as const, payload: outcome.payload } : { ok: false as const, failure: outcome.failure };
     },
+    async sendUi(type, payload) {
+      if (!uiGranted()) return { ok: false as const, failure: { code: "unsupported-capability" as const, message: "the host did not grant ui support" } };
+      const request = { id: nextId(), session, type, protocol: negotiated, payload } as HostRequest;
+      const outcome = await exchange(request, `${type}.ok`);
+      return outcome.kind === "ok" ? { ok: true as const, payload: outcome.payload } : { ok: false as const, failure: outcome.failure };
+    },
+    supportsUi: uiGranted,
     supportsDocuments: documentsGranted,
     supportsSave: saveGranted,
 
@@ -317,7 +338,7 @@ export function startHostBridge(win?: HostWindow): () => void {
   const bridge = createHostBridge(env, {
     editorVersion: process.env.NEXT_PUBLIC_APP_VERSION ?? "unknown",
     editorBuild: process.env.NEXT_PUBLIC_BUILD_ID ?? "unknown",
-    capabilities: [DOCUMENT_CAPABILITY, SAVE_CAPABILITY],
+    capabilities: [DOCUMENT_CAPABILITY, SAVE_CAPABILITY, UI_CAPABILITY],
   });
   activeBridge = bridge;
   bridgeListeners.forEach((listener) => listener(bridge));
