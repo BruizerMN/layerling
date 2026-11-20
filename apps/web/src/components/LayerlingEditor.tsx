@@ -19621,14 +19621,15 @@ export function LayerlingEditor({
         const base: ShapeContextMenuState = { x: request.clientX, y: request.clientY, onShape: Boolean(request.shapeId) || Boolean(request.inSelection), stack: request.stackIds, facePoint: request.facePoint };
         const registry = new Map<string, ShapeContextMenuItem>();
         const convert = (list: ShapeContextMenuItem[], prefix: string): NativeMenuItem[] =>
-          list.map((item) => {
+          list.flatMap((item): NativeMenuItem[] => {
             const key = `${prefix}${item.key}`;
             if (item.keepOpen) {
               const sub = shapeContextMenuItems({ ...base, listing: item.key === "selectOther", plateListing: item.key === "ontoPlate" });
-              return { key, title: item.label, separatorBefore: item.separated, items: convert(sub, `${key}/`) };
+              // A list with nothing in it is no submenu (the web menu would show an empty page).
+              return sub.length === 0 ? [] : [{ key, title: item.label, separatorBefore: item.separated, items: convert(sub, `${key}/`) }];
             }
             registry.set(key, item);
-            return { key, title: item.label, shortcut: item.shortcut, danger: item.danger, separatorBefore: item.separated, color: item.color };
+            return [{ key, title: item.label, shortcut: item.shortcut, danger: item.danger, separatorBefore: item.separated, color: item.color }];
           });
         const items = convert(shapeContextMenuItems(base), "");
         if (items.length === 0) return false;
