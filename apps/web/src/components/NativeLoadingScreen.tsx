@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { formatBytes, loadingLabel, measuredFraction, useLoadingState } from "../lib/host/nativeLoading";
 
 /**
@@ -16,6 +17,10 @@ const STYLE = `
   font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; -webkit-font-smoothing: antialiased; user-select: none; cursor: default; }
 .native-loading-card { display: grid; justify-items: center; width: min(420px, 78vw); margin-top: -6vh; opacity: 0; animation: native-loading-in 320ms ease-out 350ms forwards; }
 .native-loading-mark { width: 54px; height: 54px; margin-bottom: 22px; color: #4da3ff; }
+/* Levi, from the approved Welcome artwork (a crop the host serves from its bundle), at about the size he has in the Welcome window. The mask only lets the crop's
+   edges melt into this background; nothing of him or his platform is faded. */
+.native-loading-levi { display: block; width: min(268px, 66vw); height: auto; max-height: 30vh; margin: -8px 0 4px; object-fit: contain;
+  -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 70%, transparent 100%); mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 70%, transparent 100%); }
 .native-loading h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: .01em; }
 .native-loading-name { box-sizing: border-box; max-width: 100%; min-height: 20px; margin-top: 6px; padding: 0 4px; overflow: hidden; color: rgba(255,255,255,.72); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .native-loading-bar { position: relative; width: 100%; height: 4px; margin-top: 26px; overflow: hidden; background: rgba(120,170,255,.16); border-radius: 2px; }
@@ -35,17 +40,23 @@ export function NativeLoadingScreen() {
   const percent = fraction === null ? null : Math.round(fraction * 100);
   // The screen is replaced by itself as the shell moves from stage to stage (a new element each time): the fade-in belongs to the page's first moments only, measured
   // from the page's start, so a later arrival shows at once instead of fading in again.
+  const [leviFailed, setLeviFailed] = useState(false);
   const elapsed = typeof performance === "undefined" ? 0 : performance.now();
   const cardStyle = elapsed >= 700 ? { animation: "none", opacity: 1 } : { animationDelay: `${Math.max(0, Math.round(350 - elapsed))}ms` };
   return (
     <main className="native-loading" role="status" aria-live="polite" aria-label="Loading Project">
       <style>{STYLE}</style>
       <div className="native-loading-card" style={cardStyle}>
-        <svg className="native-loading-mark" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
-          <path d="M24 5 43 15 24 25 5 15Z" opacity=".55" />
-          <path d="M5 23 24 33 43 23" opacity=".8" />
-          <path d="M5 31 24 41 43 31" />
-        </svg>
+        {leviFailed ? (
+          <svg className="native-loading-mark" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
+            <path d="M24 5 43 15 24 25 5 15Z" opacity=".55" />
+            <path d="M5 23 24 33 43 23" opacity=".8" />
+            <path d="M5 31 24 41 43 31" />
+          </svg>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className="native-loading-levi" src="/__host__/art/loading-levi.jpg" width={268} height={200} alt="" aria-hidden="true" draggable={false} onError={() => setLeviFailed(true)} />
+        )}
         <h1>Loading Project...</h1>
         <div className="native-loading-name" title={state.name ?? undefined}>{state.name ?? ""}</div>
         <div
