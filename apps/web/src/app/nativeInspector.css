@@ -357,3 +357,79 @@ html[data-native-chrome="on"] .native-inspector-dock .property-card-header { col
 .native-inspector-dock .name-tag-sides button[aria-checked="true"] { background: var(--insp-accent-soft) !important; border-color: var(--insp-accent) !important; color: var(--insp-fg); }
 .native-inspector-dock .property-card .range-property input[type="range"]::-webkit-slider-runnable-track { background: var(--insp-field-line) !important; }
 .native-inspector-dock .property-card .range-property input[type="range"]::-webkit-slider-thumb { background: #fff !important; border: 1px solid var(--insp-field-line) !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35) !important; }
+
+/* =====================================================================================================================
+   Build 0006: one selection style for every selectable option in the Inspector, group controls, and the scrollbar.
+
+   The reference is the Centre / Edge control. Every selected option (Solid/Hole, Centre/Edge, group resize, surface texture layers, option tiles,
+   toggled action buttons, lock/hide) takes these tokens, so a later system accent colour changes ONE variable (--insp-accent), not components.
+   Meaningful colours (the Solid swatch's object colour, colour swatches, the "needs faces" dashed layer) are not touched.
+   ===================================================================================================================== */
+.native-inspector-dock {
+  --insp-select-bg: var(--insp-accent-soft);
+  --insp-select-border: var(--insp-accent);
+  --insp-select-fg: #ffffff;
+  --insp-unselect-bg: var(--insp-field);
+  --insp-unselect-border: var(--insp-field-line);
+  --insp-unselect-fg: var(--insp-fg);
+}
+/* On the light theme the soft tint would put white text on near-white, so selection is the solid accent there. */
+html[data-theme="light"] .native-inspector-dock { --insp-select-bg: var(--insp-accent); }
+
+/* unselected */
+html[data-native-chrome="on"] .native-inspector-dock :is(.shape-state-card button, .name-tag-sides button, .surface-layers button:not(.surface-layer-add), .gear-type-options.icon-options button, .inspector-action-button) {
+  color: var(--insp-unselect-fg);
+  background: var(--insp-unselect-bg) !important;
+  border: 1px solid var(--insp-unselect-border) !important;
+  box-shadow: none !important;
+}
+/* selected */
+html[data-native-chrome="on"] .native-inspector-dock :is(
+  .shape-state-card button.active,
+  .name-tag-sides button.active,
+  .name-tag-sides button[aria-checked="true"],
+  .surface-layers button.active,
+  .gear-type-options.icon-options button.selected,
+  .inspector-action-button.active
+) {
+  color: var(--insp-select-fg) !important;
+  background: var(--insp-select-bg) !important;
+  border-color: var(--insp-select-border) !important;
+}
+html[data-native-chrome="on"] .native-inspector-dock .inspector-header-icon.active { color: var(--insp-select-fg) !important; background: var(--insp-select-bg) !important; }
+.native-inspector-dock .shape-state-card button.active .key-hint,
+.native-inspector-dock .gear-type-options.icon-options button.selected svg { color: inherit; opacity: 0.85; }
+/* The layer number badge: neutral, white-on-grey when unselected, translucent white on a selected tab. */
+.native-inspector-dock .surface-layer-number { width: 16px; height: 16px; font-size: 10px; color: #fff; background: var(--insp-muted); }
+.native-inspector-dock .surface-layers button.active .surface-layer-number { color: var(--insp-select-fg); background: rgba(255, 255, 255, 0.28); }
+.native-inspector-dock .surface-layers button { min-height: 24px; padding: 0 8px 0 4px; border-radius: 5px; font: 500 11px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+.native-inspector-dock .surface-layers .surface-layer-add { background: transparent !important; border-style: dashed !important; color: var(--insp-muted); }
+/* Solid / Hole swatches: the object's own colour stays; no coloured frame (it was a 4 px orange border squeezed into 12 px). */
+.native-inspector-dock .large-solid-swatch,
+.native-inspector-dock .large-hole-swatch,
+.native-inspector-dock .shape-state-card button.active .large-solid-swatch,
+.native-inspector-dock .shape-state-card button.active .large-hole-swatch { border: 0 !important; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.35) !important; }
+
+/* ---- group controls: "When resized" label above its two choices, never over them ---- */
+.native-inspector-dock .name-tag-sides.group-resize-choice {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 4px;
+  margin: 6px 0 6px;
+}
+.native-inspector-dock .name-tag-sides.group-resize-choice > span { grid-column: 1 / -1; flex: none; padding: 0 0 2px; }
+.native-inspector-dock .name-tag-sides.group-resize-choice button {
+  height: auto;
+  min-height: 24px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* ---- scrolling: the scrollbar never sits on content ---- */
+.native-inspector-dock { scrollbar-gutter: stable; padding-right: 8px; }
+.native-inspector-dock .shape-inspector-header { margin-right: -8px; padding-right: 18px; }
