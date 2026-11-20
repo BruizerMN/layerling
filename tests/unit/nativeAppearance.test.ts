@@ -95,7 +95,7 @@ describe("generated neutral palettes", () => {
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { MAC_DARK_TARGET, MAC_LIGHT_TARGET, macDarkThemeCss, macLightThemeCss } from "../../scripts/generate-native-themes.mjs";
-import { readGraphiteSources } from "../../scripts/generate-graphite-theme.mjs";
+import { blocks, readGraphiteSources } from "../../scripts/generate-graphite-theme.mjs";
 
 describe("generated native palette files", () => {
   const root = path.resolve(__dirname, "../..");
@@ -105,11 +105,17 @@ describe("generated native palette files", () => {
     expect(readFileSync(path.join(root, MAC_DARK_TARGET), "utf8")).toBe(macDarkThemeCss(source));
   });
   it("match only where the native app sets the mac palette", () => {
-    for (const css of [macLightThemeCss(source), macDarkThemeCss(source)]) {
-      for (const selector of css.split("{").filter((chunk) => /[a-z]/i.test(chunk)).slice(0, 400)) {
-        if (selector.trim().startsWith("@") || selector.includes(":") === false) continue;
-        expect(selector).toContain('data-palette="mac"');
+    const check = (css: string) => {
+      let rules = 0;
+      for (const [prelude, body] of blocks(css)) {
+        if (prelude.startsWith("@media") || prelude.startsWith("@supports")) { check(body); continue; }
+        if (prelude.startsWith("@")) continue;
+        rules += 1;
+        expect(prelude).toContain('data-palette="mac"');
       }
-    }
+      return rules;
+    };
+    expect(check(macLightThemeCss(source))).toBeGreaterThan(1000);
+    expect(check(macDarkThemeCss(source))).toBeGreaterThan(1000);
   });
 });
