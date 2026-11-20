@@ -434,3 +434,28 @@ html[data-native-chrome="on"] .native-inspector-dock .inspector-header-icon.acti
 .native-inspector-dock { scrollbar-gutter: stable; padding-right: 8px; }
 .native-inspector-dock .shape-inspector-header { margin-right: -8px; padding-right: 18px; }
 .native-inspector-dock .property-card-header { box-sizing: border-box; max-width: 100%; }
+
+/* ---- Build 0009: the hidden-objects banner under the Inspector's header ---- */
+.native-inspector-dock .inspector-hidden-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--insp-line);
+  background: color-mix(in srgb, var(--insp-fg) 5%, transparent);
+  color: var(--insp-muted);
+  font: 400 11px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+.native-inspector-dock .inspector-hidden-banner svg { flex: 0 0 auto; }
+.native-inspector-dock .inspector-hidden-banner span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.native-inspector-dock .inspector-hidden-banner button {
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--insp-field-line);
+  border-radius: 5px;
+  background: var(--insp-field);
+  color: var(--insp-fg);
+  font: 500 11px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+.native-inspector-dock .inspector-hidden-banner button:hover { background: var(--insp-hover); }

@@ -1,5 +1,6 @@
 "use client";
 
+import { HiddenObjectsBanner } from "@/components/workplane/HiddenObjectsBanner";
 import { useFooterSnapSlot } from "@/lib/footerSnap";
 import { displayY, displayYTurn, insideZ, insideZTurn } from "@/lib/displayAxes";
 import { GuideHelpLink } from "@/components/GuideHelpLink";
@@ -5104,6 +5105,7 @@ export function ShapeInspector({
         </div>
       </div>
 
+      {docked ? <HiddenObjectsBanner /> : null}
       {!minimized ? (
         <>
       {/* A name tag (#215): its card first and open; for a plain text the way there first. */}
@@ -9312,6 +9314,7 @@ export function SelectionInspector({
           ) : null}
         </div>
       </div>
+      {docked ? <HiddenObjectsBanner /> : null}
       {solidKinds.length > 0 ? (
         <div className="shape-state-card" role="group" aria-label={t("inspector.shapeMode")}>
           <button

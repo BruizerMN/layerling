@@ -195,3 +195,7 @@ button.native-zoom-value:hover:not(:disabled), button.native-zoom-value[aria-exp
 }
 .native-plate-actions button.primary { border-color: transparent; background: var(--system-accent, #0a84ff); color: var(--system-accent-fg, #fff); }
 .native-plate-actions button:disabled { opacity: 0.45; }
+
+/* The footer's hidden-objects indicator: informational, understated. */
+.native-status-item.native-status-hidden { display: inline-flex; align-items: center; gap: 4px; }
+.native-status-item.native-status-hidden svg { opacity: 0.75; }

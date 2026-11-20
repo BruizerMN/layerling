@@ -40,7 +40,7 @@ export interface NativeMenuItem {
   items?: NativeMenuItem[];
 }
 /** Commands a host menu can send to a document page (`ui.command`). */
-export const UI_COMMANDS = ["mode.geometry", "mode.sketch", "focusMode.toggle", "ribbonPin.toggle", "search", "guide", "whatsNew", "shortcuts", "interactiveHelp", "inspector.toggle", "settings.saveStartView", "settings.resetStartView", "settings.makeFitTest"] as const;
+export const UI_COMMANDS = ["mode.geometry", "mode.sketch", "focusMode.toggle", "ribbonPin.toggle", "search", "guide", "whatsNew", "shortcuts", "interactiveHelp", "inspector.toggle", "edit.undo", "edit.redo", "edit.history", "edit.cut", "edit.copy", "edit.paste", "edit.duplicate", "edit.delete", "view.objectList", "view.hideSelected", "view.unhideAll", "view.hideOthers", "view.notes", "view.overhangs", "file.import", "file.export", "file.attachments", "settings.saveStartView", "settings.resetStartView", "settings.makeFitTest"] as const;
 export type UiCommand = (typeof UI_COMMANDS)[number];
 /** The first protocol version that carries the document messages. */
 export const DOCUMENT_PROTOCOL_MIN = 2;
@@ -186,7 +186,7 @@ export interface UiStateRequest {
   session: string;
   type: "ui.state";
   protocol: number;
-  payload: { documentId: string; state: { mode: "geometry" | "sketch"; sketchEnabled: boolean; focusMode: boolean; ribbonPinned: boolean; inspectorVisible?: boolean } };
+  payload: { documentId: string; state: { mode: "geometry" | "sketch"; sketchEnabled: boolean; focusMode: boolean; ribbonPinned: boolean; inspectorVisible?: boolean } & Record<string, unknown> };
 }
 /** Build 0007 (`ui.menu.v1`): show a native menu at a point of the page. Answered at once; the choice comes back as the event `menu.result`. */
 export interface MenuShowRequest {

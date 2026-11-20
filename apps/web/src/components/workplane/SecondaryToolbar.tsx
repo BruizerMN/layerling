@@ -242,6 +242,7 @@ export function SecondaryToolbar({
   onProjectNameChange,
   hideProjectName = false,
   nativeChrome = false,
+  onCut,
   onToolbarModeChange,
   outlinerOpen,
   onToggleOutliner,
@@ -429,6 +430,8 @@ export function SecondaryToolbar({
   hideProjectName?: boolean;
   /** The native macOS app: the browser's title row (brand, mode tabs, utility buttons, theme, language, gear) is left out; the Model/View/Help menus, the status bar and Settings take over. */
   nativeChrome?: boolean;
+  /** Cut (Edit > Cut in the native app; the ribbon never had a button for it). */
+  onCut?: () => void;
   onToolbarModeChange: (mode: ToolbarMode) => void;
   outlinerOpen: boolean;
   onToggleOutliner: () => void;
@@ -899,10 +902,40 @@ export function SecondaryToolbar({
   // Native app (Build 0003): what the Model/View menus show, and the commands they send. The mode, focus mode and ribbon pin stay the toolbar's own
   // state; the menu is only a second way to reach the same functions as the buttons and the command search.
   const inspectorVisible = useInspectorVisible();
+  // Whether a text field has the keyboard: the host then sends the standard Edit commands to the field, not to the model.
+  const [textFocus, setTextFocus] = useState(false);
   useEffect(() => {
     if (!nativeChrome) return;
-    publishUiState({ mode: toolbarMode === "sketch" ? "sketch" : "geometry", sketchEnabled: !historyViewActive, focusMode: Boolean(focusMode), ribbonPinned, inspectorVisible });
-  }, [nativeChrome, toolbarMode, historyViewActive, focusMode, ribbonPinned, inspectorVisible]);
+    const update = () => {
+      const active = document.activeElement;
+      setTextFocus(active instanceof HTMLElement && (active.isContentEditable || active instanceof HTMLTextAreaElement || (active instanceof HTMLInputElement && !["checkbox", "radio", "range", "button", "submit", "color", "file"].includes(active.type))));
+    };
+    document.addEventListener("focusin", update);
+    document.addEventListener("focusout", () => window.setTimeout(update, 0));
+    return () => {
+      document.removeEventListener("focusin", update);
+    };
+  }, [nativeChrome]);
+  useEffect(() => {
+    if (!nativeChrome) return;
+    const sketching = toolbarMode === "sketch";
+    publishUiState({
+      mode: sketching ? "sketch" : "geometry",
+      sketchEnabled: !historyViewActive,
+      focusMode: Boolean(focusMode),
+      ribbonPinned,
+      inspectorVisible,
+      textFocus,
+      // Edit: the Clipboard and History ribbon groups' commands, for the active mode (a sketch has its own undo, copy, paste, duplicate and delete).
+      edit: sketching
+        ? { undo: sketchCanUndo, redo: sketchCanRedo, cut: false, copy: sketchHasSelection, paste: sketchHasClipboard, duplicate: sketchHasSelection, delete: sketchHasSelection, history: false, historyActive: false }
+        : { undo: canUndo, redo: canRedo, cut: canModifySelection, copy: hasSelection, paste: hasClipboard, duplicate: hasSelection, delete: canModifySelection, history: canHistoryView, historyActive: historyViewActive },
+      // View: the Visibility group's commands (objects only exist in 3D).
+      view: sketching ? null : { hiddenCount: hiddenShapeCount, selectionHidden, hasSelection, outlinerOpen, noteCount, notesVisible, overhangsVisible, overhangAngle },
+      // File: the File group's commands (3D only, as the ribbon group was).
+      file: sketching ? null : { import: !historyViewActive, export: true, attachments: true },
+    });
+  }, [nativeChrome, toolbarMode, historyViewActive, focusMode, ribbonPinned, inspectorVisible, textFocus, sketchCanUndo, sketchCanRedo, sketchHasSelection, sketchHasClipboard, canUndo, canRedo, canModifySelection, hasSelection, hasClipboard, canHistoryView, hiddenShapeCount, selectionHidden, outlinerOpen, noteCount, notesVisible, overhangsVisible, overhangAngle]);
   const nativeCommandRef = useRef<(command: string) => void>(() => undefined);
   nativeCommandRef.current = (command) => {
     switch (command) {
@@ -911,6 +944,24 @@ export function SecondaryToolbar({
       case "focusMode.toggle": onFocusModeChange?.(!focusMode); break;
       case "ribbonPin.toggle": toggleRibbonPinned(); break;
       case "inspector.toggle": toggleInspectorVisible(); break;
+      // Edit, View and File: the commands of the ribbon groups the native app no longer shows. They run the ribbon buttons' own functions.
+      case "edit.undo": toolbarMode === "sketch" ? onSketchUndo() : onUndo(); break;
+      case "edit.redo": toolbarMode === "sketch" ? onSketchRedo() : onRedo(); break;
+      case "edit.history": if (toolbarMode !== "sketch") onHistoryView(); break;
+      case "edit.cut": if (toolbarMode !== "sketch") onCut?.(); break;
+      case "edit.copy": toolbarMode === "sketch" ? onSketchCopy() : onCopy(); break;
+      case "edit.paste": toolbarMode === "sketch" ? onSketchPaste() : onPaste(); break;
+      case "edit.duplicate": toolbarMode === "sketch" ? onSketchDuplicate() : onDuplicate(); break;
+      case "edit.delete": toolbarMode === "sketch" ? onSketchDelete() : onDelete(); break;
+      case "view.objectList": onToggleOutliner(); break;
+      case "view.hideSelected": onToggleHidden(); break;
+      case "view.unhideAll": onShowHidden(); break;
+      case "view.hideOthers": onHideOthers(); break;
+      case "view.notes": onToggleNotes(); break;
+      case "view.overhangs": onToggleOverhangs(); break;
+      case "file.import": if (!historyViewActive) onTopPanel("import"); break;
+      case "file.export": onTopPanel("export"); break;
+      case "file.attachments": onTopPanel("attachments"); break;
       case "search": openPalette(); break;
       case "guide": onGuide(); break;
       case "whatsNew": onWhatsNew?.(); break;
@@ -1464,14 +1515,14 @@ export function SecondaryToolbar({
     tools: pick(ordered(group, tools), cut),
   });
   const layoutGroups = [
-    layoutGroup("clipboard", t("editor.group.clipboard"), clipboardTools, false),
-    layoutGroup("history", t("editor.group.history"), leftTools.slice(4)),
+    // The native app's Edit, View and File menus carry these groups' commands; the ribbon settings do not list what the ribbon does not show.
+    ...(nativeChrome ? [] : [layoutGroup("clipboard", t("editor.group.clipboard"), clipboardTools, false), layoutGroup("history", t("editor.group.history"), leftTools.slice(4))]),
     layoutGroup("shapes", t("editor.group.shapes"), shapesTools, false),
-    ...(simpleMode ? [] : [layoutGroup("visibility", t("editor.group.visibility"), visibilityTools, false)]),
+    ...(simpleMode || nativeChrome ? [] : [layoutGroup("visibility", t("editor.group.visibility"), visibilityTools, false)]),
     layoutGroup("combine", t("editor.group.combine"), combineTools),
     ...modifyGroups.map((entry) => layoutGroup(entry.group, entry.label, entry.tools)),
     layoutGroup("arrange", t("editor.group.arrange"), arrangeTools),
-    layoutGroup("manage", t("editor.group.file"), fileToolsShipped, false),
+    ...(nativeChrome ? [] : [layoutGroup("manage", t("editor.group.file"), fileToolsShipped, false)]),
   ].filter((group) => group.tools.length > 0);
   setRibbonLayout(layoutGroups.sort((one, other) => ribbonOrder.indexOf(one.group as (typeof ribbonOrder)[number]) - ribbonOrder.indexOf(other.group as (typeof ribbonOrder)[number])));
 
@@ -1482,14 +1533,14 @@ export function SecondaryToolbar({
         {toolbarMode === "geometry" ? (
           <>
       <div className="tool-group left">
-        {ribbonGroupShown("clipboard", ribbonHidden, clipboardShown) ? (
+        {!nativeChrome && ribbonGroupShown("clipboard", ribbonHidden, clipboardShown) ? (
         <div className="toolbar-section" data-group="clipboard" {...foldProps("clipboard", 2)} style={{ order: sectionOrder.clipboard }} inert={historyViewActive}>
           <div className="toolbar-section-label">{t("editor.group.clipboard")}</div>
           {collapseBox(t("editor.group.clipboard"), ToolbarPasteIcon)}
           <div className="toolbar-section-tools">{clipboardShown.map(renderToolButton)}</div>
         </div>
         ) : null}
-        {ribbonGroupShown("history", ribbonHidden, historyShown) ? (
+        {!nativeChrome && ribbonGroupShown("history", ribbonHidden, historyShown) ? (
         <div className="toolbar-section" data-group="history" {...foldProps("history", 3)} style={{ order: sectionOrder.history }}>
           <div className="toolbar-section-label">{t("editor.group.history")}</div>
           {collapseBox(t("editor.group.history"), ToolbarUndoIcon, historyShown.find((tool) => tool.id === "undo"))}
@@ -1542,7 +1593,7 @@ export function SecondaryToolbar({
       </div>
       <div className="toolbar-spacer" />
       <div className="tool-group right" inert={historyViewActive}>
-        {simpleMode || !ribbonGroupShown("visibility", ribbonHidden) ? null : (
+        {simpleMode || nativeChrome || !ribbonGroupShown("visibility", ribbonHidden) ? null : (
         <div className="toolbar-section compact toolbar-visibility-section" data-group="visibility" {...foldProps("visibility", 5)} style={{ order: sectionOrder.visibility }} ref={visibilityMenuRef}>
           <div className="toolbar-section-label">{t("editor.group.visibility")}</div>
           {collapseBox(t("editor.group.visibility"), ToolbarHideSelectedIcon)}
@@ -1681,7 +1732,7 @@ export function SecondaryToolbar({
         </div>
         ) : null}
       </div>
-      {ribbonGroupShown("manage", ribbonHidden, fileShown) ? (
+      {!nativeChrome && ribbonGroupShown("manage", ribbonHidden, fileShown) ? (
       <div className="toolbar-section toolbar-actions-section" data-group="manage" {...foldProps("manage", 1)} style={{ order: sectionOrder.manage }}>
         <div className="toolbar-section-label">{t("editor.group.file")}</div>
         {collapseBox(t("editor.group.file"), ToolbarVectorExportIcon)}

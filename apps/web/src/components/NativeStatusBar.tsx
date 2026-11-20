@@ -1,6 +1,7 @@
 "use client";
 
-import { Maximize2, Minus, PanelRight, Pin, PinOff, Plus } from "lucide-react";
+import { EyeOff, Maximize2, Minus, PanelRight, Pin, PinOff, Plus } from "lucide-react";
+import { hiddenObjectsLabel } from "@/lib/hiddenObjects";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { ZOOM_PRESET_PERCENTS, distanceFromPercent, distanceFromSlider, formatZoomPercent, getCameraController, getCameraStatus, parseZoomPercent, percentRange, sliderFromDistance, subscribeCameraStatus, zoomPercent, type CameraStatus } from "@/lib/cameraStatus";
@@ -195,6 +196,7 @@ function PlateEditor({ anchor, workspace, widthMm, depthMm, onApply, onClose }: 
 
 export function NativeStatusBar({
   objectCount,
+  hiddenCount,
   selectionLabel,
   unitsLabel,
   plate,
@@ -202,6 +204,8 @@ export function NativeStatusBar({
   onPlateChange,
 }: {
   objectCount: number;
+  /** The document's hidden objects (lib/hiddenObjects.ts): the same count as the Inspector's banner. */
+  hiddenCount: number;
   selectionLabel: string;
   unitsLabel: string;
   /** The build plate, in millimetres. */
@@ -226,6 +230,12 @@ export function NativeStatusBar({
         <span className="native-status-item" data-status="selection" title="Selection">{selectionLabel}</span>
         <span className="native-status-sep" aria-hidden="true" />
         <span className="native-status-item" data-status="objects" title="Objects in the model">{objectCount === 1 ? "1 object" : `${objectCount} objects`}</span>
+        {hiddenCount > 0 ? (
+          <>
+            <span className="native-status-sep" aria-hidden="true" />
+            <span className="native-status-item native-status-hidden" data-status="hidden" title="Hidden objects (View > Unhide All)"><EyeOff size={12} aria-hidden="true" />{hiddenObjectsLabel(hiddenCount)}</span>
+          </>
+        ) : null}
         <span className="native-status-sep" aria-hidden="true" />
         <span className="native-status-item" data-status="units" title="Measurement units">{unitsLabel}</span>
         <span className="native-status-sep" aria-hidden="true" />

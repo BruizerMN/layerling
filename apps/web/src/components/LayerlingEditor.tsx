@@ -200,6 +200,7 @@ import { revolveAxisShift } from "@/lib/revolveAxis";
 import { buildSketchRevolveMesh, DEFAULT_SKETCH_REVOLVE_SETTINGS, normalizeSketchRevolveSettings, type SketchRevolveMesh } from "@/lib/sketchRevolve";
 import { AppFooter } from "@/components/AppFooter";
 import { NativeStatusBar } from "@/components/NativeStatusBar";
+import { HiddenObjectsContext, countHiddenObjects } from "@/lib/hiddenObjects";
 import { nativeMenusAvailable, showNativeMenu } from "@/lib/host/nativeMenu";
 import type { NativeMenuItem } from "@/lib/host/hostProtocol";
 import { NativeInspectorDock } from "@/components/NativeInspectorDock";
@@ -19618,6 +19619,8 @@ export function LayerlingEditor({
 
   // Native app (Build 0007): the same items as a real macOS menu. The submenus ("Select other", "Onto plate") are built up front from the same builder
   // (the web menu swaps its items in place); a choice runs the item's own function; highlighting a row of "Select other" marks its body in the view.
+  const hiddenObjectCount = countHiddenObjects(shapes);
+  const hiddenObjects = useMemo(() => ({ count: hiddenObjectCount, ids: shapes.filter((shape) => shape.hidden).map((shape) => shape.id), unhideAll: showHidden }), [hiddenObjectCount, shapes, showHidden]);
   nativeShapeMenuRef.current = nativeDocument && nativeMenusAvailable()
     ? (request) => {
         const base: ShapeContextMenuState = { x: request.clientX, y: request.clientY, onShape: Boolean(request.shapeId) || Boolean(request.inSelection), stack: request.stackIds, facePoint: request.facePoint };
@@ -19653,6 +19656,7 @@ export function LayerlingEditor({
     : null;
 
   return (
+    <HiddenObjectsContext.Provider value={hiddenObjects}>
     <div className={`layerling-editor ${historyViewState ? "history-view-active" : ""} ${focusMode.active ? "focus-mode" : ""}`}>
       <SecondaryToolbar
         hideProjectName={Boolean(nativeDocument)}
@@ -19702,7 +19706,8 @@ export function LayerlingEditor({
           isMesh: selectedShapes.length === 1 && offersMeshSimplify(selectedShape),
           loftable: canSketchLoft(selectedShapes),
         }}
-        hiddenShapeCount={shapes.filter((shape) => shape.hidden).length}
+        hiddenShapeCount={hiddenObjectCount}
+        onCut={cutSelected}
         selectionHidden={hasSelection && selectedShapes.every((shape) => shape.hidden)}
         alignMode={alignMode}
         // A locked shape in the selection is the anchor the others line up on, so Align stays.
@@ -20238,6 +20243,7 @@ export function LayerlingEditor({
           objectCount={shapes.length}
           selectionLabel={selectedShapes.length === 0 ? "Nothing selected" : selectedShapes.length === 1 ? displayShapeName(selectedShapes[0]) : `${selectedShapes.length} selected`}
           unitsLabel={lengthDisplayUnit(workspaceSettings).label}
+          hiddenCount={hiddenObjectCount}
           plate={{ width: workspaceSettings.width, depth: workspaceSettings.depth }}
           workspace={workspaceSettings}
           onPlateChange={(width, depth) => updateProjectWorkspaceSettings({ workspace: normalizeWorkspaceSettings({ ...workspaceSettingsRef.current, ...plateSizePatch(width, depth) }), snap: snapGridRef.current })}
@@ -21044,5 +21050,6 @@ export function LayerlingEditor({
         </>
       ) : null}
     </div>
+    </HiddenObjectsContext.Provider>
   );
 }

@@ -5,7 +5,22 @@ import type { HostEvent, UiCommand } from "@/lib/host/hostProtocol";
  * The page's side of the native shell's menus and Settings windows (capability `ui.v1`, hostProtocol.ts). Nothing here does anything in a browser:
  * without a host that granted `ui.v1` every function is a no-op, and the editor's own controls work as they always did.
  */
-export type NativeUiState = { mode: "geometry" | "sketch"; sketchEnabled: boolean; focusMode: boolean; ribbonPinned: boolean; inspectorVisible?: boolean };
+/**
+ * What the native menus need to know about this document's page, to enable, check and title their items. `edit`, `view` and `file` carry the commands that
+ * used to be ribbon groups (Clipboard, History, Visibility, File); null disables the group (a sketch has no visibility or file commands). `textFocus`: a text
+ * field has the keyboard, so the host sends Cut/Copy/Paste/Undo/Redo to it instead of to the model.
+ */
+export type NativeUiState = {
+  mode: "geometry" | "sketch";
+  sketchEnabled: boolean;
+  focusMode: boolean;
+  ribbonPinned: boolean;
+  inspectorVisible?: boolean;
+  textFocus?: boolean;
+  edit?: { undo: boolean; redo: boolean; cut: boolean; copy: boolean; paste: boolean; duplicate: boolean; delete: boolean; history: boolean; historyActive: boolean } | null;
+  view?: { hiddenCount: number; selectionHidden: boolean; hasSelection: boolean; outlinerOpen: boolean; noteCount: number; notesVisible: boolean; overhangsVisible: boolean; overhangAngle: number } | null;
+  file?: { import: boolean; export: boolean; attachments: boolean } | null;
+};
 
 let documentId: string | null = null;
 let lastState = "";
