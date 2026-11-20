@@ -32,7 +32,7 @@ import { SnapGridPointerMenu } from "@/components/workplane/SnapGridMenu";
 import { SelectionInspector, ShapeInspector, SnapGridControl, type IconTagControls, type QrCodeControls, type ReferenceImageControls, type SbcBoardControls, type ShapeInspectorUpdateOptions, type TextLayerPatch } from "@/components/workplane/ShapeInspector";
 import type { NameTagStack } from "@/lib/nameTag";
 import { WorkspaceSettingsModal } from "@/components/workplane/WorkspaceSettingsModal";
-import { appThemePalette, type AppThemePreference, type ResolvedAppTheme } from "@/lib/appTheme";
+import { scenePalette, type AppThemePreference, type ResolvedAppTheme } from "@/lib/appTheme";
 import { t } from "@/lib/i18n";
 import type { ModelSplitPlane } from "@/lib/modelSplit";
 import { useLanguage } from "@/lib/useLanguage";
@@ -2376,8 +2376,8 @@ export function WorkplaneViewport({
 
   const resolvedThemeRef = useRef(resolvedTheme);
   resolvedThemeRef.current = resolvedTheme;
-  const themePaletteRef = useRef(appThemePalette(themePreference));
-  themePaletteRef.current = appThemePalette(themePreference);
+  const themePaletteRef = useRef(scenePalette(themePreference, resolvedTheme));
+  themePaletteRef.current = scenePalette(themePreference, resolvedTheme);
 
   const clearMoveDimensions = useCallback(() => {
     moveDimensionSessionRef.current = null;
@@ -3227,7 +3227,7 @@ export function WorkplaneViewport({
     projectNameRef.current = projectName;
     workspaceRef.current = workspace;
     setMeasureUnit(workspace);
-    if (threeRef.current) threeRef.current.palette = appThemePalette(themePreference);
+    if (threeRef.current) threeRef.current.palette = scenePalette(themePreference, resolvedTheme);
     // Edge lines on all bodies: shapes already built have to take the setting up.
     const holesChanged = setStrongHoles(workspace.strongHoles, workspace.holeOpacity);
     if (setEdgeLineStyle(effectiveViewSettings(workspace).edgeLines, workspace.edgeColor) || holesChanged) {

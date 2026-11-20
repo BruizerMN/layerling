@@ -34,13 +34,17 @@ describe("application preferences changed in another window reach this one", () 
   });
   it("the page listens to the storage event and stops when asked", () => {
     const handlers = new Map<string, (event: unknown) => void>();
+    const root = { dataset: {} as Record<string, string> };
+    vi.stubGlobal("document", { documentElement: root });
     vi.stubGlobal("window", { addEventListener: (type: string, fn: (event: unknown) => void) => handlers.set(type, fn), removeEventListener: (type: string) => handlers.delete(type) });
     const { calls, a } = actions();
     const stop = startNativeAppSync(a);
+    expect(root.dataset.nativeApp).toBe("on");
     handlers.get("storage")!({ key: APP_THEME_STORAGE_KEY });
     expect(calls).toEqual(["theme"]);
     stop();
     expect(handlers.has("storage")).toBe(false);
+    expect(root.dataset.nativeApp).toBeUndefined();
     vi.unstubAllGlobals();
   });
 });

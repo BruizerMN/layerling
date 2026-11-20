@@ -27,11 +27,11 @@ import { fileURLToPath } from "node:url";
 const GRAPHITE = '[data-theme="dark"][data-palette="graphite"]';
 const DARK_PREFIX = 'html[data-theme="dark"]';
 const LIGHT_PREFIX = 'html[data-theme="light"]';
-const COLOR_PATTERN = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b|rgba?\([^)]*\)/g;
-const COLOR_PROPERTY = /^(?:--.+|color|background(?:-color|-image)?|border(?:-(?:top|right|bottom|left|block|inline)(?:-(?:start|end))?)?(?:-color)?|outline(?:-color)?|fill|stroke|box-shadow|text-shadow|filter|caret-color|accent-color|text-decoration(?:-color)?|column-rule(?:-color)?|stop-color|flood-color|lighting-color)$/;
+export const COLOR_PATTERN = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b|rgba?\([^)]*\)/g;
+export const COLOR_PROPERTY = /^(?:--.+|color|background(?:-color|-image)?|border(?:-(?:top|right|bottom|left|block|inline)(?:-(?:start|end))?)?(?:-color)?|outline(?:-color)?|fill|stroke|box-shadow|text-shadow|filter|caret-color|accent-color|text-decoration(?:-color)?|column-rule(?:-color)?|stop-color|flood-color|lighting-color)$/;
 
 /** HSL of an sRGB colour, h in degrees, s and l in 0..1. */
-function toHsl(r, g, b) {
+export function toHsl(r, g, b) {
   const [rn, gn, bn] = [r / 255, g / 255, b / 255];
   const max = Math.max(rn, gn, bn);
   const min = Math.min(rn, gn, bn);
@@ -101,7 +101,7 @@ function stripComments(text) {
 }
 
 /** Top-level blocks of a stylesheet: [prelude, body] pairs. */
-function blocks(css) {
+export function blocks(css) {
   const result = [];
   let index = 0;
   while (index < css.length) {
@@ -125,7 +125,7 @@ function blocks(css) {
   return result;
 }
 
-function splitSelectors(prelude) {
+export function splitSelectors(prelude) {
   const selectors = [];
   let depth = 0;
   let current = "";
@@ -143,7 +143,7 @@ function splitSelectors(prelude) {
   return selectors;
 }
 
-function declarations(body) {
+export function declarations(body) {
   const result = [];
   let depth = 0;
   let current = "";

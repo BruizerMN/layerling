@@ -15,7 +15,7 @@ import { SettingsFileButtons } from "@/components/workplane/SettingsFileButtons"
 import { FileBackupSettingsSection } from "@/components/workplane/FileBackupSettingsSection";
 import { createPortal } from "react-dom";
 import { HexColorInput, HexColorPicker } from "react-colorful";
-import { APP_THEME_OPTIONS, type AppThemePreference } from "@/lib/appTheme";
+import { appThemeOptions, type AppThemePreference } from "@/lib/appTheme";
 import { setToolbarSize, TOOLBAR_SIZE_OPTIONS, type ToolbarSize } from "@/lib/toolbarSize";
 import { useToolbarSize } from "@/lib/useToolbarSize";
 import { useSimpleMode } from "@/lib/useSimpleMode";
@@ -147,6 +147,7 @@ const THEME_LABEL_KEYS: Record<AppThemePreference, MessageKey> = {
   light: "workspace.themeLight",
   dark: "workspace.themeDark",
   graphite: "workspace.themeGraphite",
+  classic: "workspace.themeDark",
 };
 
 const TOOLBAR_SIZE_LABEL_KEYS: Record<ToolbarSize, MessageKey> = {
@@ -889,9 +890,9 @@ export function WorkspaceSettingsModal({
                       value={themePreference}
                       onChange={(event) => onThemePreferenceChange?.(event.currentTarget.value as AppThemePreference)}
                     >
-                      {APP_THEME_OPTIONS.map((option) => (
+                      {appThemeOptions().map((option) => (
                         <option key={option.value} value={option.value}>
-                          {t(THEME_LABEL_KEYS[option.value])}
+                          {scope === "app" || scope === "doc" ? option.label : t(THEME_LABEL_KEYS[option.value])}
                         </option>
                       ))}
                     </select>

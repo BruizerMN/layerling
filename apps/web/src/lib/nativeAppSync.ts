@@ -69,9 +69,14 @@ export function syncAppPreference(key: string | null, actions: AppSyncActions = 
 /** Starts the listener for this page; returns the remover. */
 export function startNativeAppSync(actions: AppSyncActions = defaultAppSyncActions): () => void {
   if (typeof window === "undefined") return () => undefined;
+  // Every native page says so on its root element: the native-only styles (nativeAppearance.css) key off it.
+  document.documentElement.dataset.nativeApp = "on";
   const onStorage = (event: StorageEvent) => {
     syncAppPreference(event.key, actions);
   };
   window.addEventListener("storage", onStorage);
-  return () => window.removeEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    delete document.documentElement.dataset.nativeApp;
+  };
 }

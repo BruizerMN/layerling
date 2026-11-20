@@ -1,0 +1,48 @@
+/*
+ * Native macOS appearance (Build 0007): the system accent colour in conventional controls.
+ *
+ * The host writes --system-accent (the user's macOS accent colour, resolved for the current appearance), --system-accent-fg (black or white, whichever
+ * reads on it) and --system-accent-soft (28 % of it) into every page, at start and whenever the accent or the appearance changes. Here they replace the
+ * hard-coded oranges and blues of CONVENTIONAL controls: selected options, switches, checkboxes, sliders, focus rings, the Inspector and status bar.
+ * Not touched, on purpose: model colours, colour swatches, and the modeling ribbon's tool-group colours (--group-*, --filament-*).
+ * Scoped to the native app (html[data-native-app]); a browser never matches.
+ */
+html[data-native-app="on"]:root {
+  --accent-live: var(--system-accent, #0a84ff);
+  --accent-live-fg: var(--system-accent-fg, #ffffff);
+  --accent-live-soft: var(--system-accent-soft, rgba(10, 132, 255, 0.28));
+  --primary: var(--accent-live);
+  --active-tab: var(--accent-live);
+  accent-color: var(--accent-live);
+}
+html[data-native-app="on"] :is(input[type="checkbox"], input[type="radio"], input[type="range"], progress, select, meter) { accent-color: var(--accent-live) !important; }
+
+/* Keyboard focus: the accent colour, as every Mac control shows it. */
+html[data-native-app="on"] :is(button, input, select, textarea, a[href], [tabindex]):focus-visible { outline: 2px solid var(--accent-live); outline-offset: 1px; }
+
+/* Inspector and status bar: the single variable of Build 0006 now follows the system accent. */
+html[data-native-app="on"] .native-inspector-dock {
+  --insp-accent: var(--accent-live);
+  --insp-accent-soft: var(--accent-live-soft);
+  --insp-select-border: var(--accent-live);
+}
+/* Selection never relies on colour alone: selected options are also bolder. */
+html[data-native-app="on"] .native-inspector-dock :is(.shape-state-card button.active, .name-tag-sides button.active, .name-tag-sides button[aria-checked="true"], .surface-layers button.active, .gear-type-options.icon-options button.selected, .inspector-action-button.active) {
+  font-weight: 650;
+}
+/* Dark appearances: the soft tint of the accent with white text (as accepted in Build 0006); light: the solid accent with the contrasting text. */
+html[data-native-app="on"][data-theme="dark"] .native-inspector-dock { --insp-select-bg: var(--accent-live-soft); --insp-select-fg: #ffffff; }
+html[data-native-app="on"][data-theme="light"] .native-inspector-dock { --insp-select-bg: var(--accent-live); --insp-select-fg: var(--accent-live-fg); }
+/* The slider's filled part takes the accent (the position variable is set by the editor). */
+html[data-native-app="on"] .native-inspector-dock .property-card .range-property input[type="range"]::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, var(--insp-accent) 0 var(--slider-pos, 0%), var(--insp-field-line) var(--slider-pos, 0%) 100%) !important;
+}
+html[data-native-app="on"] .native-status-button[aria-pressed="true"] { background: var(--accent-live-soft); color: var(--accent-live); }
+html[data-native-app="on"] .native-zoom-menu-item:hover { background: var(--accent-live); color: var(--accent-live-fg); }
+html[data-native-app="on"] .native-zoom-slider { accent-color: var(--accent-live); }
+
+/* The Settings windows. */
+html[data-native-app="on"] .workspace-settings-nav button.active { color: var(--accent-live); }
+html[data-native-app="on"] .workspace-settings-nav button.active svg { color: var(--accent-live); }
+html[data-native-app="on"] .check-property input[type="checkbox"]:checked,
+html[data-native-app="on"] .workspace-toggle input:checked { accent-color: var(--accent-live); }

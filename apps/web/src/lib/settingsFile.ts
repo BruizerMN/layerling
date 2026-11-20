@@ -1,4 +1,4 @@
-import { normalizeAppThemePreference, type AppThemePreference } from "@/lib/appTheme";
+import { normalizeAppThemePreference, themeFromSettingsFile, themeToSettingsFile, type AppThemePreference } from "@/lib/appTheme";
 import { CUSTOM_SHORTCUTS_STORAGE_KEY, normalizeCustomShortcuts, type CustomShortcuts } from "@/lib/customShortcuts";
 import { normalizePrinterPlay, PRINTER_PLAYS_STORAGE_KEY } from "@/lib/printerPlay";
 import { normalizeRibbonHidden, RIBBON_HIDDEN_STORAGE_KEY } from "@/lib/ribbonHidden";
@@ -116,7 +116,8 @@ export function readBrowserSettings(storage: Pick<Storage, "getItem"> | null): B
     ribbonFold = {};
   }
   return {
-    theme: normalizeAppThemePreference(readText(storage, APP_THEME_STORAGE_KEY)),
+    // Files keep the original theme names (appTheme.ts), whichever edition writes them.
+    theme: themeToSettingsFile(normalizeAppThemePreference(readText(storage, APP_THEME_STORAGE_KEY))),
     toolbarSize: normalizeToolbarSize(readText(storage, TOOLBAR_SIZE_STORAGE_KEY)),
     viewCubePosition: normalizeViewCubePosition(readText(storage, VIEW_CUBE_POSITION_STORAGE_KEY)),
     shapeColors: normalizeShapeColors(readText(storage, SHAPE_COLORS_STORAGE_KEY)),
@@ -175,7 +176,7 @@ export function parseSettingsFile(text: string): SettingsFile | null {
     workspace: { ...normalizeWorkspaceSettings(file.workspace), plates: undefined },
     snap: normalizeSnapGrid(file.snap, DEFAULT_SNAP_GRID),
     browser: {
-      theme: normalizeAppThemePreference(browser.theme),
+      theme: themeFromSettingsFile(normalizeAppThemePreference(browser.theme)),
       toolbarSize: normalizeToolbarSize(browser.toolbarSize),
       viewCubePosition: normalizeViewCubePosition(browser.viewCubePosition),
       shapeColors: typeof browser.shapeColors === "boolean" ? browser.shapeColors : true,
