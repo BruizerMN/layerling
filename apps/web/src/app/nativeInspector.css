@@ -324,3 +324,34 @@ html[data-native-chrome="on"] .native-inspector-dock .property-card-header { col
   border: 1px solid var(--insp-field-line);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
+
+/* ---- second pass ---- */
+.native-inspector-dock .range-property input[type="range"] { background: transparent !important; }
+.native-inspector-dock .range-property { grid-template-columns: 78px minmax(0, 1fr) 76px; }
+.native-inspector-dock .select-property, .native-inspector-dock .text-property { grid-template-columns: 78px minmax(0, 1fr); }
+.native-inspector-dock .shape-state-card button { white-space: nowrap; }
+.native-inspector-dock .shape-state-card .key-hint { display: inline !important; margin-left: 3px; }
+/* Two-way choices (Measured from: Centre / Edge, group resize, ...) as small segments. */
+.native-inspector-dock .name-tag-sides {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 6px;
+  color: var(--insp-muted);
+  font: 400 11px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+.native-inspector-dock .name-tag-sides > span { flex: 1; min-width: 0; color: var(--insp-muted); font-size: 11px; font-weight: 400; }
+.native-inspector-dock .name-tag-sides button {
+  height: 22px;
+  min-height: 22px;
+  margin: 0;
+  padding: 0 10px;
+  color: var(--insp-fg);
+  background: var(--insp-field) !important;
+  border: 1px solid var(--insp-field-line) !important;
+  border-radius: 5px;
+  box-shadow: none !important;
+  font: 500 11px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+.native-inspector-dock .name-tag-sides button.active,
+.native-inspector-dock .name-tag-sides button[aria-checked="true"] { background: var(--insp-accent-soft) !important; border-color: var(--insp-accent) !important; color: var(--insp-fg); }
