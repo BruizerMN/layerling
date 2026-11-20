@@ -203,6 +203,7 @@ import { NativeStatusBar } from "@/components/NativeStatusBar";
 import { nativeMenusAvailable, showNativeMenu } from "@/lib/host/nativeMenu";
 import type { NativeMenuItem } from "@/lib/host/hostProtocol";
 import { NativeInspectorDock } from "@/components/NativeInspectorDock";
+import { plateSizePatch } from "@/lib/plateSize";
 import { readAppPrefs, subscribeAppPrefs, writeAppPrefs } from "@/lib/appPrefs";
 import { publishSettingsState, setNativeUiDocument, subscribeNativeUiEvents } from "@/lib/host/nativeUi";
 import { readStartView } from "@/lib/designView";
@@ -20236,7 +20237,9 @@ export function LayerlingEditor({
           objectCount={shapes.length}
           selectionLabel={selectedShapes.length === 0 ? "Nothing selected" : selectedShapes.length === 1 ? displayShapeName(selectedShapes[0]) : `${selectedShapes.length} selected`}
           unitsLabel={lengthDisplayUnit(workspaceSettings).label}
-          plateLabel={`${workspaceSettings.width} × ${workspaceSettings.depth} mm`}
+          plate={{ width: workspaceSettings.width, depth: workspaceSettings.depth }}
+          workspace={workspaceSettings}
+          onPlateChange={(width, depth) => updateProjectWorkspaceSettings({ workspace: normalizeWorkspaceSettings({ ...workspaceSettingsRef.current, ...plateSizePatch(width, depth) }), snap: snapGridRef.current })}
         />
       ) : (
         <AppFooter variant="editor" version={LYL_CREATED_WITH_VERSION} onBugReport={() => void saveBugReport()} />

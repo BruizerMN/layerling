@@ -96,7 +96,7 @@ import { useLanguage } from "@/lib/useLanguage";
 import { readStartWithCornerRuler, writeStartWithCornerRuler } from "@/lib/cornerRulerStore";
 import { measurementOptionLabel, normalizeScaleForUnits, parseMeasurementInput, scaleOptionsForUnits, WORKSPACE_UNIT_OPTIONS } from "@/lib/measurementUnits";
 import { shapeAssetDefaultDimensions, shapeAssetLabel, shapeAssetSpecialDefaults, toolbarShapeAssets } from "@/lib/shapeCatalog";
-import { BOOLEAN_TRIANGLE_LIMIT_PRESETS, BOOLEAN_TRIANGLE_LIMIT_STEP, DEFAULT_WORKPLANE_WORKSPACE, HOLE_OPACITY_MAX, HOLE_OPACITY_MIN, effectiveHoleOpacity, ZOOM_SPEED_SLIDER_MAX, PAN_SPEED_SLIDER_MAX, MAX_BOOLEAN_TRIANGLE_LIMIT, MAX_CUSTOM_SHAPE_DIMENSION, MAX_HIGH_RESOLUTION_SIDES, MAX_HIGH_RESOLUTION_STEPS, MIN_BOOLEAN_TRIANGLE_LIMIT, MIN_CUSTOM_SHAPE_DIMENSION, booleanTriangleLimitPreset, workspaceForUnits, snapGridForUnits, type BooleanTriangleLimitPreset, DEFAULT_SNAP_GRID, MAX_CUSTOM_SNAP_GRID, MAX_CUSTOM_SNAP_GRID_NAME, MAX_CUSTOM_SNAP_GRIDS, MIN_CUSTOM_SNAP_GRID, customSnapGridDivisors, customSnapGridLabel, customSnapGridSize, parseCustomSnapGrid, readWorkspaceDefault, resetGridInSavedDefault, snapGridOptions, standardGridSettings, workspaceWithSavedDefault } from "@/lib/workplaneSettings";
+import { PLATE_SIZE_MAX_MM, PLATE_SIZE_MIN_MM, BOOLEAN_TRIANGLE_LIMIT_PRESETS, BOOLEAN_TRIANGLE_LIMIT_STEP, DEFAULT_WORKPLANE_WORKSPACE, HOLE_OPACITY_MAX, HOLE_OPACITY_MIN, effectiveHoleOpacity, ZOOM_SPEED_SLIDER_MAX, PAN_SPEED_SLIDER_MAX, MAX_BOOLEAN_TRIANGLE_LIMIT, MAX_CUSTOM_SHAPE_DIMENSION, MAX_HIGH_RESOLUTION_SIDES, MAX_HIGH_RESOLUTION_STEPS, MIN_BOOLEAN_TRIANGLE_LIMIT, MIN_CUSTOM_SHAPE_DIMENSION, booleanTriangleLimitPreset, workspaceForUnits, snapGridForUnits, type BooleanTriangleLimitPreset, DEFAULT_SNAP_GRID, MAX_CUSTOM_SNAP_GRID, MAX_CUSTOM_SNAP_GRID_NAME, MAX_CUSTOM_SNAP_GRIDS, MIN_CUSTOM_SNAP_GRID, customSnapGridDivisors, customSnapGridLabel, customSnapGridSize, parseCustomSnapGrid, readWorkspaceDefault, resetGridInSavedDefault, snapGridOptions, standardGridSettings, workspaceWithSavedDefault } from "@/lib/workplaneSettings";
 import { DEFAULT_SKETCH_BACKGROUND, DEFAULT_SKETCH_GRID_COLOR, DEFAULT_SKETCH_PLATE_COLOR, IMPERIAL_GRID_BLOCK_PRESETS, inchGridPresetMm, workplaneGridPalette } from "@/lib/workplaneGrid";
 import type { BentTubeProfile, CustomSnapGrid, GearProfile, GearType, GridSize, ShapeCustomization, ShapeKind, ThreadHand, ThreadHead, ThreadProfile, ThreadRole, WorkplaneWorkspaceSettings } from "@/types/layerling";
 import { DEFAULT_LOFT } from "@/lib/loftGeometry";
@@ -121,8 +121,8 @@ const SETTINGS_HELP_SECTION: Record<WorkspaceSettingsSection, GuideSection> = {
   backups: "fileBackups",
 };
 
-const MIN_WORKSPACE_SIZE = 60;
-const MAX_WORKSPACE_SIZE = 5000;
+const MIN_WORKSPACE_SIZE = PLATE_SIZE_MIN_MM;
+const MAX_WORKSPACE_SIZE = PLATE_SIZE_MAX_MM;
 const MIN_GRID_BLOCK_SIZE = 1;
 const MAX_GRID_BLOCK_SIZE = 200;
 const WORKSPACE_SIZE_PRESETS = [

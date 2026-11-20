@@ -16,6 +16,9 @@ import { GRIDFINITY_LABEL_FONTS, MIN_GRIDFINITY_LABEL_TEXT_SIZE } from "@/lib/gr
 import type { PortProfile } from "@/types/layerling";
 
 export const DEFAULT_SNAP_GRID: GridSize = "1.0 mm";
+/** The build plate's width and depth, in millimetres: the settings window and the status bar's plate editor both keep to this range. */
+export const PLATE_SIZE_MIN_MM = 60;
+export const PLATE_SIZE_MAX_MM = 5000;
 export const BRICK_SNAP_STEP = 8;
 // Used only when the snap grid is off: fine steps, since that is why the grid is switched off (#293).
 // An arrow moves 0.01 mm (#370, as in Tinkercad); Shift as many times that as with a grid.

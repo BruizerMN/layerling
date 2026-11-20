@@ -133,3 +133,65 @@ button.native-zoom-value:hover:not(:disabled), button.native-zoom-value[aria-exp
 .native-status-snap .snap-units button { height: 18px; line-height: 18px; font-size: 10.5px; }
 /* Where the control is not shown (footer in use), its old frames take no room. */
 .grid-settings:empty, .inspector-snap-dock:empty { display: none; }
+
+/* ---- Build 0008 ---- */
+/* The footer sits above the docked Inspector, so the popovers that open upward from it (zoom percentage, plate size) are never covered by it. */
+.dashboard-legal.editor-legal.native-status-bar { z-index: 6; }
+.native-status-item.native-status-plate {
+  height: 20px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+  white-space: nowrap;
+}
+.native-status-item.native-status-plate:hover, .native-status-item.native-status-plate[aria-expanded="true"] { background: rgba(127, 127, 127, 0.18); }
+
+.native-plate-editor {
+  position: fixed;
+  z-index: 90;
+  display: grid;
+  gap: 6px;
+  width: 190px;
+  padding: 10px 12px 10px;
+  border: 1px solid var(--border-strong, rgba(127, 127, 127, 0.4));
+  border-radius: 9px;
+  background: var(--panel, #fff);
+  color: var(--foreground);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+  font: 12px/1.25 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+.native-plate-editor strong { font-size: 12px; font-weight: 600; }
+.native-plate-field { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 4px 6px; }
+.native-plate-field > span { opacity: 0.8; }
+.native-plate-field input {
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong, rgba(127, 127, 127, 0.5));
+  border-radius: 5px;
+  background: var(--background, transparent);
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.native-plate-field input[aria-invalid="true"] { border-color: #ff453a; }
+.native-plate-field em { font-style: normal; opacity: 0.65; font-size: 11px; }
+.native-plate-field small { grid-column: 2 / -1; color: #ff453a; font-size: 10.5px; }
+.native-plate-hint { margin: 0; opacity: 0.6; font-size: 10.5px; }
+.native-plate-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 2px; }
+.native-plate-actions button {
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong, rgba(127, 127, 127, 0.5));
+  border-radius: 5px;
+  background: var(--background, transparent);
+  color: inherit;
+  font: inherit;
+}
+.native-plate-actions button.primary { border-color: transparent; background: var(--system-accent, #0a84ff); color: var(--system-accent-fg, #fff); }
+.native-plate-actions button:disabled { opacity: 0.45; }

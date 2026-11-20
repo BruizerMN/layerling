@@ -8306,6 +8306,32 @@ function SnapGridRowInner({
     window.addEventListener("resize", place);
     return () => window.removeEventListener("resize", place);
   }, [snapOpen]);
+  // A conventional popover: a press outside it, Escape, a resize or the window losing focus close it without choosing; the trigger toggles it.
+  useEffect(() => {
+    if (!snapOpen) return;
+    const insideMenu = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest(".snap-menu"));
+    const onPointer = (event: PointerEvent) => {
+      if (insideMenu(event.target) || selectRef.current?.contains(event.target as Node)) return;
+      onSnapOpenChange(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onSnapOpenChange(false);
+    };
+    const close = () => onSnapOpenChange(false);
+    window.addEventListener("pointerdown", onPointer, true);
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("pointerdown", onPointer, true);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [snapOpen, onSnapOpenChange]);
   return (
     <div className="snap-row">
       <span>{t("inspector.snapGrid")}</span>

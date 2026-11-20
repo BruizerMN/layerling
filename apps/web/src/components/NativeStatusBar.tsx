@@ -1,10 +1,13 @@
 "use client";
 
 import { Maximize2, Minus, PanelRight, Pin, PinOff, Plus } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { ZOOM_PRESET_PERCENTS, distanceFromPercent, distanceFromSlider, formatZoomPercent, getCameraController, getCameraStatus, parseZoomPercent, percentRange, sliderFromDistance, subscribeCameraStatus, zoomPercent, type CameraStatus } from "@/lib/cameraStatus";
 import { setFooterSnapSlot } from "@/lib/footerSnap";
 import { toggleInspectorVisible, useInspectorVisible } from "@/lib/inspectorDock";
+import { formatPlateValue, parsePlateInput, plateRange, plateSizePatch, plateSummary, plateUnitLabel } from "@/lib/plateSize";
+import type { WorkplaneWorkspaceSettings } from "@/types/layerling";
 import { getUiState, runUiCommand, subscribeUiState } from "@/lib/host/nativeUi";
 
 /**
@@ -84,17 +87,131 @@ function ZoomPercentMenu({ camera, onClose }: { camera: CameraStatus; onClose: (
   );
 }
 
+/**
+ * The build plate's Width and Depth as a compact popover above the footer's plate label. It edits the workspace's own `width` / `depth` (the editor's one
+ * update, `onApply`); Enter or Apply commits valid values, Escape or a click outside cancels and changes nothing. Shown and typed in the document's units.
+ */
+function PlateEditor({ anchor, workspace, widthMm, depthMm, onApply, onClose }: {
+  anchor: DOMRect;
+  workspace: Pick<WorkplaneWorkspaceSettings, "units" | "scale" | "accuracy">;
+  widthMm: number;
+  depthMm: number;
+  onApply: (widthMm: number, depthMm: number) => void;
+  onClose: () => void;
+}) {
+  const [width, setWidth] = useState(() => formatPlateValue(widthMm, workspace));
+  const [depth, setDepth] = useState(() => formatPlateValue(depthMm, workspace));
+  const [touched, setTouched] = useState(false);
+  const rootRef = useRef<HTMLFormElement>(null);
+  const firstRef = useRef<HTMLInputElement>(null);
+  const [position, setPosition] = useState<{ left: number; bottom: number }>({ left: anchor.left, bottom: window.innerHeight - anchor.top + 6 });
+  const unit = plateUnitLabel(workspace);
+  const range = plateRange(workspace);
+  const parsedWidth = parsePlateInput(width, workspace);
+  const parsedDepth = parsePlateInput(depth, workspace);
+  const valid = parsedWidth.ok && parsedDepth.ok;
+  const changed = valid && (Math.abs(parsedWidth.mm - widthMm) > 1e-6 || Math.abs(parsedDepth.mm - depthMm) > 1e-6);
+
+  useLayoutEffect(() => {
+    const element = rootRef.current;
+    if (element) {
+      const { width: w } = element.getBoundingClientRect();
+      setPosition({ left: Math.max(8, Math.min(anchor.left, window.innerWidth - w - 8)), bottom: window.innerHeight - anchor.top + 6 });
+    }
+    firstRef.current?.focus();
+    firstRef.current?.select();
+  }, [anchor]);
+
+  useEffect(() => {
+    const onPointer = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) onClose();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("pointerdown", onPointer, true);
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("resize", onClose);
+    window.addEventListener("blur", onClose);
+    return () => {
+      window.removeEventListener("pointerdown", onPointer, true);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("resize", onClose);
+      window.removeEventListener("blur", onClose);
+    };
+  }, [onClose]);
+
+  const apply = () => {
+    setTouched(true);
+    if (!parsedWidth.ok || !parsedDepth.ok) return;
+    if (changed) onApply(parsedWidth.mm, parsedDepth.mm);
+    onClose();
+  };
+  const field = (label: string, value: string, set: (text: string) => void, parsed: typeof parsedWidth, ref?: React.Ref<HTMLInputElement>) => (
+    <label className="native-plate-field">
+      <span>{label}</span>
+      <input
+        ref={ref}
+        type="text"
+        inputMode="decimal"
+        value={value}
+        aria-label={`Build plate ${label.toLowerCase()} in ${unit}`}
+        aria-invalid={!parsed.ok}
+        onFocus={(event) => event.currentTarget.select()}
+        onChange={(event) => set(event.currentTarget.value)}
+      />
+      <em>{unit}</em>
+      {!parsed.ok && (touched || value.trim() === "" || value !== "") ? <small role="alert">{parsed.error}</small> : null}
+    </label>
+  );
+  return createPortal(
+    <form
+      ref={rootRef}
+      className="native-plate-editor"
+      role="dialog"
+      aria-label="Build plate size"
+      style={{ left: position.left, bottom: position.bottom }}
+      onSubmit={(event) => {
+        event.preventDefault();
+        apply();
+      }}
+    >
+      <strong>Build plate</strong>
+      {field("Width", width, setWidth, parsedWidth, firstRef)}
+      {field("Depth", depth, setDepth, parsedDepth)}
+      <p className="native-plate-hint">{range.min}–{range.max} {unit}</p>
+      <div className="native-plate-actions">
+        <button type="button" onClick={onClose}>Cancel</button>
+        <button type="submit" className="primary" disabled={!valid}>Apply</button>
+      </div>
+    </form>,
+    document.body,
+  );
+}
+
 export function NativeStatusBar({
   objectCount,
   selectionLabel,
   unitsLabel,
-  plateLabel,
+  plate,
+  workspace,
+  onPlateChange,
 }: {
   objectCount: number;
   selectionLabel: string;
   unitsLabel: string;
-  plateLabel: string;
+  /** The build plate, in millimetres. */
+  plate: { width: number; depth: number };
+  /** Only what is needed to show and read lengths in the document's units. */
+  workspace: Pick<WorkplaneWorkspaceSettings, "units" | "scale" | "accuracy">;
+  onPlateChange: (widthMm: number, depthMm: number) => void;
 }) {
+  const [plateAnchor, setPlateAnchor] = useState<DOMRect | null>(null);
+  void plateSizePatch;
   const camera = useSyncExternalStore(subscribeCameraStatus, getCameraStatus, () => null);
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
   const inspectorShown = useInspectorVisible();
@@ -112,7 +229,18 @@ export function NativeStatusBar({
         <span className="native-status-sep" aria-hidden="true" />
         <span className="native-status-item" data-status="units" title="Measurement units">{unitsLabel}</span>
         <span className="native-status-sep" aria-hidden="true" />
-        <span className="native-status-item" data-status="plate" title="Workplane">{plateLabel}</span>
+        <button
+          type="button"
+          className="native-status-item native-status-plate"
+          data-status="plate"
+          title="Edit the build plate size"
+          aria-haspopup="dialog"
+          aria-expanded={plateAnchor !== null}
+          onClick={(event) => setPlateAnchor((open) => (open ? null : event.currentTarget.getBoundingClientRect()))}
+        >
+          {plateSummary(plate.width, plate.depth, workspace)}
+        </button>
+        {plateAnchor ? <PlateEditor anchor={plateAnchor} workspace={workspace} widthMm={plate.width} depthMm={plate.depth} onApply={onPlateChange} onClose={() => setPlateAnchor(null)} /> : null}
         <span className="native-status-sep" aria-hidden="true" />
         <span className="native-status-item" data-status="mode" title="Editing mode (Model menu)">
           {mode === "sketch" ? "Sketch" : "3D Editor"}
