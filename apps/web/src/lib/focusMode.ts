@@ -72,14 +72,17 @@ function storeChosen(on: boolean) {
  * While it shows, the page's root carries data-focus-mode="on", which takes the title row and the footer out of the
  * editor's measures; the attribute goes when the editor closes, so the start page keeps its own.
  */
-export function useFocusMode() {
+export function useFocusMode({ followFullScreen = true }: { followFullScreen?: boolean } = {}) {
   const [chosen, setChosen] = useState(false);
   const [fullScreen, setFullScreen] = useState(false);
   const [declined, setDeclined] = useState(false);
 
   useEffect(() => {
     setChosen(readChosen());
-    const check = () => setFullScreen(browserFillsScreen(window));
+    // The macOS app does not follow the window's full screen (Build 0008): there the window's full screen is the platform's own (the menu bar and Dock
+    // step aside, nothing needs to be given back to the work), and the mode that hides the Inspector, the footer and the toolbar would take away the very
+    // controls a Mac full-screen window should keep. In a browser, F11 still brings the mode by itself, as before. The mode stays a choice (button, key, menu).
+    const check = () => setFullScreen(followFullScreen ? browserFillsScreen(window) : false);
     check();
     window.addEventListener("resize", check);
     let query: MediaQueryList | null = null;
@@ -93,7 +96,7 @@ export function useFocusMode() {
       window.removeEventListener("resize", check);
       query?.removeEventListener?.("change", check);
     };
-  }, []);
+  }, [followFullScreen]);
 
   // Leaving the full screen forgets that the mode was switched off in it: the next F11 brings it again.
   useEffect(() => {

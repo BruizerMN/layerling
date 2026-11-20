@@ -236,7 +236,11 @@ export function NativeStatusBar({
           title="Edit the build plate size"
           aria-haspopup="dialog"
           aria-expanded={plateAnchor !== null}
-          onClick={(event) => setPlateAnchor((open) => (open ? null : event.currentTarget.getBoundingClientRect()))}
+          onClick={(event) => {
+            // Read the rectangle NOW: React may run the updater after the event's currentTarget has been cleared.
+            const rect = event.currentTarget.getBoundingClientRect();
+            setPlateAnchor((open) => (open ? null : rect));
+          }}
         >
           {plateSummary(plate.width, plate.depth, workspace)}
         </button>

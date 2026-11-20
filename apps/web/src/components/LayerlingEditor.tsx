@@ -3640,7 +3640,8 @@ export function LayerlingEditor({
   const [projectInteractionActive, setProjectInteractionActive] = useState(false);
   const [toolbarMode, setToolbarMode] = useState<ToolbarMode>("geometry");
   // Focus mode (Discussion #1554): the title row and the footer make room for the work.
-  const focusMode = useFocusMode();
+  // The native app does not switch Focus Mode on by itself when its window goes full screen (lib/focusMode.ts); it stays the user's choice there.
+  const focusMode = useFocusMode({ followFullScreen: !nativeDocument });
   const setFocusModeRef = useRef(focusMode.set);
   setFocusModeRef.current = focusMode.set;
   const focusModeActiveRef = useRef(focusMode.active);
