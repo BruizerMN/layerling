@@ -725,6 +725,16 @@ export function SecondaryToolbar({
     document.documentElement.dataset.nativeChrome = "on";
     return () => { delete document.documentElement.dataset.nativeChrome; };
   }, [nativeChrome]);
+  // Native app: the host shows the system open panel for a file input; it cannot see the input's accept list, so the page leaves it where the host can read it.
+  useEffect(() => {
+    if (!nativeChrome) return;
+    const note = (event: Event) => {
+      const target = event.target;
+      if (target instanceof HTMLInputElement && target.type === "file") (window as unknown as { __layerlingFileAccept?: string }).__layerlingFileAccept = target.accept;
+    };
+    document.addEventListener("click", note, true);
+    return () => document.removeEventListener("click", note, true);
+  }, [nativeChrome]);
   useLayoutEffect(() => {
     const content = toolbarContentRef.current;
     if (!content || typeof ResizeObserver === "undefined") return;

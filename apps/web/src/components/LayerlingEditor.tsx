@@ -19221,7 +19221,8 @@ export function LayerlingEditor({
         return;
       }
 
-      if (shortcut && key === "h") {
+      // In the native app Cmd+H stays macOS's Hide Application (the menu shows Ctrl+H for Hide Selected; Cmd+Shift+H is Unhide All).
+      if (shortcut && key === "h" && !(nativeDocument && event.metaKey && !event.ctrlKey && !event.shiftKey)) {
         event.preventDefault();
         if (event.shiftKey) {
           showHidden();

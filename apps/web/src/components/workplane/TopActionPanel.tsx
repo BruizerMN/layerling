@@ -247,6 +247,7 @@ export function TopActionPanel({
     : null;
   const lylHistoryStop = (index: number) => ({ "--stop": index / (lylHistoryLimits.length - 1) }) as CSSProperties;
   useLanguage();
+  const nativeApp = typeof document !== "undefined" && document.documentElement.dataset.nativeChrome === "on";
   const title = panel === "export" ? t("panel.export") : panel === "attachments" ? t("panel.attachments") : t("panel.import");
 
   const exportDetails: Record<ExportFormat, { label: string; description: string; note: string }> = {
@@ -313,7 +314,7 @@ export function TopActionPanel({
 
   return (
     // Movable by its title bar like the other tool panels, so it never has to cover the design (as QrCodePanel).
-    <MovableToolPanel className={`top-action-panel icon-tag-panel ${panel === "export" ? "export-action-panel" : panel === "import" || panel === "attachments" ? "import-action-panel" : ""}`} ariaLabel={title}>
+    <MovableToolPanel className={`top-action-panel icon-tag-panel${nativeApp ? " native-centered-dialog" : ""} ${panel === "export" ? "export-action-panel" : panel === "import" || panel === "attachments" ? "import-action-panel" : ""}`} ariaLabel={title}>
       {(handleProps) => (<>
       <header className="movable" title={t("panel.moveHint")} {...handleProps}>
         <div className="top-action-heading">
@@ -338,21 +339,22 @@ export function TopActionPanel({
       ) : null}
       {panel === "import" ? (
         <div className="top-action-body">
-          <button className="open-lyl-project-button" type="button" onClick={onPickProjectFile}>
+          {/* The native app opens, inserts and places pictures through its own File menu: only geometry is imported here. */}
+          {!nativeApp ? <button className="open-lyl-project-button" type="button" onClick={onPickProjectFile}>
             <span className="open-lyl-project-icon"><FolderOpen size={18} /></span>
             <span>
               <strong>{t("import.openProject")}</strong>
               <small>{t("import.openProjectHint")}</small>
             </span>
-          </button>
-          <button className="open-lyl-project-button" type="button" onClick={onPickInsertProjectFile}>
+          </button> : null}
+          {!nativeApp ? <button className="open-lyl-project-button" type="button" onClick={onPickInsertProjectFile}>
             <span className="open-lyl-project-icon"><FilePlus2 size={18} /></span>
             <span>
               <strong>{t("import.insertProject")}</strong>
               <small>{t("import.insertProjectHint")}</small>
             </span>
-          </button>
-          {sharedProjectsEnabled ? (
+          </button> : null}
+          {sharedProjectsEnabled && !nativeApp ? (
             <>
               <button className="open-lyl-project-button" type="button" onClick={() => setServerDesignsOpen((open) => !open)} aria-expanded={serverDesignsOpen} data-testid="import-insert-from-server">
                 <span className="open-lyl-project-icon"><Server size={18} /></span>
@@ -364,14 +366,14 @@ export function TopActionPanel({
               {serverDesignsOpen ? <ServerDesignPicker onInsertFile={onInsertDesignFile} /> : null}
             </>
           ) : null}
-          <button className="open-lyl-project-button" type="button" onClick={onPickReferenceImage} data-testid="import-reference-image">
+          {!nativeApp ? <button className="open-lyl-project-button" type="button" onClick={onPickReferenceImage} data-testid="import-reference-image">
             <span className="open-lyl-project-icon"><ImagePlus size={18} /></span>
             <span>
               <strong>{t("import.referenceImage")}</strong>
               <small>{t("import.referenceImageHint")}</small>
             </span>
-          </button>
-          <div className="import-kind-divider"><span>{t("import.divider")}</span></div>
+          </button> : null}
+          {!nativeApp ? <div className="import-kind-divider"><span>{t("import.divider")}</span></div> : null}
           <button
             className="import-drop-zone"
             onClick={onPickFile}
@@ -390,6 +392,7 @@ export function TopActionPanel({
             <strong>{t("import.dropZone")}</strong>
             <span>{t("import.dropZoneHint")}</span>
           </button>
+          {nativeApp ? <button className="native-import-open" type="button" onClick={onPickFile}>Open File…</button> : null}
           <label className="import-option" title={t("import.keepSvgPageHint")}>
             <input
               type="checkbox"

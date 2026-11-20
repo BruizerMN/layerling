@@ -459,3 +459,38 @@ html[data-native-chrome="on"] .native-inspector-dock .inspector-header-icon.acti
   font: 500 11px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
 }
 .native-inspector-dock .inspector-hidden-banner button:hover { background: var(--insp-hover); }
+
+/*
+ * Build 0009 corrections. Import, Export and Attachments are centred in the document area (the 3D view between the ribbon and the footer, left of the docked
+ * Inspector) in the native app. They behave as dialogs there: the position is not remembered or dragged, the content scrolls when the window is short.
+ */
+html[data-inspector="on"] { --native-dock-width: 296px; }
+html[data-native-chrome="on"] .top-action-panel.native-centered-dialog {
+  top: calc(var(--editor-toolbar-height) + (100vh - var(--editor-toolbar-height) - var(--editor-footer-height)) / 2) !important;
+  left: calc((100vw - var(--native-dock-width, 0px)) / 2) !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%) !important;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - var(--editor-toolbar-height) - var(--editor-footer-height) - 32px) !important;
+}
+html[data-native-chrome="on"] .top-action-panel.native-centered-dialog > .export-dialog-body,
+html[data-native-chrome="on"] .top-action-panel.native-centered-dialog > .top-action-body { min-height: 0; overflow-y: auto; }
+html[data-native-chrome="on"] .top-action-panel.native-centered-dialog header.movable { cursor: default; }
+html[data-native-chrome="on"] .native-import-open {
+  width: 100%;
+  margin: 2px 0 6px;
+  padding: 7px 12px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--system-accent-text, inherit);
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+}
+html[data-native-chrome="on"] .native-import-open:hover { background: rgba(127, 127, 127, 0.12); }
+
+/* Ribbon groups spread across the available width (Build 0009 corrections): extra room goes between the groups; sizes, order and folding are unchanged. */
+html[data-native-chrome="on"] .toolbar-mode-content.geometry { justify-content: space-between; padding-inline: 4px; box-sizing: border-box; }

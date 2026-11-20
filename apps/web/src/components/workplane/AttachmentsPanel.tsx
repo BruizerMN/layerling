@@ -197,7 +197,19 @@ export function AttachmentsPanel({
   };
 
   return (
-    <div className="top-action-body attachments-panel">
+    <div
+      className="top-action-body attachments-panel"
+      onDragOver={(event) => {
+        if (locked || !event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      }}
+      onDrop={(event) => {
+        if (locked || event.dataTransfer.files.length === 0) return;
+        event.preventDefault();
+        void addFiles(event.dataTransfer.files);
+      }}
+    >
       {/* The upload button looks and sits as the Import panel's; the real file input is hidden and opened by it. */}
       <button className="open-lyl-project-button" type="button" onClick={() => inputRef.current?.click()} disabled={locked} data-testid="attachments-upload">
         <span className="open-lyl-project-icon"><Upload size={18} /></span>
