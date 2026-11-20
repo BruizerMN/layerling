@@ -5392,6 +5392,8 @@ export function LayerlingEditor({
   useEffect(() => {
     if (!nativeDocument) return;
     setNativeUiDocument(nativeDocument.documentId);
+    // A small read-only view of the effective workspace for the native app's end-to-end tests.
+    (window as unknown as { layerlingEffectiveWorkspace?: () => unknown }).layerlingEffectiveWorkspace = () => ({ workspace: workspaceSettingsRef.current, snap: snapGridRef.current });
     const off = subscribeNativeUiEvents((event) => {
       if (event.type === "settings.watch") {
         settingsWatchedRef.current = event.payload.watching;
@@ -5408,6 +5410,7 @@ export function LayerlingEditor({
     return () => {
       off();
       setNativeUiDocument(null);
+      delete (window as unknown as { layerlingEffectiveWorkspace?: unknown }).layerlingEffectiveWorkspace;
     };
   }, [nativeDocument, publishDocumentSettings, updateProjectWorkspaceSettings]);
   useEffect(() => {
