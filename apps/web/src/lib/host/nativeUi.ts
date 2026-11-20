@@ -29,6 +29,8 @@ export function runUiCommand(command: UiCommand) {
 export function setNativeUiDocument(id: string | null) {
   documentId = id;
   lastState = "";
+  // The toolbar (a child of the editor) reports before the editor says which document it is: send what it already reported.
+  if (id && latestUiState) publishUiState(latestUiState);
 }
 
 export function nativeUiActive(): boolean {

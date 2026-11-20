@@ -715,6 +715,12 @@ export function SecondaryToolbar({
   // into --editor-toolbar-height, which the workplane, the status and the menus
   // below the bar are placed by.
   const toolbarContentRef = useRef<HTMLDivElement | null>(null);
+  // Native app: without the browser's title row its height is not reserved (nativeStatusBar.css); set before the toolbar measures itself.
+  useLayoutEffect(() => {
+    if (!nativeChrome) return;
+    document.documentElement.dataset.nativeChrome = "on";
+    return () => { delete document.documentElement.dataset.nativeChrome; };
+  }, [nativeChrome]);
   useLayoutEffect(() => {
     const content = toolbarContentRef.current;
     if (!content || typeof ResizeObserver === "undefined") return;

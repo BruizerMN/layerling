@@ -1,3 +1,5 @@
+html[data-native-chrome="on"] { --editor-toolbar-title-height: 0px; }
+
 /* The native app's status bar (components/NativeStatusBar.tsx). It reuses the editor footer's slot (.dashboard-legal.editor-legal: fixed to the
    bottom, --editor-footer-height, hidden by focus mode) and only restyles it like a macOS window's bottom bar. */
 .dashboard-legal.editor-legal.native-status-bar {
@@ -5,7 +7,7 @@
   gap: 16px;
   padding: 0 12px;
   font: 11px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-  color: var(--muted, #5f6368);
+  color: var(--foreground);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -59,3 +61,6 @@
   box-shadow: none;
 }
 .workspace-modal.embedded .workspace-modal-layout { height: 100%; }
+
+.native-status-item { opacity: 0.82; }
+.native-zoom-value { opacity: 0.9; }
