@@ -40,7 +40,7 @@ html[data-theme="dark"] .native-inspector-dock {
   --insp-accent-soft: rgba(10, 132, 255, 0.28);
 }
 /* The 3D view gives the dock its width, only while the user has the Inspector shown (and never in focus mode). */
-html[data-native-chrome="on"][data-inspector="on"]:not([data-focus-mode="on"]) .workplane-stage { width: calc(100vw - 296px); }
+html[data-native-chrome="on"][data-inspector="on"]:not([data-focus-mode="on"]) .workplane-stage { margin-right: 296px; }
 html[data-focus-mode="on"] .native-inspector-dock { display: none; }
 
 /* ---- the panel ---- */
