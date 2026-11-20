@@ -910,10 +910,13 @@ export function SecondaryToolbar({
       const active = document.activeElement;
       setTextFocus(active instanceof HTMLElement && (active.isContentEditable || active instanceof HTMLTextAreaElement || (active instanceof HTMLInputElement && !["checkbox", "radio", "range", "button", "submit", "color", "file"].includes(active.type))));
     };
-    document.addEventListener("focusin", update);
-    document.addEventListener("focusout", () => window.setTimeout(update, 0));
+    // A focused field that is removed from the page fires no focusout, so pointer and key activity re-check too.
+    const later = () => window.setTimeout(update, 0);
+    const events = ["focusin", "focusout", "pointerdown", "pointerup", "keyup"] as const;
+    for (const name of events) document.addEventListener(name, later, true);
+    update();
     return () => {
-      document.removeEventListener("focusin", update);
+      for (const name of events) document.removeEventListener(name, later, true);
     };
   }, [nativeChrome]);
   useEffect(() => {
