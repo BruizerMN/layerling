@@ -20,6 +20,25 @@ export const SAVE_PROTOCOL_MIN = 3;
  * it simply never sends these messages.
  */
 export const UI_CAPABILITY = "ui.v1";
+/**
+ * Build 0007 (additive, needs `ui.v1`): the host presents the page's contextual menus as real macOS menus. The page builds the items from its own state and
+ * runs the chosen item's own function; the host only draws, tracks and reports (`menu.result`, `menu.highlight`).
+ */
+export const UI_MENU_CAPABILITY = "ui.menu.v1";
+/** One entry of a native menu. `items` makes it a submenu. */
+export interface NativeMenuItem {
+  key: string;
+  title: string;
+  /** As the page writes shortcuts, "Ctrl+Shift+G" or a single letter; the host shows it as a macOS key equivalent (Ctrl = Command). */
+  shortcut?: string;
+  danger?: boolean;
+  separatorBefore?: boolean;
+  /** A colour dot before the title (#rrggbb). */
+  color?: string;
+  enabled?: boolean;
+  checked?: boolean;
+  items?: NativeMenuItem[];
+}
 /** Commands a host menu can send to a document page (`ui.command`). */
 export const UI_COMMANDS = ["mode.geometry", "mode.sketch", "focusMode.toggle", "ribbonPin.toggle", "search", "guide", "whatsNew", "shortcuts", "interactiveHelp", "inspector.toggle", "settings.saveStartView", "settings.resetStartView", "settings.makeFitTest"] as const;
 export type UiCommand = (typeof UI_COMMANDS)[number];
@@ -169,6 +188,14 @@ export interface UiStateRequest {
   protocol: number;
   payload: { documentId: string; state: { mode: "geometry" | "sketch"; sketchEnabled: boolean; focusMode: boolean; ribbonPinned: boolean; inspectorVisible?: boolean } };
 }
+/** Build 0007 (`ui.menu.v1`): show a native menu at a point of the page. Answered at once; the choice comes back as the event `menu.result`. */
+export interface MenuShowRequest {
+  id: string;
+  session: string;
+  type: "menu.show";
+  protocol: number;
+  payload: { documentId: string; menuId: string; x: number; y: number; label?: string; items: NativeMenuItem[] };
+}
 /** Build 0003 (`ui.v1`): the page asks the host to open one of its windows (the Settings window or this document's Document Settings window). */
 export interface UiActionRequest {
   id: string;
@@ -237,6 +264,7 @@ export type HostRequest =
   | DocumentChangedRequest
   | UiStateRequest
   | UiActionRequest
+  | MenuShowRequest
   | SettingsStateRequest
   | SaveProgressRequest
   | SaveCommitRequest
@@ -262,6 +290,7 @@ export type OkTypeFor = {
   "document.changed": "document.changed.ok";
   "ui.state": "ui.state.ok";
   "ui.action": "ui.action.ok";
+  "menu.show": "menu.show.ok";
   "settings.state": "settings.state.ok";
   "document.save.progress": "document.save.progress.ok";
   "document.save.commit": "document.save.commit.ok";
@@ -289,6 +318,10 @@ export type HostEvent =
   | { session: string; protocol: number; id: string; type: "ui.command"; payload: { documentId: string; command: UiCommand } }
   /** Build 0003 (`ui.v1`): the Document Settings window changed these document settings; the page applies them like its own settings window did. */
   | { session: string; protocol: number; id: string; type: "settings.apply"; payload: { documentId: string; workspace: Record<string, unknown>; snap: string | null } }
+  /** Build 0007 (`ui.menu.v1`): how a native menu ended. `key` null: dismissed without a choice. */
+  | { session: string; protocol: number; id: string; type: "menu.result"; payload: { documentId: string; menuId: string; key: string | null; shift: boolean } }
+  /** Build 0007 (`ui.menu.v1`): the item under the pointer or the keyboard while the menu is open (null: none). */
+  | { session: string; protocol: number; id: string; type: "menu.highlight"; payload: { documentId: string; menuId: string; key: string | null } }
   /** Build 0003 (`ui.v1`): the Document Settings window opened or closed; the page sends `settings.state` while it is open. */
   | { session: string; protocol: number; id: string; type: "settings.watch"; payload: { documentId: string; watching: boolean } }
   /** The file was changed by another application (not reloaded automatically). */
@@ -377,6 +410,16 @@ export function parseHostEvent(value: unknown): HostEvent | { invalid: string } 
     return isText(documentId) && isRecord(value.payload.workspace)
       ? { ...base, type: "settings.apply", payload: { documentId, workspace: value.payload.workspace, snap: typeof value.payload.snap === "string" ? value.payload.snap : null } }
       : { invalid: "settings.apply needs documentId and a workspace object" };
+  }
+  if (value.type === "menu.result") {
+    return isText(documentId) && isText(value.payload.menuId) && (value.payload.key === null || isText(value.payload.key)) && typeof value.payload.shift === "boolean"
+      ? { ...base, type: "menu.result", payload: { documentId, menuId: value.payload.menuId, key: value.payload.key as string | null, shift: value.payload.shift } }
+      : { invalid: "menu.result needs documentId, menuId, key (or null) and shift" };
+  }
+  if (value.type === "menu.highlight") {
+    return isText(documentId) && isText(value.payload.menuId) && (value.payload.key === null || isText(value.payload.key))
+      ? { ...base, type: "menu.highlight", payload: { documentId, menuId: value.payload.menuId, key: value.payload.key as string | null } }
+      : { invalid: "menu.highlight needs documentId, menuId and key (or null)" };
   }
   if (value.type === "settings.watch") {
     return isText(documentId) && typeof value.payload.watching === "boolean" ? { ...base, type: "settings.watch", payload: { documentId, watching: value.payload.watching } } : { invalid: "settings.watch needs documentId and watching" };

@@ -200,6 +200,8 @@ import { revolveAxisShift } from "@/lib/revolveAxis";
 import { buildSketchRevolveMesh, DEFAULT_SKETCH_REVOLVE_SETTINGS, normalizeSketchRevolveSettings, type SketchRevolveMesh } from "@/lib/sketchRevolve";
 import { AppFooter } from "@/components/AppFooter";
 import { NativeStatusBar } from "@/components/NativeStatusBar";
+import { nativeMenusAvailable, showNativeMenu } from "@/lib/host/nativeMenu";
+import type { NativeMenuItem } from "@/lib/host/hostProtocol";
 import { NativeInspectorDock } from "@/components/NativeInspectorDock";
 import { readAppPrefs, subscribeAppPrefs, writeAppPrefs } from "@/lib/appPrefs";
 import { publishSettingsState, setNativeUiDocument, subscribeNativeUiEvents } from "@/lib/host/nativeUi";
@@ -19412,13 +19414,17 @@ export function LayerlingEditor({
    * Auswahl - der Viewport hat den angeklickten Koerper schon ausgewaehlt.
    */
   // `stack`: every body under the pointer, front to back; `listing`: the menu shows them for "Select other" (#804).
-  const [shapeContextMenu, setShapeContextMenu] = useState<{ x: number; y: number; onShape: boolean; stack: string[]; listing?: boolean; plateListing?: boolean; facePoint?: { x: number; y: number; z: number } } | null>(null);
+  type ShapeContextMenuState = { x: number; y: number; onShape: boolean; stack: string[]; listing?: boolean; plateListing?: boolean; facePoint?: { x: number; y: number; z: number } };
+  const [shapeContextMenu, setShapeContextMenu] = useState<ShapeContextMenuState | null>(null);
+  /** Native app: presents the same menu as a real macOS menu (set below, once the items can be built); returns whether it did. */
+  const nativeShapeMenuRef = useRef<((request: { shapeId: string | null; clientX: number; clientY: number; stackIds: string[]; inSelection?: boolean; facePoint?: { x: number; y: number; z: number } }) => boolean) | null>(null);
   const [menuHighlightIds, setMenuHighlightIds] = useState<string[]>([]);
   const closeShapeContextMenu = useCallback(() => {
     setShapeContextMenu(null);
     setMenuHighlightIds([]);
   }, []);
   const openShapeContextMenu = useCallback((request: { shapeId: string | null; clientX: number; clientY: number; stackIds: string[]; inSelection?: boolean; facePoint?: { x: number; y: number; z: number } }) => {
+    if (nativeShapeMenuRef.current?.(request)) return;
     // Empty space inside the selection frame counts as the selection, so it gets the full menu too (#1282).
     setShapeContextMenu({ x: request.clientX, y: request.clientY, onShape: Boolean(request.shapeId) || Boolean(request.inSelection), stack: request.stackIds, facePoint: request.facePoint });
     setMenuHighlightIds([]);
@@ -19486,15 +19492,15 @@ export function LayerlingEditor({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [multiSelect, endMultiSelect]);
 
-  const shapeContextMenuItems = (): ShapeContextMenuItem[] => {
-    if (!shapeContextMenu) return [];
+  const shapeContextMenuItems = (menu: ShapeContextMenuState | null = shapeContextMenu): ShapeContextMenuItem[] => {
+    if (!menu) return [];
     // The bodies under the pointer, front to back: a row marks its body through what stands in front, a click selects it,
     // with Shift adds it (#804).
-    const stack = shapeContextMenu.stack
+    const stack = menu.stack
       .map((id) => shapes.find((shape) => shape.id === id))
       .filter((shape): shape is WorkplaneShape => Boolean(shape));
     // "Onto plate" (Discussion #456): every other plate, and a new one while the design can hold more.
-    if (shapeContextMenu.plateListing) {
+    if (menu.plateListing) {
       const here = new Set(selectedShapes.map((shape) => plateOfShape(workspaceSettings, shape)));
       const targets: ShapeContextMenuItem[] = buildPlates.plates
         .map((plate, index) => ({ plate, index }))
@@ -19503,7 +19509,7 @@ export function LayerlingEditor({
       if (buildPlates.count < MAX_BUILD_PLATES) targets.push({ key: "plate-new", label: t("plates.moveToNew"), separated: targets.length > 0, onSelect: () => buildPlates.moveSelectionToPlate(-1) });
       return targets;
     }
-    if (shapeContextMenu.listing) {
+    if (menu.listing) {
       return stack.map((shape) => ({
         key: `other-${shape.id}`,
         label: displayShapeName(shape),
@@ -19515,7 +19521,7 @@ export function LayerlingEditor({
     const selectOther: ShapeContextMenuItem[] = stack.length > 1
       ? [{ key: "selectOther", label: t("contextMenu.selectOther"), keepOpen: true, onSelect: () => setShapeContextMenu((current) => current ? { ...current, listing: true } : current) }]
       : [];
-    if (!shapeContextMenu.onShape || !hasSelection) {
+    if (!menu.onShape || !hasSelection) {
       const items: ShapeContextMenuItem[] = [
         { key: "paste", label: t("contextMenu.paste"), shortcut: "Ctrl+V", onSelect: () => void pasteShape() },
         { key: "selectAll", label: t("contextMenu.selectAll"), shortcut: "Ctrl+A", onSelect: selectAllVisible },
@@ -19587,7 +19593,7 @@ export function LayerlingEditor({
     if (!allHoles) {
       items.push(
         { key: "markCenter", label: t("contextMenu.markCenter"), separated: true, onSelect: () => markSelectionPoints("center") },
-        ...(shapeContextMenu.facePoint ? [{ key: "markFaceCenter", label: t("contextMenu.markFaceCenter"), onSelect: () => addReferencePoints([shapeContextMenu.facePoint as { x: number; y: number; z: number }]) }] : []),
+        ...(menu.facePoint ? [{ key: "markFaceCenter", label: t("contextMenu.markFaceCenter"), onSelect: () => addReferencePoints([menu.facePoint as { x: number; y: number; z: number }]) }] : []),
         // The point the selection turns about, to snap or align another part to (#990).
         ...(activeRotationPivot ? [{ key: "markPivot", label: t("contextMenu.markPivot"), onSelect: () => addReferencePoints([activeRotationPivot]) }] : []),
         { key: "markCorners", label: t("contextMenu.markCorners"), onSelect: () => markSelectionPoints("corners") },
@@ -19607,6 +19613,41 @@ export function LayerlingEditor({
     );
     return items;
   };
+
+  // Native app (Build 0007): the same items as a real macOS menu. The submenus ("Select other", "Onto plate") are built up front from the same builder
+  // (the web menu swaps its items in place); a choice runs the item's own function; highlighting a row of "Select other" marks its body in the view.
+  nativeShapeMenuRef.current = nativeDocument && nativeMenusAvailable()
+    ? (request) => {
+        const base: ShapeContextMenuState = { x: request.clientX, y: request.clientY, onShape: Boolean(request.shapeId) || Boolean(request.inSelection), stack: request.stackIds, facePoint: request.facePoint };
+        const registry = new Map<string, ShapeContextMenuItem>();
+        const convert = (list: ShapeContextMenuItem[], prefix: string): NativeMenuItem[] =>
+          list.map((item) => {
+            const key = `${prefix}${item.key}`;
+            if (item.keepOpen) {
+              const sub = shapeContextMenuItems({ ...base, listing: item.key === "selectOther", plateListing: item.key === "ontoPlate" });
+              return { key, title: item.label, separatorBefore: item.separated, items: convert(sub, `${key}/`) };
+            }
+            registry.set(key, item);
+            return { key, title: item.label, shortcut: item.shortcut, danger: item.danger, separatorBefore: item.separated, color: item.color };
+          });
+        const items = convert(shapeContextMenuItems(base), "");
+        if (items.length === 0) return false;
+        let lit: string | null = null;
+        const light = (key: string | null) => {
+          if (lit && lit !== key) registry.get(lit)?.onHover?.(false);
+          lit = key;
+          if (key) registry.get(key)?.onHover?.(true);
+        };
+        return showNativeMenu(nativeDocument.documentId, { x: request.clientX, y: request.clientY, label: t("contextMenu.label"), items }, {
+          onChoose: (key, modifiers) => {
+            light(null);
+            registry.get(key)?.onSelect(modifiers);
+          },
+          onHighlight: light,
+          onCancel: () => light(null),
+        });
+      }
+    : null;
 
   return (
     <div className={`layerling-editor ${historyViewState ? "history-view-active" : ""} ${focusMode.active ? "focus-mode" : ""}`}>
