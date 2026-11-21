@@ -4,8 +4,12 @@
  * `layerlingSetRibbonIcons` when a file changes). The page only decides where to show them: components/RibbonIcon.tsx. In a browser there is no host, the list is
  * always empty and every icon is the editor's own.
  *
- * A key is the tool's id in kebab case: "cutOut" -> "cut-out", "clearance-check" stays. It does not depend on where a tool sits in the ribbon.
+ * A key is the icon's canonical identifier (lib/host/ribbonIconCatalog.ts, generated from the native app's catalog of the 63 ribbon artworks): the tool's id in kebab case
+ * ("cutOut" -> "cut-out"), or for the sketch ribbon's own pictures a name of their own ("line", "finish-sketch"). A tool id that only used to name an icon
+ * ("sketch-copy") is an alias of the canonical key ("copy"). Shared artwork has one key: Chamfer is "chamfer" in both ribbons. Position in the ribbon is not part of it.
  */
+import { RIBBON_ICON_ALIASES, RIBBON_ICON_KEYS } from "./ribbonIconCatalog";
+
 export const RIBBON_ICONS_CHANGED_EVENT = "layerling:ribbon-icons-changed";
 
 export type RibbonIconMap = Readonly<Record<string, string>>;
@@ -13,18 +17,21 @@ const NONE: RibbonIconMap = Object.freeze({});
 let current: RibbonIconMap | null = null;
 
 export function ribbonIconKey(toolId: string): string {
-  return toolId
+  const kebab = toolId
     .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
     .replace(/[^A-Za-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .toLowerCase();
+  return RIBBON_ICON_ALIASES[kebab] ?? kebab;
 }
+
+const KEYS = new Set<string>(RIBBON_ICON_KEYS);
 
 export function normalizeRibbonIcons(value: unknown): RibbonIconMap {
   if (!value || typeof value !== "object") return NONE;
   const result: Record<string, string> = {};
   for (const [key, address] of Object.entries(value as Record<string, unknown>)) {
-    if (/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(key) && typeof address === "string" && address.startsWith("layerling://app/__host__/ribbon-icon/")) result[key] = address;
+    if (KEYS.has(key) && typeof address === "string" && address.startsWith("layerling://app/__host__/ribbon-icon/")) result[key] = address;
   }
   return Object.freeze(result);
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { GuideHelpLink } from "@/components/GuideHelpLink";
-import { RibbonToolIcon } from "@/components/RibbonIcon";
+import { RibbonIconOr, RibbonToolIcon } from "@/components/RibbonIcon";
 import { FocusModeBar } from "@/components/workplane/FocusModeBar";
 import { ProjectNameField } from "@/components/workplane/ProjectNameField";
 import { FOCUS_MODE_CHANGE_EVENT, FOCUS_MODE_SHORTCUT } from "@/lib/focusMode";
@@ -1785,25 +1785,25 @@ export function SecondaryToolbar({
                   <div className="toolbar-section-label">{t("sketch.group.draw")}</div>
                   <div className="toolbar-section-tools">
                     <button className={`toolbar-icon sketch-tool-icon ${sketchTool === "line" ? "active" : ""}`} type="button" aria-label={t("sketch.line")} title={t("sketch.line")} onClick={() => onSketchTool("line")}>
-                      <SketchReferenceIcon name="line" />
+                      <RibbonIconOr iconKey="line"><SketchReferenceIcon name="line" /></RibbonIconOr>
                     </button>
                     <button className={`toolbar-icon sketch-tool-icon ${sketchTool === "arc" ? "active" : ""}`} type="button" aria-label={t("sketch.arc")} title={t("status.sketchTool.arc")} onClick={() => onSketchTool("arc")}>
-                      <SketchReferenceIcon name="arc" />
+                      <RibbonIconOr iconKey="arc"><SketchReferenceIcon name="arc" /></RibbonIconOr>
                     </button>
                     <button className={`toolbar-icon sketch-tool-icon ${sketchTool === "bezier" ? "active" : ""}`} type="button" aria-label={t("sketch.bezier")} title={t("sketch.bezier")} onClick={() => onSketchTool("bezier")}>
-                      <SketchReferenceIcon name="bezier" />
+                      <RibbonIconOr iconKey="bezier-curve"><SketchReferenceIcon name="bezier" /></RibbonIconOr>
                     </button>
                     <button className={`toolbar-icon sketch-tool-icon ${sketchTool === "smooth" ? "active" : ""}`} type="button" aria-label={t("sketch.smooth")} title={t("sketch.smooth")} onClick={() => onSketchTool("smooth")}>
-                      <SketchReferenceIcon name="smooth" />
+                      <RibbonIconOr iconKey="smooth-curve"><SketchReferenceIcon name="smooth" /></RibbonIconOr>
                     </button>
                     <button className={`toolbar-icon sketch-tool-icon ${sketchTool === "freehand" ? "active" : ""}`} type="button" aria-label={t("sketch.freehand")} title={`${t("status.sketchTool.freehand")} (5)`} aria-keyshortcuts="5" onClick={() => onSketchTool("freehand")}>
-                      <SketchReferenceIcon name="freehand" />
+                      <RibbonIconOr iconKey="freehand"><SketchReferenceIcon name="freehand" /></RibbonIconOr>
                     </button>
                     <button className={`toolbar-icon sketch-tool-icon sketch-construction-toggle ${sketchConstruction ? "active" : ""}`} type="button" aria-pressed={Boolean(sketchConstruction)} aria-label={t("sketch.construction")} title={t("sketch.constructionHint")} onClick={onSketchConstruction}>
-                      <ToolbarConstructionLineIcon />
+                      <RibbonToolIcon id="construction-line" Icon={ToolbarConstructionLineIcon} />
                     </button>
                     <button className={`toolbar-icon sketch-tool-icon sketch-from-middle-toggle ${sketchFromMiddle ? "active" : ""}`} type="button" aria-pressed={Boolean(sketchFromMiddle)} aria-label={t("sketch.fromMiddle")} title={t("sketch.fromMiddleHint")} onClick={onSketchFromMiddle}>
-                      <ToolbarMiddleLineIcon />
+                      <RibbonToolIcon id="line-from-middle" Icon={ToolbarMiddleLineIcon} />
                     </button>
                   </div>
                 </div>
@@ -1881,7 +1881,7 @@ export function SecondaryToolbar({
                   <div className="toolbar-section-label">{t("sketch.group.select")}</div>
                   <div className="toolbar-section-tools">
                     <button className={`toolbar-icon sketch-tool-icon ${sketchTool === "select" ? "active" : ""}`} type="button" aria-label={t("sketch.select")} title={t("sketch.select")} onClick={() => onSketchTool("select")}>
-                      <SketchReferenceIcon name="select" />
+                      <RibbonIconOr iconKey="select"><SketchReferenceIcon name="select" /></RibbonIconOr>
                     </button>
                     <button
                       className="toolbar-icon sketch-tool-icon"
@@ -1890,10 +1890,10 @@ export function SecondaryToolbar({
                       title={t("sketch.addImageReady")}
                       onClick={onSketchImage}
                     >
-                      <SketchReferenceIcon name="image" />
+                      <RibbonIconOr iconKey="add-image"><SketchReferenceIcon name="image" /></RibbonIconOr>
                     </button>
                     <button className={`toolbar-icon sketch-tool-icon ${sketchTool === "refine" ? "active" : ""}`} type="button" aria-label={t("sketch.refine")} title={t("sketch.refine")} onClick={() => onSketchTool("refine")}>
-                      <SketchReferenceIcon name="refine" />
+                      <RibbonIconOr iconKey="add-remove-points"><SketchReferenceIcon name="refine" /></RibbonIconOr>
                     </button>
                     <button
                       className={`toolbar-icon sketch-tool-icon ${canFilletSketchPoint ? "" : "disabled"} ${sketchCornerDialog === "chamfer" ? "active" : ""}`}
@@ -1906,7 +1906,7 @@ export function SecondaryToolbar({
                       }}
                       disabled={!canFilletSketchPoint}
                     >
-                      <ToolbarChamferIcon />
+                      <RibbonToolIcon id="chamfer" Icon={ToolbarChamferIcon} />
                     </button>
                     <button
                       className={`toolbar-icon sketch-tool-icon ${canFilletSketchPoint ? "" : "disabled"} ${sketchCornerDialog === "fillet" ? "active" : ""}`}
@@ -1919,10 +1919,10 @@ export function SecondaryToolbar({
                       }}
                       disabled={!canFilletSketchPoint}
                     >
-                      <ToolbarFilletIcon />
+                      <RibbonToolIcon id="fillet" Icon={ToolbarFilletIcon} />
                     </button>
                     <button className={`toolbar-icon sketch-tool-icon ${sketchTool === "erase" ? "active" : ""}`} type="button" aria-label={t("sketch.erase")} title={t("sketch.erase")} onClick={() => onSketchTool("erase")}>
-                      <SketchReferenceIcon name="erase" />
+                      <RibbonIconOr iconKey="erase"><SketchReferenceIcon name="erase" /></RibbonIconOr>
                     </button>
                   </div>
                 </div>
@@ -1936,10 +1936,10 @@ export function SecondaryToolbar({
                   {collapseBox(t("editor.group.history"), ToolbarUndoIcon, { id: "sketch-undo", label: t("sketch.undo"), icon: ToolbarUndoIcon, action: onSketchUndo, enabled: sketchCanUndo })}
                   <div className="toolbar-section-tools">
                     <button className={`toolbar-icon ${sketchCanUndo ? "" : "disabled"}`} type="button" aria-label={t("sketch.undo")} title={`${t("status.undo")} (${COMMAND_SHORTCUTS["sketch-undo"]})`} onClick={onSketchUndo} disabled={!sketchCanUndo}>
-                      <ToolbarUndoIcon />
+                      <RibbonToolIcon id="undo" Icon={ToolbarUndoIcon} />
                     </button>
                     <button className={`toolbar-icon ${sketchCanRedo ? "" : "disabled"}`} type="button" aria-label={t("sketch.redo")} title={`${t("status.redo")} (${COMMAND_SHORTCUTS["sketch-redo"]})`} onClick={onSketchRedo} disabled={!sketchCanRedo}>
-                      <ToolbarRedoIcon />
+                      <RibbonToolIcon id="redo" Icon={ToolbarRedoIcon} />
                     </button>
                   </div>
                 </div>
@@ -1954,15 +1954,15 @@ export function SecondaryToolbar({
                       title={t("sketch.strokeHint")}
                       onClick={onSketchStroke}
                     >
-                      <SketchReferenceIcon name="line" />
+                      <RibbonIconOr iconKey="line"><SketchReferenceIcon name="line" /></RibbonIconOr>
                       <span>{t("sketch.stroke")}</span>
                     </button>
                     <button className="sketch-command-button primary" type="button" onClick={onSketchFinish}>
-                      <Check />
+                      <RibbonIconOr iconKey="finish-sketch"><Check /></RibbonIconOr>
                       <span>{sketchOperation === "revolve" ? t("sketch.finishRevolve") : sketchOperation === "sweep" ? t("sketch.finishSweep") : t("sketch.finishSketch")}</span>
                     </button>
                     <button className="sketch-command-button cancel" type="button" onClick={onSketchCancel}>
-                      <X />
+                      <RibbonIconOr iconKey="cancel-sketch"><X /></RibbonIconOr>
                       <span>{t("sketch.cancel")}</span>
                     </button>
                   </div>
@@ -1979,7 +1979,7 @@ export function SecondaryToolbar({
                     title={`${t("sketch.extrude")} - ${t("sketch.extrudeHint")}`}
                     onClick={() => startSketch("extrude")}
                   >
-                    <ArrowUpFromLine aria-hidden="true" />
+                    <RibbonIconOr iconKey="extrude-sketch"><ArrowUpFromLine aria-hidden="true" /></RibbonIconOr>
                     <span>{t("sketch.extrude")}</span>
                   </button>
                   <button
@@ -1989,7 +1989,7 @@ export function SecondaryToolbar({
                     title={`${t("sketch.revolve")} - ${t("sketch.revolveHint")}`}
                     onClick={() => startSketch("revolve")}
                   >
-                    <Rotate3d aria-hidden="true" />
+                    <RibbonIconOr iconKey="revolve-sketch"><Rotate3d aria-hidden="true" /></RibbonIconOr>
                     <span>{t("sketch.revolve")}</span>
                   </button>
                   {simpleMode ? null : <button
@@ -1999,12 +1999,12 @@ export function SecondaryToolbar({
                     title={`${t("sketch.sweep")} - ${t("sketch.sweepHint")}`}
                     onClick={() => startSketch("sweep")}
                   >
-                    <RouteIcon aria-hidden="true" />
+                    <RibbonIconOr iconKey="sweep-sketch"><RouteIcon aria-hidden="true" /></RibbonIconOr>
                     <span>{t("sketch.sweep")}</span>
                   </button>}
                   <GuideHelpLink section="sketchToBody" />
                   <button className={`sketch-command-button ${canEditSketch ? "" : "disabled"}`} type="button" aria-label={t("sketch.editTo3d")} title={t("sketch.editTo3d")} onClick={onEditSketch} disabled={!canEditSketch}>
-                    <SketchReferenceIcon name="editSketchTo3d" />
+                    <RibbonIconOr iconKey="edit-sketch-to-3d"><SketchReferenceIcon name="editSketchTo3d" /></RibbonIconOr>
                     <span>{t("sketch.edit")}</span>
                   </button>
                 </div>

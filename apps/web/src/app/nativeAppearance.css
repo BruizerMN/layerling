@@ -96,6 +96,8 @@ html[data-native-app="on"] .shape-menu-trigger::before { background-color: var(-
   mask: var(--ribbon-icon) center / contain no-repeat;
 }
 :root[data-native-chrome="on"] :is(.toolbar-icon, .action-icon-button) .ribbon-icon-override { zoom: 0.88; }
+/* The sketch ribbon's text buttons (Create, Stroke, Finish, Cancel) draw their pictures at their own sizes: an override takes the size of the picture it replaces. */
+.sketch-command-button .ribbon-icon-override { width: calc(25px * var(--toolbar-scale)); height: calc(25px * var(--toolbar-scale)); }
 
 /* The Settings windows. */
 /* The selected page of a Settings window: the accent in Dark as well (it kept its orange there), on a soft tint of it instead of the brown. */
