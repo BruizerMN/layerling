@@ -242,7 +242,8 @@ html[data-presentation="on"][data-native-chrome="on"][data-inspector="on"] .work
 /* The Enter and the Exit button are the same size in the same place (the footer's centre, measured from the whole window), so one spot always toggles the mode. */
 .native-presentation-exit,
 .native-presentation-enter { width: 176px; }
-.native-presentation-standby { left: calc(50% + 98px); transform: translateY(-50%); min-width: 78px; }
+/* Standby / Resume: the far left of the footer, on the footer's own left margin (12px); it does not move between the two states. */
+.native-presentation-standby { left: 12px; transform: translateY(-50%); min-width: 78px; }
 .native-presentation-exit:hover,
 .native-presentation-enter:hover,
 .native-presentation-standby:hover { background: rgba(127, 127, 127, 0.28); }
