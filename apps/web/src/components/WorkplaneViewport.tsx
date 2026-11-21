@@ -201,6 +201,8 @@ type WorkplaneViewportProps = {
   onCarryDrop?: (target: { point: PlacementPoint; normal: PlacementPoint; workplane: PlacementWorkplane; sunk?: boolean }) => void;
   /** A custom shape dropped on the workplane, by its id. */
   onDropMyShape?: (id: string, point: PlacementPoint) => void;
+  /** Native app: set while a document that was just opened still has to be framed (all of its bodies in view); the viewport clears it once it has. */
+  frameOnOpenRef?: { current: boolean };
   /** Places the fit test that measures the printer's play (fitTest.ts), from the button in the settings window. */
   onMakeFitTest?: () => void;
   /** Shape following the cursor until a click drops it. Null places immediately. */
@@ -530,6 +532,8 @@ declare global {
       get: () => ViewportPerfStats;
     };
     layerlingCaptureCanvas?: () => string;
+    /** Read-only: where the camera is (tests of the native app's framing on open). */
+    layerlingCameraSnapshot?: () => { position: number[]; target: number[]; zoom: number; orthographic: boolean };
     layerlingCaptureCanvasAsync?: () => Promise<string>;
     layerlingCaptureView?: (face?: LayerlingMcpViewFace) => Promise<string> | string;
     layerlingCaptureImage?: (options?: { plate?: boolean; transparent?: boolean; scale?: number }) => string;
@@ -1621,6 +1625,7 @@ export function WorkplaneViewport({
   workspaceSettingsKey,
   onAddShape,
   onDropMyShape,
+  frameOnOpenRef,
   onMakeFitTest,
   cruiseAsset = null,
   carryIds = null,
@@ -3302,6 +3307,7 @@ export function WorkplaneViewport({
     threeRef.current = state;
     rebuildWorkplane(state, workspaceRef.current, resolvedThemeRef.current, drawnWorkplane(), projectNameRef.current, (index) => plateLabel(workspaceRef.current, index));
     showWorkplanePlates(state.workplaneLayer, !workplaneLayerHiddenRef.current);
+    window.layerlingCameraSnapshot = () => ({ position: state.camera.position.toArray(), target: state.controls.target.toArray(), zoom: state.camera.zoom, orthographic: state.camera instanceof THREE.OrthographicCamera });
     window.layerlingCaptureCanvas = () => {
       state.camera.updateMatrixWorld();
       renderFrame(state);
@@ -3574,6 +3580,7 @@ export function WorkplaneViewport({
       if (window.layerlingCaptureCanvas) {
         delete window.layerlingCaptureCanvas;
       }
+      delete window.layerlingCameraSnapshot;
       if (window.layerlingCaptureImage) {
         delete window.layerlingCaptureImage;
       }
@@ -3628,6 +3635,40 @@ export function WorkplaneViewport({
   const { saveView, showSavedView } = useDesignViews({
     threeRef, projectIdRef, viewCubeRef, designViewRestoredRef, orthographicView, setOrthographicView, onNotice,
   });
+
+  // A document that was just opened (native app) shows all of its bodies, as Select All followed by F would, without touching the selection: the zoom the
+  // file was saved with is rarely the right one for looking at it first. Once per opened document: it runs after the scene was built from the document's
+  // shapes and after the saved view was restored (effects run in this order), and the flag is spent whether or not there was anything to frame, so adding
+  // the first body to an empty document does not move the camera. It waits for the canvas to have a size, not for a delay.
+  useEffect(() => {
+    if (!frameOnOpenRef?.current) return;
+    const state = threeRef.current;
+    if (!state) return;
+    const frame = () => {
+      frameOnOpenRef.current = false;
+      const visible = [...state.shapeRecords.keys()].filter((id) => state.shapeRecords.get(id)?.object.visible);
+      const bounds = selectionBounds(state, visible);
+      if (!bounds) return;
+      frameBounds(state, bounds);
+      syncViewCube(state, viewCubeRef.current);
+      state.needsRender = true;
+    };
+    const canvas = state.renderer.domElement;
+    if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
+      frame();
+      return;
+    }
+    const watcher = new ResizeObserver(() => {
+      if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
+        watcher.disconnect();
+        if (frameOnOpenRef.current) frame();
+      }
+    });
+    watcher.observe(canvas.parentElement ?? canvas);
+    return () => watcher.disconnect();
+    // Once, at mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // The view new designs open in and Home goes back to (#853), for every design of this browser.
   const saveStartView = useCallback(() => {

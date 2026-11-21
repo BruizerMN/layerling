@@ -3642,6 +3642,8 @@ export function LayerlingEditor({
   const [toolbarMode, setToolbarMode] = useState<ToolbarMode>("geometry");
   // Focus mode (Discussion #1554): the title row and the footer make room for the work.
   // The native app does not switch Focus Mode on by itself when its window goes full screen (lib/focusMode.ts); it stays the user's choice there.
+  // Native app: a document opened from a file is framed once when its 3D view first appears (WorkplaneViewport); a new, unsaved document has nothing to frame.
+  const frameOnOpenRef = useRef(Boolean(nativeDocument?.fileName));
   const focusMode = useFocusMode({ followFullScreen: !nativeDocument });
   const setFocusModeRef = useRef(focusMode.set);
   setFocusModeRef.current = focusMode.set;
@@ -20037,6 +20039,7 @@ export function LayerlingEditor({
           />
         ) : (
           <WorkplaneViewport
+          frameOnOpenRef={frameOnOpenRef}
           threadInsertPreview={threadInsertFaceCurrent && threadInsertTool?.face && threadInsertSizeSpec ? {
             origin:threadInsertTool.face.workplane.origin,
             normal:threadInsertTool.face.workplane.normal,
