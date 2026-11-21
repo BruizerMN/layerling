@@ -7,6 +7,7 @@ import { readAppPrefs, subscribeAppPrefs, writeAppPrefs } from "@/lib/appPrefs";
 import { effectiveWorkspace, splitWorkspace } from "@/lib/settingsScope";
 import { useLanguage } from "@/lib/useLanguage";
 import { startNativeAppSync } from "@/lib/nativeAppSync";
+import type { BackgroundKind } from "@/lib/host/viewportBackgrounds";
 import { DEFAULT_SNAP_GRID, DEFAULT_WORKPLANE_WORKSPACE, normalizeSnapGrid, normalizeWorkspaceSettings, readWorkspaceDefault, saveWorkspaceDefault } from "@/lib/workplaneSettings";
 import type { GridSize, WorkplaneWorkspaceSettings } from "@/types/layerling";
 
@@ -72,10 +73,18 @@ export function NativeSettingsPage({ bootstrap }: { bootstrap: SettingsBootstrap
   const [startInPerspective, setStartInPerspective] = useState(() => readFlag(START_IN_PERSPECTIVE_KEY));
   // The Welcome window preference lives in the host (it decides what a launch shows); Application Settings reads and writes it through the bridge.
   const [showWelcome, setShowWelcome] = useState(true);
+  // The viewport background images (Build 0020): the host keeps them; this page shows what is set and asks the host to choose, replace or clear.
+  const [backgrounds, setBackgrounds] = useState<Record<BackgroundKind, string | null>>({ light: null, dark: null, presentation: null });
   useEffect(() => {
     if (scope !== "app") return;
-    const w = window as unknown as { layerlingSettingsPage?: { welcome?: (on: boolean) => void } };
-    w.layerlingSettingsPage = { welcome: (on) => setShowWelcome(Boolean(on)) };
+    const w = window as unknown as { layerlingSettingsPage?: { welcome?: (on: boolean) => void; backgrounds?: (value: unknown) => void } };
+    const take = (value: unknown) => {
+      const source = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+      const pick = (key: string) => (typeof source[key] === "string" && source[key] ? (source[key] as string) : null);
+      setBackgrounds({ light: pick("light"), dark: pick("dark"), presentation: pick("presentation") });
+    };
+    w.layerlingSettingsPage = { welcome: (on) => setShowWelcome(Boolean(on)), backgrounds: take };
+    void hostHandler()?.postMessage({ type: "backgrounds.get" }).then((reply) => take((reply as { backgrounds?: unknown } | null)?.backgrounds));
     void hostHandler()?.postMessage({ type: "welcome.get" }).then((reply) => {
       const enabled = (reply as { enabled?: boolean } | null)?.enabled;
       if (typeof enabled === "boolean") setShowWelcome(enabled);
@@ -166,6 +175,9 @@ export function NativeSettingsPage({ bootstrap }: { bootstrap: SettingsBootstrap
       originDimensionsEnabled={originDimensions}
       startInPerspective={startInPerspective}
       showWelcome={showWelcome}
+      viewportBackgrounds={scope === "app" ? backgrounds : undefined}
+      onChooseBackground={scope === "app" ? (kind) => void hostHandler()?.postMessage({ type: "background.choose", kind }) : undefined}
+      onClearBackground={scope === "app" ? (kind) => void hostHandler()?.postMessage({ type: "background.clear", kind }) : undefined}
       onShowWelcomeChange={scope === "app" ? (on) => {
         setShowWelcome(on);
         void hostHandler()?.postMessage({ type: "welcome.set", enabled: on });

@@ -92,6 +92,10 @@ export type ThreeState = {
   cornerRulerLayer: THREE.Group;
   modifierLayer: THREE.Group;
   shapeRecords: Map<string, ShapeRenderRecord>;
+  /** Native app: the viewport's custom background image and the plain colour it replaces (viewportBackgroundImage.ts). */
+  plainBackground?: THREE.Color | null;
+  backgroundImage?: { url: string; texture: THREE.Texture; aspect: number } | null;
+  backgroundLoading?: string | null;
   /** The pivot the user set for rotating; the rotation wheels sit on its axes. */
   rotationPivot?: THREE.Vector3 | null;
   officialShapeLayerActive: boolean;

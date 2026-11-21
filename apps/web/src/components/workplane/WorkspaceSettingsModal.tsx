@@ -533,6 +533,9 @@ export function WorkspaceSettingsModal({
   onStartInPerspectiveChange,
   showWelcome,
   onShowWelcomeChange,
+  viewportBackgrounds,
+  onChooseBackground,
+  onClearBackground,
   hasStartView,
   onSaveStartView,
   onResetStartView,
@@ -557,6 +560,10 @@ export function WorkspaceSettingsModal({
   /** Native app only: the Welcome window preference, kept by the host (shown in Application Settings). */
   showWelcome?: boolean;
   onShowWelcomeChange?: (show: boolean) => void;
+  /** Native app (Application Settings): the custom viewport background images by mode (an address the page can show, or null), and what to do about each. */
+  viewportBackgrounds?: Record<"light" | "dark" | "presentation", string | null>;
+  onChooseBackground?: (kind: "light" | "dark" | "presentation") => void;
+  onClearBackground?: (kind: "light" | "dark" | "presentation") => void;
   /** Whether a start view of the user's own is set (#853). */
   hasStartView: boolean;
   onSaveStartView: () => void;
@@ -1049,6 +1056,24 @@ export function WorkspaceSettingsModal({
                     checked={startInPerspective}
                     onChange={onStartInPerspectiveChange}
                   />
+                  {viewportBackgrounds && onChooseBackground && onClearBackground ? (
+                    <div className="viewport-backgrounds" style={{ display: "grid", gap: 10, margin: "10px 0 6px" }}>
+                      <div className="workspace-section-heading"><strong>Viewport background images</strong><span>Pictures behind the model, instead of the plain background. Each is optional.</span></div>
+                      {([["light", "Light Mode Background Image"], ["dark", "Dark Mode Background Image"], ["presentation", "Presentation Mode Background Image"]] as const).map(([kind, label]) => (
+                        <div key={kind} data-background-kind={kind} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                          <div style={{ width: 96, height: 54, flex: "0 0 auto", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(127,127,127,.4)", display: "grid", placeItems: "center", fontSize: 11, opacity: viewportBackgrounds[kind] ? 1 : 0.6 }}>
+                            {viewportBackgrounds[kind] ? <img src={viewportBackgrounds[kind] as string} alt={label} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span>None</span>}
+                          </div>
+                          <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+                            <div>{label}</div>
+                            <small style={{ opacity: 0.7 }}>{kind === "presentation" ? "Used in Presentation Mode; without one, the Dark Mode image is used." : kind === "dark" ? "Used in Dark Mode (System follows macOS)." : "Used in Light Mode (System follows macOS)."}</small>
+                          </div>
+                          <button type="button" data-action="choose" onClick={() => onChooseBackground(kind)}>{viewportBackgrounds[kind] ? "Replace…" : "Choose Image…"}</button>
+                          <button type="button" data-action="clear" disabled={!viewportBackgrounds[kind]} onClick={() => onClearBackground(kind)}>Clear</button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   {onShowWelcomeChange ? (
                     <WorkspaceToggle
                       label="Show Welcome window at startup and when the last document closes"

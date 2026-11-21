@@ -54,6 +54,8 @@ import type { PaintMode } from "@/lib/paint";
 import type { PaintLassoView } from "@/lib/paintMesh";
 import { onCustomFontsChanged } from "@/lib/textFonts";
 import { readSavedViews, readStartView, SAVED_VIEW_KEYS, savedViewForKey, writeStartView } from "@/lib/designView";
+import { chooseBackground, currentBackgrounds, subscribeBackgrounds } from "@/lib/host/viewportBackgrounds";
+import { setBackgroundImage } from "@/components/workplane/viewportBackgroundImage";
 import { readCornerRulers, writeCornerRulers } from "@/lib/cornerRulerStore";
 import { highestTapeIdNumber, readTape, savedTape, writeTape } from "@/lib/tapeStore";
 import { rememberCameraView, useDesignViews } from "@/components/workplane/cameraViews";
@@ -3638,6 +3640,16 @@ export function WorkplaneViewport({
   const { saveView, showSavedView } = useDesignViews({
     threeRef, projectIdRef, viewCubeRef, designViewRestoredRef, orthographicView, setOrthographicView, onNotice,
   });
+
+  // Native app: a custom image behind the model, chosen by the appearance (Light / Dark; Classic has none) from the host's list; follows changes at once, no reload.
+  const [backgroundTick, setBackgroundTick] = useState(0);
+  useEffect(() => subscribeBackgrounds(() => setBackgroundTick((tick) => tick + 1)), []);
+  useEffect(() => {
+    const state = threeRef.current;
+    if (!state) return;
+    const choice = chooseBackground(currentBackgrounds(), { presentation: false, preference: themePreference, resolved: resolvedTheme });
+    setBackgroundImage(state, choice.url);
+  }, [backgroundTick, themePreference, resolvedTheme]);
 
   // A document that was just opened (native app) shows all of its bodies, as Select All followed by F would, without touching the selection: the zoom the
   // file was saved with is rarely the right one for looking at it first. Once per opened document: it runs after the scene was built from the document's

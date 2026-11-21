@@ -21,6 +21,7 @@ import { RENDER_LAYER_SHAPES } from "@/components/workplane/viewportPicking";
 import { RENDER_LAYER_HELPERS, type ShapeRenderRecord, type ThreeState, setObjectRenderLayer, freezeStaticObjectMatrices, disposeChildren, disposeObject } from "@/components/workplane/ViewportOverlays";
 import { RENDER_LAYER_MODIFIERS, RENDER_LAYER_PREVIEWS, clamp, pullModifierEdgeTowardCamera, WORKPLANE_LABEL_FONT_STACK } from "./viewportShapeObjects";
 import { CAMERA_DAMPING_PER_60HZ_FRAME } from "@/lib/cameraInertia";
+import { fitBackground } from "@/components/workplane/viewportBackgroundImage";
 
 export const WORKPLANE_WIDTH = 200;
 export const WORKPLANE_DEPTH = 140;
@@ -183,6 +184,7 @@ export function createThreeScene(host: HTMLDivElement): ThreeState {
     const width = Math.max(1, host.clientWidth);
     const height = Math.max(1, host.clientHeight);
     renderer.setSize(width, height);
+    fitBackground(state);   // a custom background image keeps filling the viewport without distortion
     updateCameraViewport(state.camera, width, height);
     [state.transformGuideLayer, state.moveDimensionLayer, state.originDimensionLayer, state.cornerRulerLayer, state.modifierLayer].forEach((layer) => {
       layer.traverse((child) => {
@@ -410,7 +412,8 @@ export function rebuildWorkplane(
 
   const palette = workplaneThemePalette(theme, workspace.background, workspace.gridColor, state.palette, workspace.surfaceColor);
   disposeChildren(state.workplaneLayer);
-  state.scene.background = new THREE.Color(palette.sceneBackground);
+  state.plainBackground = new THREE.Color(palette.sceneBackground);
+  state.scene.background = state.backgroundImage?.texture ?? state.plainBackground;   // a custom image (native app) stays; the colour is what it replaces
   // Fast mode turns shadows, edge lines and camera inertia off together, and draws fewer pixels.
   const view = effectiveViewSettings(workspace);
   state.renderer.shadowMap.enabled = view.showShadows;

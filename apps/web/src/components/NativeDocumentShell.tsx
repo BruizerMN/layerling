@@ -15,6 +15,7 @@ import { localizedError } from "@/lib/userErrors";
 import { useLanguage } from "@/lib/useLanguage";
 import { startNativeAppSync } from "@/lib/nativeAppSync";
 import { startNativeErrorForwarding } from "@/lib/host/nativeErrors";
+import { installBackgroundsReceiver } from "@/lib/host/viewportBackgrounds";
 import { setLoadingName, setLoadingState } from "@/lib/host/nativeLoading";
 import { NativeLoadingScreen } from "@/components/NativeLoadingScreen";
 
@@ -75,6 +76,8 @@ export function NativeDocumentShell() {
   useEffect(() => startNativeAppSync(), []);
   // An unexpected exception of the page is an error like any other: the host shows it (nothing disappears silently).
   useEffect(() => startNativeErrorForwarding(), []);
+  // The host tells the page when a viewport background image is set, replaced or cleared (Settings); the viewport follows without a reload.
+  useEffect(() => installBackgroundsReceiver(), []);
   const bridge = useBridge();
   const [connection, setConnection] = useState<HostConnection>({ state: "inactive" });
   const [phase, setPhase] = useState<Phase>({ kind: "connecting" });
