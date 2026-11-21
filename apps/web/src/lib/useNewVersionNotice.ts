@@ -26,6 +26,8 @@ export type NewVersionReason = "update" | "mismatch";
  * another build than the page (lib/buildStamp.ts) means a stored or half-updated file.
  */
 export function useNewVersionNotice() {
+  // The native app is one fixed, bundled build: there is no server to update from and no stale page to reload (the host updates with the app), so this offer is never made there.
+  const native = typeof window !== "undefined" && window.location.protocol === "layerling:";
   const [offer, setOffer] = useState<{ latest: VersionInfo; reason: NewVersionReason } | null>(null);
   const [hiddenUntil, setHiddenUntil] = useState(0);
   const started = useRef<VersionInfo | null>(null);
@@ -46,6 +48,7 @@ export function useNewVersionNotice() {
   }, []);
 
   useEffect(() => {
+    if (native) return;
     const onMismatch = () => {
       if (announced.current) return;
       announced.current = true;
@@ -54,10 +57,10 @@ export function useNewVersionNotice() {
     };
     window.addEventListener(BUILD_MISMATCH_EVENT, onMismatch);
     return () => window.removeEventListener(BUILD_MISMATCH_EVENT, onMismatch);
-  }, []);
+  }, [native]);
 
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_STATIC_EXPORT !== "true") return;
+    if (native || process.env.NEXT_PUBLIC_STATIC_EXPORT !== "true") return;
     void check();
     // A test can ask more often; nobody else needs to.
     const override = (window as unknown as { __layerlingVersionCheckMs?: number }).__layerlingVersionCheckMs;

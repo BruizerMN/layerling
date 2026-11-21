@@ -14,6 +14,7 @@ import { applyAppTheme, getAppThemePreference, readStoredAppTheme, resolveAppThe
 import { localizedError } from "@/lib/userErrors";
 import { useLanguage } from "@/lib/useLanguage";
 import { startNativeAppSync } from "@/lib/nativeAppSync";
+import { startNativeErrorForwarding } from "@/lib/host/nativeErrors";
 import { setLoadingName, setLoadingState } from "@/lib/host/nativeLoading";
 import { NativeLoadingScreen } from "@/components/NativeLoadingScreen";
 
@@ -72,6 +73,8 @@ export function NativeDocumentShell() {
   useLanguage();
   // Application-wide preferences changed in another window (Settings, another document) apply here too, live (nativeAppSync.ts).
   useEffect(() => startNativeAppSync(), []);
+  // An unexpected exception of the page is an error like any other: the host shows it (nothing disappears silently).
+  useEffect(() => startNativeErrorForwarding(), []);
   const bridge = useBridge();
   const [connection, setConnection] = useState<HostConnection>({ state: "inactive" });
   const [phase, setPhase] = useState<Phase>({ kind: "connecting" });
