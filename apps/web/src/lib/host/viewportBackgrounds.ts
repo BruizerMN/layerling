@@ -33,7 +33,8 @@ export function subscribeBackgrounds(listener: () => void): () => void {
 export function installBackgroundsReceiver() {
   if (typeof window === "undefined") return;
   (window as unknown as { layerlingSetBackgrounds?: (value: unknown) => void }).layerlingSetBackgrounds = (value) => {
-    (window as unknown as { __layerlingBackgrounds?: unknown }).__layerlingBackgrounds = normalize(value);
+    // The raw value is kept: it also carries the Organization Logo and its preferences (lib/host/presentationLogo.ts), which have their own reader.
+    (window as unknown as { __layerlingBackgrounds?: unknown }).__layerlingBackgrounds = value && typeof value === "object" ? value : {};
     window.dispatchEvent(new Event(BACKGROUNDS_CHANGED_EVENT));
   };
 }
