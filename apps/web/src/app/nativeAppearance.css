@@ -104,9 +104,9 @@ html[data-native-app="on"] .shape-menu-trigger::before { background-color: var(-
    Shapes panel, which hangs from it, opens where it always did. */
 html[data-native-ribbon="on"] .toolbar-section[data-group="combine"],
 html[data-native-ribbon="on"] .toolbar-section[data-group="mirrorPattern"] { display: none; }
-html[data-native-ribbon="on"] .toolbar-shapes-section > .toolbar-section-label,
-html[data-native-ribbon="on"] .toolbar-shapes-section .shape-menu-trigger,
-html[data-native-ribbon="on"] .toolbar-shapes-section .shape-menu-tab { visibility: hidden; }
+html[data-native-ribbon="on"] .toolbar-shapes-section { visibility: hidden; }
+html[data-native-ribbon="on"] .toolbar-shapes-section .shape-menu-dropdown,
+html[data-native-ribbon="on"] .toolbar-shapes-section .shape-menu-dropdown * { visibility: visible; }
 
 /* The Settings windows. */
 /* The selected page of a Settings window: the accent in Dark as well (it kept its orange there), on a soft tint of it instead of the brown. */
