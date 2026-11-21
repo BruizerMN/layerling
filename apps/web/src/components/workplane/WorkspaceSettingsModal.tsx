@@ -533,6 +533,8 @@ export function WorkspaceSettingsModal({
   onStartInPerspectiveChange,
   showWelcome,
   onShowWelcomeChange,
+  toolbarAppearance,
+  onToolbarAppearanceChange,
   viewportBackgrounds,
   presentationLogo,
   onPresentationLogoChange,
@@ -562,6 +564,9 @@ export function WorkspaceSettingsModal({
   /** Native app only: the Welcome window preference, kept by the host (shown in Application Settings). */
   showWelcome?: boolean;
   onShowWelcomeChange?: (show: boolean) => void;
+  /** Native app (Application Settings): Toolbar Appearance, kept by the host: the native macOS toolbar or the classic Layerling ribbon (mutually exclusive). */
+  toolbarAppearance?: "native" | "classic";
+  onToolbarAppearanceChange?: (value: "native" | "classic") => void;
   /** Native app (Application Settings): the custom viewport background images by mode (an address the page can show, or null), and what to do about each. */
   viewportBackgrounds?: Record<"light" | "dark" | "presentation" | "logo", string | null>;
   /** Presentation Mode's Organization Logo preferences (native Application Settings): where the corner watermark sits and how opaque it is. */
@@ -1107,6 +1112,18 @@ export function WorkspaceSettingsModal({
                         <input type="range" min={10} max={100} step={5} value={Math.round(presentationLogo.opacity * 100)} onChange={(event) => onPresentationLogoChange({ opacity: Number(event.currentTarget.value) / 100 })} />
                         <span style={{ width: 40, textAlign: "right" }}>{Math.round(presentationLogo.opacity * 100)}%</span>
                       </label>
+                    </div>
+                  ) : null}
+                  {onToolbarAppearanceChange ? (
+                    <div data-setting="toolbar-appearance" role="radiogroup" aria-label="Toolbar Appearance" style={{ display: "grid", gap: 6 }}>
+                      <div>Toolbar Appearance</div>
+                      {([["native", "Native macOS Toolbar"], ["classic", "Classic Layerling Ribbon"]] as const).map(([value, label]) => (
+                        <label key={value} data-toolbar-appearance={value} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <input type="radio" name="toolbar-appearance" checked={(toolbarAppearance ?? "native") === value} onChange={() => onToolbarAppearanceChange(value)} />
+                          <span>{label}</span>
+                        </label>
+                      ))}
+                      <small style={{ opacity: 0.7 }}>Applies to every open window at once. Kept in the application, never in a document.</small>
                     </div>
                   ) : null}
                   {onShowWelcomeChange ? (

@@ -42,7 +42,12 @@ const invokeListeners = new Set<(toolId: string) => void>();
 let offBridge: (() => void) | null = null;
 let started = false;
 
+function clearPending() {
+  if (typeof document !== "undefined") delete document.documentElement.dataset.nativeRibbonPending;
+}
+
 function setActive(on: boolean) {
+  clearPending();   // the host has answered (Native or Classic): the page decides from here
   if (nativeActive === on) return;
   nativeActive = on;
   lastState = "";   // a toolbar that has just appeared needs the whole state
@@ -66,6 +71,8 @@ function attach(bridge: HostBridge | null) {
 function ensureStarted() {
   if (started || typeof window === "undefined") return;
   started = true;
+  // The host marks the page before it starts when Toolbar Appearance is Native; a host that never answers must not leave the ribbon hidden.
+  if (typeof document !== "undefined" && document.documentElement.dataset.nativeRibbonPending !== undefined) setTimeout(clearPending, 8000);
   attach(getHostBridge());
   subscribeToHostBridge(attach);
 }

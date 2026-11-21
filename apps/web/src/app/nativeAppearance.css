@@ -99,10 +99,17 @@ html[data-native-app="on"] .shape-menu-trigger::before { background-color: var(-
 /* The sketch ribbon's text buttons (Create, Stroke, Finish, Cancel) draw their pictures at their own sizes: an override takes the size of the picture it replaces. */
 .sketch-command-button .ribbon-icon-override { width: calc(25px * var(--toolbar-scale)); height: calc(25px * var(--toolbar-scale)); }
 
-/* ---- Native toolbar (ribbon.v1) ----
-   The web ribbon is NOT touched while the native toolbar is on (both are shown for comparison). Only one thing differs: the Shapes panel opened FROM the native
-   toolbar hangs from the top of the page, directly under the toolbar, instead of from the web ribbon's Shapes button. */
-html[data-shapes-anchor="native"] .toolbar-shapes-section .shape-menu-dropdown { position: fixed; top: 0; left: 12px; z-index: 400; }
+/* ---- Native toolbar (ribbon.v1, Build 0026) ----
+   Toolbar Appearance = Native (the host draws the toolbar): the web ribbon is gone completely and gives its room back to the workplane (--editor-toolbar-height 0,
+   like Presentation Mode). Only the Shapes panel, which hangs from the ribbon, stays able to open: it hangs from the top of the page, under the native toolbar.
+   `data-native-ribbon-pending` is set by the host before the page starts when the preference is Native, so the ribbon never flashes while the page loads
+   (lib/host/nativeRibbon.ts removes it when the host answers). In Classic, and in a browser, none of this applies. */
+html[data-native-ribbon="on"], html[data-native-ribbon-pending] { --editor-toolbar-height: 0px !important; --editor-toolbar-title-height: 0px !important; }
+html[data-native-ribbon="on"] .secondary-toolbar,
+html[data-native-ribbon-pending] .secondary-toolbar { visibility: hidden; height: 0; border: 0; box-shadow: none; background: none; pointer-events: none; }
+html[data-native-ribbon="on"] .secondary-toolbar .shape-menu-dropdown,
+html[data-native-ribbon="on"] .secondary-toolbar .shape-menu-dropdown * { visibility: visible; pointer-events: auto; }
+html[data-shapes-anchor="native"] .shape-menu-dropdown { position: fixed; top: 0; left: 12px; z-index: 400; }
 
 /* The Settings windows. */
 /* The selected page of a Settings window: the accent in Dark as well (it kept its orange there), on a soft tint of it instead of the brown. */

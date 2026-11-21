@@ -74,12 +74,14 @@ export function NativeSettingsPage({ bootstrap }: { bootstrap: SettingsBootstrap
   const [startInPerspective, setStartInPerspective] = useState(() => readFlag(START_IN_PERSPECTIVE_KEY));
   // The Welcome window preference lives in the host (it decides what a launch shows); Application Settings reads and writes it through the bridge.
   const [showWelcome, setShowWelcome] = useState(true);
+  // Toolbar Appearance (Build 0026) also lives in the host: it decides whether the window gets the native toolbar. Default: native.
+  const [toolbarAppearance, setToolbarAppearance] = useState<"native" | "classic">("native");
   // The viewport background images (Build 0020): the host keeps them; this page shows what is set and asks the host to choose, replace or clear.
   const [backgrounds, setBackgrounds] = useState<Record<BackgroundKind | "logo", string | null>>({ light: null, dark: null, presentation: null, logo: null });
   const [logoPrefs, setLogoPrefs] = useState<{ position: string; opacity: number }>({ position: "bottomRight", opacity: 0.75 });
   useEffect(() => {
     if (scope !== "app") return;
-    const w = window as unknown as { layerlingSettingsPage?: { welcome?: (on: boolean) => void; backgrounds?: (value: unknown) => void } };
+    const w = window as unknown as { layerlingSettingsPage?: { welcome?: (on: boolean) => void; toolbar?: (value: unknown) => void; backgrounds?: (value: unknown) => void } };
     const take = (value: unknown) => {
       const source = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
       const pick = (key: string) => (typeof source[key] === "string" && source[key] ? (source[key] as string) : null);
@@ -87,8 +89,12 @@ export function NativeSettingsPage({ bootstrap }: { bootstrap: SettingsBootstrap
       const logo = normalizeLogo(source);
       setLogoPrefs({ position: logo.position, opacity: logo.opacity });
     };
-    w.layerlingSettingsPage = { welcome: (on) => setShowWelcome(Boolean(on)), backgrounds: take };
+    w.layerlingSettingsPage = { welcome: (on) => setShowWelcome(Boolean(on)), toolbar: (value) => setToolbarAppearance(value === "classic" ? "classic" : "native"), backgrounds: take };
     void hostHandler()?.postMessage({ type: "backgrounds.get" }).then((reply) => take((reply as { backgrounds?: unknown } | null)?.backgrounds));
+    void hostHandler()?.postMessage({ type: "toolbar.get" }).then((reply) => {
+      const value = (reply as { value?: string } | null)?.value;
+      if (value === "native" || value === "classic") setToolbarAppearance(value);
+    });
     void hostHandler()?.postMessage({ type: "welcome.get" }).then((reply) => {
       const enabled = (reply as { enabled?: boolean } | null)?.enabled;
       if (typeof enabled === "boolean") setShowWelcome(enabled);
@@ -179,6 +185,11 @@ export function NativeSettingsPage({ bootstrap }: { bootstrap: SettingsBootstrap
       originDimensionsEnabled={originDimensions}
       startInPerspective={startInPerspective}
       showWelcome={showWelcome}
+      toolbarAppearance={scope === "app" ? toolbarAppearance : undefined}
+      onToolbarAppearanceChange={scope === "app" ? (value) => {
+        setToolbarAppearance(value);
+        void hostHandler()?.postMessage({ type: "toolbar.set", value });
+      } : undefined}
       viewportBackgrounds={scope === "app" ? backgrounds : undefined}
       presentationLogo={scope === "app" ? logoPrefs : undefined}
       onPresentationLogoChange={scope === "app" ? (patch) => {
