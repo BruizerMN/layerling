@@ -1,6 +1,7 @@
 "use client";
 
 import { EyeOff, Maximize2, Minus, PanelRight, Pin, PinOff, Plus } from "lucide-react";
+import { GridEyeIcon } from "@/components/GridEyeIcon";
 import { hiddenObjectsLabel } from "@/lib/hiddenObjects";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
@@ -197,6 +198,8 @@ function PlateEditor({ anchor, workspace, widthMm, depthMm, onApply, onClose }: 
 export function NativeStatusBar({
   objectCount,
   hiddenCount,
+  presentation = false,
+  onExitPresentation,
   selectionLabel,
   unitsLabel,
   plate,
@@ -206,6 +209,9 @@ export function NativeStatusBar({
   objectCount: number;
   /** The document's hidden objects (lib/hiddenObjects.ts): the same count as the Inspector's banner. */
   hiddenCount: number;
+  /** Presentation Mode: the footer holds only the Exit button (centred in the window), a grid toggle and the zoom controls. */
+  presentation?: boolean;
+  onExitPresentation?: () => void;
   selectionLabel: string;
   unitsLabel: string;
   /** The build plate, in millimetres. */
@@ -218,6 +224,11 @@ export function NativeStatusBar({
   void plateSizePatch;
   const camera = useSyncExternalStore(subscribeCameraStatus, getCameraStatus, () => null);
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
+  // The grid as the presentation starts with it; the footer's toggle changes the view only (nothing of the document).
+  const [gridVisible, setGridVisible] = useState(true);
+  useEffect(() => {
+    if (presentation) setGridVisible(window.layerlingWorkplaneDisplay?.().visible ?? true);
+  }, [presentation]);
   const inspectorShown = useInspectorVisible();
   const ui = useSyncExternalStore(subscribeUiState, getUiState, () => null);
   const controller = getCameraController();
@@ -225,7 +236,12 @@ export function NativeStatusBar({
   const mode = ui?.mode ?? "geometry";
 
   return (
-    <footer className="dashboard-legal editor-legal native-status-bar" aria-label="Status bar">
+    <footer className="dashboard-legal editor-legal native-status-bar" aria-label="Status bar" data-presentation={presentation ? "on" : undefined}>
+      {presentation ? (
+        <button type="button" className="native-presentation-exit" data-presentation-exit onClick={onExitPresentation} title="Exit Presentation Mode (Esc)">
+          Exit Presentation Mode
+        </button>
+      ) : null}
       <div className="native-status-group native-status-info">
         <span className="native-status-item" data-status="selection" title="Selection">{selectionLabel}</span>
         <span className="native-status-sep" aria-hidden="true" />
@@ -262,6 +278,23 @@ export function NativeStatusBar({
         </span>
       </div>
       <div className="native-status-group native-status-controls">
+        {presentation ? (
+          <button
+            type="button"
+            className="native-status-button"
+            data-presentation-grid
+            aria-label="Show grid"
+            title={gridVisible ? "Hide the grid" : "Show the grid"}
+            aria-pressed={gridVisible}
+            onClick={() => {
+              const next = !gridVisible;
+              window.layerlingWorkplaneDisplay?.(next);
+              setGridVisible(next);
+            }}
+          >
+            <GridEyeIcon size={15} strokeWidth={2.1} crossed={!gridVisible} aria-hidden="true" />
+          </button>
+        ) : null}
         <button type="button" className="native-status-button" aria-label="Focus mode" title="Focus mode (View menu)" aria-pressed={Boolean(ui?.focusMode)} onClick={() => runUiCommand("focusMode.toggle")}>
           <Maximize2 size={13} aria-hidden="true" />
         </button>

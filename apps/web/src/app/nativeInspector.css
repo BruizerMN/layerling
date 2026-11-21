@@ -256,6 +256,9 @@ html[data-native-chrome="on"] .native-inspector-dock .shape-inspector.docked {
 }
 .native-inspector-dock .check-property > span { color: var(--insp-fg); font-size: 11px; font-weight: 400; }
 .native-inspector-dock .check-property input[type="checkbox"] { width: 28px; height: 16px; margin: 0; accent-color: var(--insp-accent); }
+/* The switch thumb is centred in its track whatever the track size (Build 0021): the 13px thumb of the full-size switch is 9px in the compact dock track. */
+.native-inspector-dock .property-card .check-property input[type="checkbox"]::after { width: 9px; height: 9px; margin-top: -4.5px; left: 2px; }
+.native-inspector-dock .property-card .check-property input[type="checkbox"]:checked::after { left: calc(100% - 11px); }
 
 /* ---- buttons ---- */
 .native-inspector-dock .inspector-action-button,

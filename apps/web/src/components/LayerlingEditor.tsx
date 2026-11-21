@@ -313,6 +313,7 @@ import { offersTextLayers, textLayerStack, layeredTextShape, nameTagSource, name
 import { groupMarksOf } from "@/lib/groupMarks";
 import { isNonTextControl, isTypingTarget } from "@/lib/editorKeyTargets";
 import { isFocusModeKey, useFocusMode } from "@/lib/focusMode";
+import { startPresentationGuard } from "@/lib/presentationMode";
 import { DEFAULT_KEYRING_DIAMETER } from "@/lib/textGeometry";
 import { TopPanel, DirectExportFormat, SvgExportView, DxfExportView, ViewImageOptions, LylHistoryLimit, LylExportTarget, TopActionPanel } from "./workplane/TopActionPanel";
 import { ToolbarMode, SketchShapeOptions, SecondaryToolbar } from "./workplane/SecondaryToolbar";
@@ -3644,6 +3645,30 @@ export function LayerlingEditor({
   // The native app does not switch Focus Mode on by itself when its window goes full screen (lib/focusMode.ts); it stays the user's choice there.
   // Native app: a document opened from a file is framed once when its 3D view first appears (WorkplaneViewport); a new, unsaved document has nothing to frame.
   const frameOnOpenRef = useRef(Boolean(nativeDocument?.fileName));
+  // Native app: Presentation Mode (lib/presentationMode.ts). The host decides when it may start (the document must be saved) and tells the page; nothing about it
+  // is part of the document: it changes no shape, no selection, no camera, no saved state.
+  const [presentationMode, setPresentationMode] = useState(false);
+  const gridBeforePresentationRef = useRef<boolean | null>(null);
+  const enterPresentation = useCallback(() => {
+    if (!nativeDocument) return;
+    gridBeforePresentationRef.current = window.layerlingWorkplaneDisplay?.().visible ?? null;
+    setPresentationMode(true);
+  }, [nativeDocument]);
+  const exitPresentation = useCallback(() => {
+    // The grid goes back the way it was before the presentation (the footer's grid button is only for the presentation).
+    if (gridBeforePresentationRef.current !== null) window.layerlingWorkplaneDisplay?.(gridBeforePresentationRef.current);
+    gridBeforePresentationRef.current = null;
+    setPresentationMode(false);
+  }, []);
+  useEffect(() => {
+    if (!presentationMode) return;
+    document.documentElement.dataset.presentation = "on";
+    const stop = startPresentationGuard({ onExit: exitPresentation, onFit: () => void window.layerlingFrameAll?.(), viewport: () => document.querySelector(".workplane-stage") });
+    return () => {
+      stop();
+      delete document.documentElement.dataset.presentation;
+    };
+  }, [presentationMode, exitPresentation]);
   const focusMode = useFocusMode({ followFullScreen: !nativeDocument });
   const setFocusModeRef = useRef(focusMode.set);
   setFocusModeRef.current = focusMode.set;
@@ -19666,6 +19691,9 @@ export function LayerlingEditor({
       <SecondaryToolbar
         hideProjectName={Boolean(nativeDocument)}
         nativeChrome={Boolean(nativeDocument)}
+        presentationActive={presentationMode}
+        onPresentationEnter={enterPresentation}
+        onPresentationExit={exitPresentation}
         toolbarMode={toolbarMode}
         projectName={projectName}
         onProjectNameChange={onProjectNameChange}
@@ -20041,6 +20069,7 @@ export function LayerlingEditor({
           <WorkplaneViewport
           frameOnOpenRef={frameOnOpenRef}
           hideEmptyHint={Boolean(nativeDocument)}
+          presentation={presentationMode}
           threadInsertPreview={threadInsertFaceCurrent && threadInsertTool?.face && threadInsertSizeSpec ? {
             origin:threadInsertTool.face.workplane.origin,
             normal:threadInsertTool.face.workplane.normal,
@@ -20225,8 +20254,8 @@ export function LayerlingEditor({
           failedModifierEdgeIds={edgeModifier?.error ? edgeModifier.failedEdgeIds ?? NO_EDGE_IDS : NO_EDGE_IDS}
           modifierOnlyVisibleEdges={edgeModifier?.onlyVisibleEdges ?? false}
           onModifierEdgeToggle={toggleModifierEdge}
-          themePreference={themePreference}
-          resolvedTheme={resolvedTheme}
+          themePreference={presentationMode ? "dark" : themePreference}
+          resolvedTheme={presentationMode ? "dark" : resolvedTheme}
           onThemePreferenceChange={onThemePreferenceChange}
           onExportSectionSvg={(axis, offset, frame) => void exportSectionSvg(axis, offset, frame)}
           onSketchFromSection={(settings) => void sketchFromSection(settings)}
@@ -20251,6 +20280,8 @@ export function LayerlingEditor({
           selectionLabel={selectedShapes.length === 0 ? "Nothing selected" : selectedShapes.length === 1 ? displayShapeName(selectedShapes[0]) : `${selectedShapes.length} selected`}
           unitsLabel={lengthDisplayUnit(workspaceSettings).label}
           hiddenCount={hiddenObjectCount}
+          presentation={presentationMode}
+          onExitPresentation={exitPresentation}
           plate={{ width: workspaceSettings.width, depth: workspaceSettings.depth }}
           workspace={workspaceSettings}
           onPlateChange={(width, depth) => updateProjectWorkspaceSettings({ workspace: normalizeWorkspaceSettings({ ...workspaceSettingsRef.current, ...plateSizePatch(width, depth) }), snap: snapGridRef.current })}

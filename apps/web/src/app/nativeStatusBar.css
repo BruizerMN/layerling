@@ -199,3 +199,38 @@ button.native-zoom-value:hover:not(:disabled), button.native-zoom-value[aria-exp
 /* The footer's hidden-objects indicator: informational, understated. */
 .native-status-item.native-status-hidden { display: inline-flex; align-items: center; gap: 4px; }
 .native-status-item.native-status-hidden svg { opacity: 0.75; }
+
+/*
+ * Presentation Mode (Build 0021, native app): the viewport with the chrome gone. html[data-presentation="on"] is set by LayerlingEditor; the guard in
+ * lib/presentationMode.ts is what makes it read-only (this stylesheet only takes things off the screen). The ribbon, the Inspector and every floating panel,
+ * the view cube, the camera bar and the overlays on the workplane go; the 3D view takes the room and the footer keeps its place and look but holds only the
+ * Exit button (centred in the WINDOW), a grid toggle and the zoom controls (at the right edge where they always are).
+ */
+html[data-presentation="on"] { --editor-toolbar-height: 0px !important; --editor-toolbar-title-height: 0px !important; }
+html[data-presentation="on"] .layerling-editor .secondary-toolbar,
+html[data-presentation="on"] .layerling-editor aside,
+html[data-presentation="on"] .layerling-editor .view-cube,
+html[data-presentation="on"] .layerling-editor .camera-controls,
+html[data-presentation="on"] .layerling-editor .workplane-wrap > :not(.workplane-plane),
+html[data-presentation="on"] .layerling-editor .editor-status,
+html[data-presentation="on"] .layerling-editor .workplane-empty-hint { display: none !important; }
+html[data-presentation="on"][data-native-chrome="on"][data-inspector="on"] .workplane-stage { margin-right: 0 !important; }
+
+.native-status-bar[data-presentation="on"] .native-status-info,
+.native-status-bar[data-presentation="on"] .native-status-controls > :not([data-presentation-grid]):not(.native-zoom) { display: none; }
+.native-status-bar[data-presentation="on"] { position: fixed; }
+.native-presentation-exit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 3px 14px;
+  font: 600 11px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  color: inherit;
+  background: rgba(127, 127, 127, 0.16);
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  border-radius: 6px;
+  cursor: default;
+}
+.native-presentation-exit:hover { background: rgba(127, 127, 127, 0.28); }
+.native-presentation-exit:focus-visible { outline: 2px solid #0a84ff; outline-offset: 1px; }

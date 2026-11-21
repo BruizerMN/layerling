@@ -18193,10 +18193,11 @@ html[data-theme="dark"] .property-card:has(> .property-card-header[aria-controls
 .property-card .check-property input[type="checkbox"]::after {
   content: "";
   position: absolute;
-  top: 3px;
+  top: 50%;
   left: 3px;
   width: 13px;
   height: 13px;
+  margin-top: -6.5px;
   border-radius: 50%;
   background: #8a7b6a;
   transition: left 0.15s, background-color 0.15s;
@@ -18206,7 +18207,7 @@ html[data-theme="dark"] .property-card:has(> .property-card-header[aria-controls
   background: var(--sw, #b3711f);
 }
 .property-card .check-property input[type="checkbox"]:checked::after {
-  left: 21px;
+  left: calc(100% - 16px);
   background: #fff;
 }
 .property-card .check-property input[type="checkbox"]:focus-visible {

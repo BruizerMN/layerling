@@ -17,6 +17,8 @@ export type NativeUiState = {
   ribbonPinned: boolean;
   inspectorVisible?: boolean;
   textFocus?: boolean;
+  /** Presentation Mode is on in this document (the host disables its menus except Exit and Quit). */
+  presentation?: boolean;
   edit?: { undo: boolean; redo: boolean; cut: boolean; copy: boolean; paste: boolean; duplicate: boolean; delete: boolean; history: boolean; historyActive: boolean } | null;
   view?: { hiddenCount: number; selectionHidden: boolean; hasSelection: boolean; outlinerOpen: boolean; noteCount: number; notesVisible: boolean; overhangsVisible: boolean; overhangAngle: number } | null;
   file?: { import: boolean; export: boolean; attachments: boolean } | null;

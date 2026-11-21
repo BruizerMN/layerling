@@ -207,6 +207,8 @@ type WorkplaneViewportProps = {
   frameOnOpenRef?: { current: boolean };
   /** Native app: no introductory line on an empty workplane (the ribbon and the command search are not something to be told about on every new document). */
   hideEmptyHint?: boolean;
+  /** Native app, Presentation Mode: selection outlines are not drawn (nothing is selected or changed), and the background follows the presentation rules. */
+  presentation?: boolean;
   /** Places the fit test that measures the printer's play (fitTest.ts), from the button in the settings window. */
   onMakeFitTest?: () => void;
   /** Shape following the cursor until a click drops it. Null places immediately. */
@@ -537,6 +539,8 @@ declare global {
     };
     layerlingCaptureCanvas?: () => string;
     /** Read-only: where the camera is (tests of the native app's framing on open). */
+    /** Native Presentation Mode: fit all bodies in view (camera only). */
+    layerlingFrameAll?: () => boolean;
     layerlingCameraSnapshot?: () => { position: number[]; target: number[]; zoom: number; orthographic: boolean };
     layerlingCaptureCanvasAsync?: () => Promise<string>;
     layerlingCaptureView?: (face?: LayerlingMcpViewFace) => Promise<string> | string;
@@ -1631,6 +1635,7 @@ export function WorkplaneViewport({
   onDropMyShape,
   frameOnOpenRef,
   hideEmptyHint = false,
+  presentation = false,
   onMakeFitTest,
   cruiseAsset = null,
   carryIds = null,
@@ -2334,9 +2339,11 @@ export function WorkplaneViewport({
   // measures and handles are worked out from where the parts stand in the design, so they would show at the old
   // place until the click sets the parts down. They stay out while the parts are carried.
   const carryActive = Boolean(carryIds?.length);
+  const presentationRef = useRef(presentation);
+  presentationRef.current = presentation;
   const outlineSelectionIds = useCallback(
     (ids = selectedIdsRef.current) => (
-      workplaneModeRef.current || splitActiveRef.current || (modifierActiveRef.current && !modifierPreviewActiveRef.current) ? [] : ids
+      presentationRef.current || workplaneModeRef.current || splitActiveRef.current || (modifierActiveRef.current && !modifierPreviewActiveRef.current) ? [] : ids
     ),
     [],
   );
@@ -3647,9 +3654,30 @@ export function WorkplaneViewport({
   useEffect(() => {
     const state = threeRef.current;
     if (!state) return;
-    const choice = chooseBackground(currentBackgrounds(), { presentation: false, preference: themePreference, resolved: resolvedTheme });
+    const choice = chooseBackground(currentBackgrounds(), { presentation, preference: themePreference, resolved: resolvedTheme });
     setBackgroundImage(state, choice.url);
-  }, [backgroundTick, themePreference, resolvedTheme]);
+  }, [backgroundTick, themePreference, resolvedTheme, presentation]);
+
+  // Presentation Mode draws no selection outlines (the selection itself is untouched), and fits the whole model on F or Home (camera only).
+  useEffect(() => {
+    if (!threeRef.current) return;
+    rebuildShapes(threeRef.current, shapesRef.current, shapeOutlineIds(), modifierActiveRef.current, placementWorkplaneRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presentation]);
+  useEffect(() => {
+    window.layerlingFrameAll = () => {
+      const state = threeRef.current;
+      if (!state) return false;
+      const visible = [...state.shapeRecords.keys()].filter((id) => state.shapeRecords.get(id)?.object.visible);
+      const bounds = selectionBounds(state, visible);
+      if (!bounds) return false;
+      frameBounds(state, bounds);
+      syncViewCube(state, viewCubeRef.current);
+      state.needsRender = true;
+      return true;
+    };
+    return () => { delete window.layerlingFrameAll; };
+  }, []);
 
   // A document that was just opened (native app) shows all of its bodies, as Select All followed by F would, without touching the selection: the zoom the
   // file was saved with is rarely the right one for looking at it first. Once per opened document: it runs after the scene was built from the document's
