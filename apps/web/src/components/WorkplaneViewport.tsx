@@ -203,6 +203,8 @@ type WorkplaneViewportProps = {
   onDropMyShape?: (id: string, point: PlacementPoint) => void;
   /** Native app: set while a document that was just opened still has to be framed (all of its bodies in view); the viewport clears it once it has. */
   frameOnOpenRef?: { current: boolean };
+  /** Native app: no introductory line on an empty workplane (the ribbon and the command search are not something to be told about on every new document). */
+  hideEmptyHint?: boolean;
   /** Places the fit test that measures the printer's play (fitTest.ts), from the button in the settings window. */
   onMakeFitTest?: () => void;
   /** Shape following the cursor until a click drops it. Null places immediately. */
@@ -1626,6 +1628,7 @@ export function WorkplaneViewport({
   onAddShape,
   onDropMyShape,
   frameOnOpenRef,
+  hideEmptyHint = false,
   onMakeFitTest,
   cruiseAsset = null,
   carryIds = null,
@@ -8914,7 +8917,7 @@ export function WorkplaneViewport({
       {/* Scrollbars that slide the view, switched in the view bar (Discussion #1241). */}
       {viewScrollbarsOn && !pickOnly ? <ViewScrollbars threeRef={threeRef} /> : null}
       {/* An empty design says where to start, and that a tool can be found by its name (31.10.2026). */}
-      {shapes.length === 0 && !pickOnly ? <p className="workplane-empty-hint">{t("editor.emptyHint")}</p> : null}
+      {shapes.length === 0 && !pickOnly && !hideEmptyHint ? <p className="workplane-empty-hint">{t("editor.emptyHint")}</p> : null}
       {secondViewWindow ? <SecondViewWindow popup={secondViewWindow} threeRef={threeRef} projectId={projectId} getSelectedIds={getSelectedIds} onClosed={closeSecondView} /> : null}
 
       <div

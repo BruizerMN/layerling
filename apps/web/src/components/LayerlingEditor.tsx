@@ -20040,6 +20040,7 @@ export function LayerlingEditor({
         ) : (
           <WorkplaneViewport
           frameOnOpenRef={frameOnOpenRef}
+          hideEmptyHint={Boolean(nativeDocument)}
           threadInsertPreview={threadInsertFaceCurrent && threadInsertTool?.face && threadInsertSizeSpec ? {
             origin:threadInsertTool.face.workplane.origin,
             normal:threadInsertTool.face.workplane.normal,
@@ -21012,7 +21013,8 @@ export function LayerlingEditor({
           onClose={() => setBackupsOpen(false)}
         />
       ) : null}
-      {notice && showsNotice(workspaceSettings.showStepNotices, noticeOrdinary, noticeReportsLastChange(noticeAt, lastHistoryChangeRef.current, historyIndex)) ? (
+      {/* Native app: the confirmation of a step the design just took ("Box added · Undo") is not shown; Undo is Cmd+Z and the Edit menu. Everything else is: guidance for the tool that is active ("Click to place Box. Esc to cancel."), refusals and errors (not a step), anything that waits for the person. */}
+      {notice && showsNotice(nativeDocument ? false : workspaceSettings.showStepNotices, noticeOrdinary, noticeReportsLastChange(noticeAt, lastHistoryChangeRef.current, historyIndex)) ? (
         <p className="editor-status" role="status" aria-live="polite" onMouseEnter={holdNotice} onMouseLeave={releaseNotice}>
           <span className="editor-status-text">{notice}</span>
           {!noticeAction && noticeReportsLastChange(noticeAt, lastHistoryChangeRef.current, historyIndex) ? (

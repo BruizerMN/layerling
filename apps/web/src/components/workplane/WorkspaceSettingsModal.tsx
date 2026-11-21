@@ -1067,12 +1067,15 @@ export function WorkspaceSettingsModal({
                     checked={workspace.viewBarOpensOnHover}
                     onChange={(viewBarOpensOnHover) => patchWorkspace({ viewBarOpensOnHover })}
                   />
-                  <WorkspaceToggle
-                    label={t("workspace.showStepNotices")}
-                    description={t("workspace.showStepNoticesHint")}
-                    checked={workspace.showStepNotices}
-                    onChange={(showStepNotices) => patchWorkspace({ showStepNotices })}
-                  />
+                  {/* The native app never shows step confirmations, so there is nothing to switch (scope is only given there). */}
+                  {scope === undefined ? (
+                    <WorkspaceToggle
+                      label={t("workspace.showStepNotices")}
+                      description={t("workspace.showStepNoticesHint")}
+                      checked={workspace.showStepNotices}
+                      onChange={(showStepNotices) => patchWorkspace({ showStepNotices })}
+                    />
+                  ) : null}
                   </>) : null}
                   {docShown ? (<>
                   <div className="workspace-section-heading"><strong>Model</strong><span>Properties of this model rather than of the application.</span></div>
