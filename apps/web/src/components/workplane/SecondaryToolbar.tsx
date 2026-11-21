@@ -179,6 +179,8 @@ const MODIFY_SECTION_ICONS: Record<ModifySection, ComponentType> = {
   edges: ToolbarFilletIcon,
   surface: ToolbarSurfaceTextureIcon,
 };
+/** The canonical ribbon icon keys of the pictures a folded group shows (the same artwork as the tool itself: an override applies to both). */
+const MODIFY_SECTION_ICON_KEYS: Record<ModifySection, string> = { pattern: "mirror", shape: "split", edges: "fillet", surface: "surface-texture" };
 const modifySectionLabel = (section: string) => MODIFY_SECTIONS.find(([key]) => key === section)?.[2] ?? "editor.group.modify";
 
 /** What a greyed-out tool waits for; its tooltip says so. */
@@ -898,7 +900,7 @@ export function SecondaryToolbar({
    * Given that tool, the button is the tool itself - History's Undo undoes, as its icon says (#1148) - and only the tab
    * under it opens the group.
    */
-  const collapseBox = (label: string, Icon: ComponentType, tool?: ToolbarTool) => (
+  const collapseBox = (label: string, Icon: ComponentType, tool?: ToolbarTool, iconId?: string) => (
     <div className="toolbar-section-tools toolbar-collapse-box">
       {tool ? (
         // The tab hangs from the button, not from the frame, so it lines up with the other groups' tabs at every
@@ -909,7 +911,7 @@ export function SecondaryToolbar({
         </span>
       ) : (
         <button className="toolbar-icon toolbar-collapse-trigger" type="button" aria-label={t("editor.group.foldedHint", { group: label })} title={t("editor.group.foldedHint", { group: label })} aria-expanded={false} data-collapse-trigger>
-          <Icon />
+          {iconId ? <RibbonToolIcon id={iconId} Icon={Icon} /> : <Icon />}
         </button>
       )}
     </div>
@@ -1571,7 +1573,7 @@ export function SecondaryToolbar({
         {!nativeChrome && ribbonGroupShown("clipboard", ribbonHidden, clipboardShown) ? (
         <div className="toolbar-section" data-group="clipboard" {...foldProps("clipboard", 2)} style={{ order: sectionOrder.clipboard }} inert={historyViewActive}>
           <div className="toolbar-section-label">{t("editor.group.clipboard")}</div>
-          {collapseBox(t("editor.group.clipboard"), ToolbarPasteIcon)}
+          {collapseBox(t("editor.group.clipboard"), ToolbarPasteIcon, undefined, "paste")}
           <div className="toolbar-section-tools">{clipboardShown.map(renderToolButton)}</div>
         </div>
         ) : null}
@@ -1748,21 +1750,21 @@ export function SecondaryToolbar({
         {ribbonGroupShown("combine", ribbonHidden, combineShown) ? (
         <div className="toolbar-section" data-group="combine" {...foldProps("combine", 6)} style={{ order: sectionOrder.combine }}>
           <div className="toolbar-section-label">{t("editor.group.combine")}</div>
-          {collapseBox(t("editor.group.combine"), ToolbarGroupIcon)}
+          {collapseBox(t("editor.group.combine"), ToolbarGroupIcon, undefined, "group")}
           <div className="toolbar-section-tools">{combineShown.map(renderToolButton)}</div>
         </div>
         ) : null}
         {modifyGroups.map((entry) => ribbonGroupShown(entry.group, ribbonHidden, entry.shown) ? (
         <div key={entry.group} className="toolbar-section" data-group={entry.group} data-collapse={foldProps(entry.group, entry.priority)["data-collapse"]} data-fold={foldProps(entry.group, entry.priority)["data-fold"]} style={{ order: sectionOrder[entry.group] }}>
           <div className="toolbar-section-label">{entry.label}</div>
-          {collapseBox(entry.label, MODIFY_SECTION_ICONS[entry.section])}
+          {collapseBox(entry.label, MODIFY_SECTION_ICONS[entry.section], undefined, MODIFY_SECTION_ICON_KEYS[entry.section])}
           <div className="toolbar-section-tools">{entry.shown.map(renderToolButton)}</div>
         </div>
         ) : null)}
         {ribbonGroupShown("arrange", ribbonHidden, arrangeShown) ? (
         <div className="toolbar-section" data-group="arrange" {...foldProps("arrange", 4)} style={{ order: sectionOrder.arrange }}>
           <div className="toolbar-section-label">{t("editor.group.arrange")}</div>
-          {collapseBox(t("editor.group.arrange"), ToolbarAlignIcon)}
+          {collapseBox(t("editor.group.arrange"), ToolbarAlignIcon, undefined, "align")}
           <div className="toolbar-section-tools">{arrangeShown.map(renderToolButton)}</div>
         </div>
         ) : null}
@@ -1928,7 +1930,7 @@ export function SecondaryToolbar({
                 </div>
                 <div className="toolbar-section sketch-clipboard-section" data-group="clipboard" data-collapse="1">
                   <div className="toolbar-section-label">{t("editor.group.clipboard")}</div>
-                  {collapseBox(t("editor.group.clipboard"), ToolbarPasteIcon)}
+                  {collapseBox(t("editor.group.clipboard"), ToolbarPasteIcon, undefined, "paste")}
                   <div className="toolbar-section-tools">{sketchClipboardTools.map(renderToolButton)}</div>
                 </div>
                 <div className="toolbar-section sketch-history-section" data-group="history" data-collapse="2">

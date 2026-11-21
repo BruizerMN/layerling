@@ -9,7 +9,7 @@ describe("ribbon icon catalog", () => {
     for (const key of RIBBON_ICON_KEYS) expect(key).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
   });
   it("keeps the Build 0024 sketch clipboard names as aliases of the canonical artwork", () => {
-    expect(RIBBON_ICON_ALIASES).toEqual({ "sketch-copy": "copy", "sketch-paste": "paste", "sketch-duplicate": "duplicate", "sketch-delete": "delete" });
+    expect(RIBBON_ICON_ALIASES).toEqual({ "sketch-copy": "copy", "sketch-paste": "paste", "sketch-duplicate": "duplicate", "sketch-delete": "delete", "sketch-undo": "undo", "sketch-redo": "redo" });
     for (const target of Object.values(RIBBON_ICON_ALIASES)) expect(RIBBON_ICON_KEYS).toContain(target);
     for (const alias of Object.keys(RIBBON_ICON_ALIASES)) expect(RIBBON_ICON_KEYS).not.toContain(alias);
   });
