@@ -86,7 +86,9 @@ html[data-native-app="on"] .toolbar-section[data-collapsed] .toolbar-collapse-tr
 html[data-native-app="on"] .shape-menu-trigger::before { background-color: var(--accent-live); }
 
 /* The Settings windows. */
-html[data-native-app="on"] .workspace-settings-nav button.active { color: var(--accent-live); }
+/* The selected page of a Settings window: the accent in Dark as well (it kept its orange there), on a soft tint of it instead of the brown. */
+:root[data-native-app="on"] .workspace-settings-nav button.active { color: var(--accent-live); }
+:root[data-native-app="on"][data-theme="dark"] .workspace-settings-nav button.active { background: var(--accent-live-soft); border-color: var(--accent-live-soft); }
 html[data-native-app="on"] .workspace-settings-nav button.active svg { color: var(--accent-live); }
 html[data-native-app="on"] .check-property input[type="checkbox"]:checked,
 html[data-native-app="on"] .workspace-toggle input:checked { accent-color: var(--accent-live); }
