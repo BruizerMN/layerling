@@ -85,6 +85,18 @@ html[data-native-app="on"] .native-zoom-slider:disabled { opacity: 0.45; }
 html[data-native-app="on"] .toolbar-section[data-collapsed] .toolbar-collapse-trigger::before,
 html[data-native-app="on"] .shape-menu-trigger::before { background-color: var(--accent-live); }
 
+/* ---- Build 0024: external ribbon icons ----
+   An icon file the host has validated is drawn as a one-colour mask: the artwork gives the shape, currentColor the ink, so every theme and every hover, disabled and
+   selected state of the ribbon applies to it exactly as to the built-in icons (which share the class toolbar-vector-art-icon: size, colour, opacity, filters). */
+.ribbon-icon-override {
+  display: inline-block;
+  flex: none;
+  background-color: currentColor;
+  -webkit-mask: var(--ribbon-icon) center / contain no-repeat;
+  mask: var(--ribbon-icon) center / contain no-repeat;
+}
+:root[data-native-chrome="on"] :is(.toolbar-icon, .action-icon-button) .ribbon-icon-override { zoom: 0.88; }
+
 /* The Settings windows. */
 /* The selected page of a Settings window: the accent in Dark as well (it kept its orange there), on a soft tint of it instead of the brown. */
 :root[data-native-app="on"] .workspace-settings-nav button.active { color: var(--accent-live); }

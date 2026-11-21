@@ -1,6 +1,7 @@
 "use client";
 
 import { GuideHelpLink } from "@/components/GuideHelpLink";
+import { RibbonToolIcon } from "@/components/RibbonIcon";
 import { FocusModeBar } from "@/components/workplane/FocusModeBar";
 import { ProjectNameField } from "@/components/workplane/ProjectNameField";
 import { FOCUS_MODE_CHANGE_EVENT, FOCUS_MODE_SHORTCUT } from "@/lib/focusMode";
@@ -1323,7 +1324,7 @@ export function SecondaryToolbar({
         onClick={enabled ? action : undefined}
         aria-disabled={enabled ? undefined : true}
       >
-        <Icon />
+        <RibbonToolIcon id={id} Icon={Icon} />
       </button>
     );
   }
@@ -1592,7 +1593,7 @@ export function SecondaryToolbar({
               aria-expanded={shapesOpen}
               onClick={toggleShapesFromButton}
             >
-              <ToolbarShapeAddIcon />
+              <RibbonToolIcon id="add-shape" Icon={ToolbarShapeAddIcon} />
               {shapesTab}
             </button>
           </div>
@@ -1817,7 +1818,7 @@ export function SecondaryToolbar({
                       aria-expanded={shapesOpen}
                       onClick={toggleShapesFromButton}
                     >
-                      <ToolbarShapeAddIcon />
+                      <RibbonToolIcon id="add-shape" Icon={ToolbarShapeAddIcon} />
                       {shapesTab}
                     </button>
                   </div>

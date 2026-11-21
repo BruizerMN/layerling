@@ -16,6 +16,7 @@ import { useLanguage } from "@/lib/useLanguage";
 import { startNativeAppSync } from "@/lib/nativeAppSync";
 import { startNativeErrorForwarding } from "@/lib/host/nativeErrors";
 import { installBackgroundsReceiver } from "@/lib/host/viewportBackgrounds";
+import { installRibbonIconsReceiver } from "@/lib/host/ribbonIcons";
 import { setLoadingName, setLoadingState } from "@/lib/host/nativeLoading";
 import { NativeLoadingScreen } from "@/components/NativeLoadingScreen";
 
@@ -78,6 +79,7 @@ export function NativeDocumentShell() {
   useEffect(() => startNativeErrorForwarding(), []);
   // The host tells the page when a viewport background image is set, replaced or cleared (Settings); the viewport follows without a reload.
   useEffect(() => installBackgroundsReceiver(), []);
+  useEffect(() => installRibbonIconsReceiver(), []);
   const bridge = useBridge();
   const [connection, setConnection] = useState<HostConnection>({ state: "inactive" });
   const [phase, setPhase] = useState<Phase>({ kind: "connecting" });
