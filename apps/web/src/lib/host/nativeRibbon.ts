@@ -16,11 +16,23 @@ export interface RibbonToolState {
   shortcut: string | null;
   /** The canonical ribbon icon key (lib/host/ribbonIconCatalog.ts). */
   icon: string;
+  /** A switch that is on or off beside the tools of its group (Construction line): it does not stand for the group. */
+  toggle?: boolean;
+  /** Drawn prominent (Finish sketch). */
+  prominent?: boolean;
+  /** A separator before this entry in the group's menu. */
+  separatorBefore?: boolean;
 }
 export interface RibbonGroupState {
   id: string;
   label: string;
+  /** menu: one split button with the tools in a menu; button: one button; buttons: each tool its own button. */
+  kind: "menu" | "button" | "buttons";
   tools: RibbonToolState[];
+}
+export interface RibbonState {
+  mode: "geometry" | "sketch";
+  groups: RibbonGroupState[];
 }
 
 let nativeActive = false;
@@ -74,12 +86,12 @@ export function onNativeRibbonInvoke(listener: (toolId: string) => void): () => 
 }
 
 /** Sends the groups to the host when they changed. */
-export function publishRibbonState(groups: RibbonGroupState[]) {
+export function publishRibbonState(state: RibbonState) {
   const bridge = getHostBridge();
   const documentId = nativeDocumentId();
   if (!documentId || !bridge?.supportsRibbon()) return;
-  const key = JSON.stringify(groups);
+  const key = JSON.stringify(state);
   if (key === lastState) return;
   lastState = key;
-  void bridge.sendUi("ribbon.state", { documentId, state: { groups } });
+  void bridge.sendUi("ribbon.state", { documentId, state });
 }

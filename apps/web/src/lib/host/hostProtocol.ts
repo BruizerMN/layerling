@@ -199,7 +199,7 @@ export interface RibbonStateRequest {
   session: string;
   type: "ribbon.state";
   protocol: number;
-  payload: { documentId: string; state: { groups: Array<{ id: string; label: string; tools: Array<{ id: string; label: string; enabled: boolean; active: boolean; hint: string | null; shortcut: string | null; icon: string }> }> } };
+  payload: { documentId: string; state: { mode: "geometry" | "sketch"; groups: Array<{ id: string; label: string; kind: "menu" | "button" | "buttons"; tools: Array<{ id: string; label: string; enabled: boolean; active: boolean; hint: string | null; shortcut: string | null; icon: string; toggle?: boolean; prominent?: boolean; separatorBefore?: boolean }> }> } };
 }
 /** Build 0007 (`ui.menu.v1`): show a native menu at a point of the page. Answered at once; the choice comes back as the event `menu.result`. */
 export interface MenuShowRequest {

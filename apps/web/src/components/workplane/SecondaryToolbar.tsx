@@ -1225,34 +1225,6 @@ export function SecondaryToolbar({
   type ToolbarTool = (typeof leftTools)[number] | (typeof visibilityTools)[number] | (typeof combineTools)[number] | (typeof modifyTools)[number] | (typeof arrangeTools)[number]
     | Pick<(typeof leftTools)[number], "id" | "label" | "icon" | "action" | "enabled">;
 
-  // Native toolbar prototype (ribbon.v1): when the host draws Shapes, Combine and Mirror & pattern itself, the editor still decides everything: it publishes each tool
-  // with the state its own rules give it (the same rules as toolButton), and runs a tool when the host asks. Nothing here exists without a host.
-  const nativeRibbonOn = useSyncExternalStore(useNativeRibbonActiveSubscribe, nativeRibbonActive, () => false);
-  const nativeToolState = (tool: ToolbarTool): RibbonToolState => {
-    const { id, label } = tool;
-    const enabled = tool.enabled && (!historyViewActive || id === "history");
-    const active = "active" in tool && Boolean(tool.active);
-    const missing = missingForTool({ id, enabled, needs: "needs" in tool ? tool.needs : undefined }, historyViewActive, selectionFacts);
-    const hint = missing ?? ("hint" in tool && tool.hint ? tool.hint : null);
-    return { id, label, enabled, active, hint: hint ?? null, shortcut: COMMAND_SHORTCUTS[id] ?? null, icon: ribbonIconKey(id) };
-  };
-  const nativeRibbonGroups = nativeRibbonOn && toolbarMode === "geometry" ? [
-    { id: "shapes", label: t("editor.group.shapes"), tools: [{ id: "add-shape", label: t("editor.addShape"), enabled: !historyViewActive, active: shapesOpen, hint: null, shortcut: null, icon: "add-shape" }] },
-    { id: "combine", label: t("editor.group.combine"), tools: combineTools.map(nativeToolState) },
-    { id: "mirrorPattern", label: t(modifySectionLabel("pattern")), tools: modifyTools.filter((tool) => tool.section === "pattern").map(nativeToolState) },
-  ] : null;
-  const nativeRibbonKey = JSON.stringify(nativeRibbonGroups);
-  useEffect(() => {
-    if (nativeRibbonGroups) publishRibbonState(nativeRibbonGroups);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nativeRibbonKey]);
-  const nativeInvokeRef = useRef<(toolId: string) => void>(() => undefined);
-  nativeInvokeRef.current = (toolId) => {
-    if (toolId === "add-shape") { if (!historyViewActive) toggleShapesFromButton(); return; }
-    const tool = [...combineTools, ...modifyTools].find((candidate) => candidate.id === toolId);
-    if (tool && nativeToolState(tool).enabled) tool.action();
-  };
-  useEffect(() => onNativeRibbonInvoke((toolId) => nativeInvokeRef.current(toolId)), []);
   const renderToolButton = (tool: ToolbarTool) => toolButton(tool, false);
   /** One shape of the library: a click puts it in, a drag drops it where it is let go, a tap does on a touch screen. */
   function shapeTile(shape: ToolbarShapeAsset) {
@@ -1593,6 +1565,91 @@ export function SecondaryToolbar({
     ...(nativeChrome ? [] : [layoutGroup("manage", t("editor.group.file"), fileToolsShipped, false)]),
   ].filter((group) => group.tools.length > 0);
   setRibbonLayout(layoutGroups.sort((one, other) => ribbonOrder.indexOf(one.group as (typeof ribbonOrder)[number]) - ribbonOrder.indexOf(other.group as (typeof ribbonOrder)[number])));
+
+  // ---- Native toolbar (ribbon.v1) -------------------------------------------------------------------------------------------------------------------------------
+  // The host draws the modelling groups and the sketch ribbon as a native toolbar. The editor stays the only authority: it publishes every tool with the state its own
+  // rules give it (the same expressions as the buttons above: enabled, active, the reason a tool is unavailable) and runs a tool when the host asks, if its own rules allow
+  // it. Both interfaces read the same state, so they cannot disagree. Nothing here exists without a host.
+  const nativeRibbonOn = useSyncExternalStore(useNativeRibbonActiveSubscribe, nativeRibbonActive, () => false);
+  const nativeToolState = (tool: ToolbarTool): RibbonToolState => {
+    const { id, label } = tool;
+    const enabled = tool.enabled && (!historyViewActive || id === "history");
+    const active = "active" in tool && Boolean(tool.active);
+    const missing = missingForTool({ id, enabled, needs: "needs" in tool ? tool.needs : undefined }, historyViewActive, selectionFacts);
+    const hint = missing ?? ("hint" in tool && tool.hint ? tool.hint : null);
+    return { id, label, enabled, active, hint: hint ?? null, shortcut: COMMAND_SHORTCUTS[id] ?? null, icon: ribbonIconKey(id) };
+  };
+  type NativeAction = RibbonToolState & { run: () => void };
+  const sketchTool_ = (id: string, label: string, icon: string, run: () => void, extra: Partial<RibbonToolState> = {}): NativeAction => ({ id, label, icon, run, enabled: true, active: false, hint: null, shortcut: null, ...extra });
+  const nativeGroups: Array<{ id: string; label: string; kind: "menu" | "button" | "buttons"; tools: NativeAction[] }> = [];
+  const modelTools = [...combineTools, ...modifyTools, ...arrangeTools];
+  if (nativeRibbonOn && toolbarMode === "geometry") {
+    const asAction = (tool: ToolbarTool): NativeAction => ({ ...nativeToolState(tool), run: () => tool.action() });
+    nativeGroups.push({ id: "shapes", label: t("editor.group.shapes"), kind: "button", tools: [sketchTool_("add-shape", t("editor.addShape"), "add-shape", toggleShapesFromButton, { enabled: !historyViewActive, active: shapesOpen })] });
+    nativeGroups.push({ id: "combine", label: t("editor.group.combine"), kind: "menu", tools: combineTools.map(asAction) });
+    for (const [id, section] of [["mirrorPattern", "pattern"], ["splitShape", "shape"], ["edgesWalls", "edges"], ["surface", "surface"]] as const) {
+      nativeGroups.push({ id, label: t(modifySectionLabel(section)), kind: "menu", tools: modifyTools.filter((tool) => tool.section === section).map(asAction) });
+    }
+    nativeGroups.push({ id: "arrange", label: t("editor.group.arrange"), kind: "menu", tools: arrangeTools.map(asAction) });
+  } else if (nativeRibbonOn && toolbarMode === "sketch") {
+    if (!sketchActive) {
+      nativeGroups.push({ id: "create", label: t("sketch.group.create"), kind: "buttons", tools: [
+        sketchTool_("sketch.extrude", t("sketch.extrude"), "extrude-sketch", () => startSketch("extrude"), { hint: t("sketch.extrudeHint") }),
+        sketchTool_("sketch.revolve", t("sketch.revolve"), "revolve-sketch", () => startSketch("revolve"), { hint: t("sketch.revolveHint") }),
+        ...(simpleMode ? [] : [sketchTool_("sketch.sweep", t("sketch.sweep"), "sweep-sketch", () => startSketch("sweep"), { hint: t("sketch.sweepHint") })]),
+        sketchTool_("sketch.editTo3d", t("sketch.editTo3d"), "edit-sketch-to-3d", onEditSketch, { enabled: Boolean(canEditSketch) }),
+      ] });
+    } else {
+      const drawing = (id: string, label: string, icon: string, tool: SketchTool) => sketchTool_(`sketch.${id}`, label, icon, () => onSketchTool(tool), { active: sketchTool === tool });
+      nativeGroups.push({ id: "draw", label: t("sketch.group.draw"), kind: "menu", tools: [
+        drawing("line", t("sketch.line"), "line", "line"),
+        drawing("arc", t("sketch.arc"), "arc", "arc"),
+        drawing("bezier", t("sketch.bezier"), "bezier-curve", "bezier"),
+        drawing("smooth", t("sketch.smooth"), "smooth-curve", "smooth"),
+        drawing("freehand", t("sketch.freehand"), "freehand", "freehand"),
+        sketchTool_("sketch.construction", t("sketch.construction"), "construction-line", () => onSketchConstruction?.(), { active: Boolean(sketchConstruction), hint: t("sketch.constructionHint"), toggle: true, separatorBefore: true }),
+        sketchTool_("sketch.fromMiddle", t("sketch.fromMiddle"), "line-from-middle", () => onSketchFromMiddle?.(), { active: Boolean(sketchFromMiddle), hint: t("sketch.fromMiddleHint"), toggle: true }),
+      ] });
+      nativeGroups.push({ id: "sketchShapes", label: t("sketch.group.shapes"), kind: "button", tools: [sketchTool_("sketch.shapes", t("sketch.addShape"), "add-shape", toggleShapesFromButton, { active: shapesOpen })] });
+      const corner = (kind: "chamfer" | "fillet") => sketchTool_(`sketch.${kind}`, t(kind === "chamfer" ? "sketch.chamferCorner" : "sketch.filletCorner"), kind, () => { if (canFilletSketchPoint) onSketchCornerDialog?.(sketchCornerDialog === kind ? null : kind); }, {
+        enabled: Boolean(canFilletSketchPoint), active: sketchCornerDialog === kind, hint: canFilletSketchPoint ? null : t(kind === "chamfer" ? "sketch.chamferCornerDisabled" : "sketch.filletCornerDisabled") });
+      nativeGroups.push({ id: "select", label: t("sketch.group.select"), kind: "menu", tools: [
+        drawing("select", t("sketch.select"), "select", "select"),
+        sketchTool_("sketch.addImage", t("sketch.addImage"), "add-image", () => onSketchImage?.()),
+        drawing("refine", t("sketch.refine"), "add-remove-points", "refine"),
+        corner("chamfer"), corner("fillet"),
+        drawing("erase", t("sketch.erase"), "erase", "erase"),
+      ] });
+      nativeGroups.push({ id: "clipboard", label: t("editor.group.clipboard"), kind: "menu", tools: sketchClipboardTools.map((tool) => ({ ...nativeToolState(tool), run: () => tool.action() })) });
+      nativeGroups.push({ id: "history", label: t("editor.group.history"), kind: "buttons", tools: [
+        sketchTool_("sketch.undo", t("sketch.undo"), "undo", onSketchUndo, { enabled: Boolean(sketchCanUndo), shortcut: COMMAND_SHORTCUTS["sketch-undo"] ?? null }),
+        sketchTool_("sketch.redo", t("sketch.redo"), "redo", onSketchRedo, { enabled: Boolean(sketchCanRedo), shortcut: COMMAND_SHORTCUTS["sketch-redo"] ?? null }),
+      ] });
+      nativeGroups.push({ id: "finish", label: t("sketch.group.finish"), kind: "buttons", tools: [
+        sketchTool_("sketch.stroke", t("sketch.stroke"), "line", () => onSketchStroke?.(), { active: Boolean(sketchStrokeActive), hint: t("sketch.strokeHint") }),
+        sketchTool_("sketch.finish", sketchOperation === "revolve" ? t("sketch.finishRevolve") : sketchOperation === "sweep" ? t("sketch.finishSweep") : t("sketch.finishSketch"), "finish-sketch", onSketchFinish, { prominent: true }),
+        sketchTool_("sketch.cancel", t("sketch.cancel"), "cancel-sketch", onSketchCancel),
+      ] });
+    }
+  }
+  const nativeRibbonState = nativeRibbonOn ? { mode: toolbarMode, groups: nativeGroups.map((group) => ({ ...group, tools: group.tools.map(({ run, ...state }) => state) })) } : null;
+  const nativeRibbonKey = JSON.stringify(nativeRibbonState);
+  useEffect(() => {
+    if (nativeRibbonState) publishRibbonState(nativeRibbonState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nativeRibbonKey]);
+  const nativeInvokeRef = useRef<(toolId: string) => void>(() => undefined);
+  nativeInvokeRef.current = (toolId) => {
+    // The Shapes panel opened from the native toolbar hangs from the top of the page, under the toolbar (CSS: data-shapes-anchor).
+    const fromNative = (open: () => void) => { document.documentElement.dataset.shapesAnchor = "native"; open(); };
+    const own = nativeGroups.flatMap((group) => group.tools).find((tool) => tool.id === toolId);
+    if (own) {
+      if (!own.enabled) return;
+      if (toolId === "add-shape" || toolId === "sketch.shapes") fromNative(own.run); else own.run();
+    }
+  };
+  useEffect(() => { if (!shapesOpen) delete document.documentElement.dataset.shapesAnchor; }, [shapesOpen]);
+  useEffect(() => onNativeRibbonInvoke((toolId) => nativeInvokeRef.current(toolId)), []);
 
   return (
     <div className="secondary-toolbar">

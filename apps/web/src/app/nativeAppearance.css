@@ -99,14 +99,10 @@ html[data-native-app="on"] .shape-menu-trigger::before { background-color: var(-
 /* The sketch ribbon's text buttons (Create, Stroke, Finish, Cancel) draw their pictures at their own sizes: an override takes the size of the picture it replaces. */
 .sketch-command-button .ribbon-icon-override { width: calc(25px * var(--toolbar-scale)); height: calc(25px * var(--toolbar-scale)); }
 
-/* ---- Native toolbar prototype (ribbon.v1): when the host draws Shapes, Combine and Mirror & pattern itself, the web ribbon stops showing them. Nothing is removed: the
-   attribute is set by the host's `ribbon.native` event and goes away with it, and the web ribbon is back. The Shapes button stays in the layout (invisible) so the
-   Shapes panel, which hangs from it, opens where it always did. */
-html[data-native-ribbon="on"] .toolbar-section[data-group="combine"],
-html[data-native-ribbon="on"] .toolbar-section[data-group="mirrorPattern"] { display: none; }
-html[data-native-ribbon="on"] .toolbar-shapes-section { visibility: hidden; }
-html[data-native-ribbon="on"] .toolbar-shapes-section .shape-menu-dropdown,
-html[data-native-ribbon="on"] .toolbar-shapes-section .shape-menu-dropdown * { visibility: visible; }
+/* ---- Native toolbar (ribbon.v1) ----
+   The web ribbon is NOT touched while the native toolbar is on (both are shown for comparison). Only one thing differs: the Shapes panel opened FROM the native
+   toolbar hangs from the top of the page, directly under the toolbar, instead of from the web ribbon's Shapes button. */
+html[data-shapes-anchor="native"] .toolbar-shapes-section .shape-menu-dropdown { position: fixed; top: 0; left: 12px; z-index: 400; }
 
 /* The Settings windows. */
 /* The selected page of a Settings window: the accent in Dark as well (it kept its orange there), on a soft tint of it instead of the brown. */
