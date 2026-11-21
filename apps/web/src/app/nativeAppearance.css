@@ -41,6 +41,50 @@ html[data-native-app="on"] .native-status-button[aria-pressed="true"] { backgrou
 html[data-native-app="on"] .native-zoom-menu-item:hover { background: var(--accent-live); color: var(--accent-live-fg); }
 html[data-native-app="on"] .native-zoom-slider { accent-color: var(--accent-live); }
 
+/* ---- Build 0023: one accent for the standard controls ----
+   Everything below reads --accent-live (the host's resolved macOS accent: it follows System Settings, Automatic included, and changes at once; see AppearanceController).
+   Not touched, on purpose: the ribbon's group colours, model and material colours, Solid/Hole, errors and warnings, the colour of each Inspector card (its heading and
+   frame keep their section colour; only the standard on/off switches inside them take the accent). */
+
+/* Inspector on/off switches. Every section used to colour its own switches (--sw: orange, blue, teal, purple, ...); the on track is now the accent in every section and
+   appearance, the off track a neutral grey. The thumb keeps its shape, size, position and animation (globals.css); on the solid accent it is white in Dark too. */
+:root[data-native-app="on"] .native-inspector-dock .property-card .check-property input[type="checkbox"] {
+  --sw: var(--accent-live);
+  accent-color: var(--accent-live);
+  border-color: #8e8e93;
+  background: rgba(127, 127, 127, 0.14);
+}
+:root[data-native-app="on"] .native-inspector-dock .property-card .check-property input[type="checkbox"]::after { background: #8e8e93; }
+:root[data-native-app="on"] .native-inspector-dock .property-card .check-property input[type="checkbox"]:checked { border-color: var(--accent-live); background: var(--accent-live); box-shadow: none; }
+:root[data-native-app="on"] .native-inspector-dock .property-card .check-property input[type="checkbox"]:checked::after { background: #ffffff; }
+
+/* The footer's zoom slider: the filled part is the accent exactly as in the Inspector's sliders (the browser's own slider draws an approximation of accent-color),
+   the rest neutral; the thumb is a plain round thumb of the same size as before. The editor sets --zoom-pos. */
+html[data-native-app="on"] .native-zoom-slider { -webkit-appearance: none; appearance: none; background: transparent; }
+html[data-native-app="on"] .native-zoom-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--accent-live) 0 var(--zoom-pos, 0%), rgba(127, 127, 127, 0.38) var(--zoom-pos, 0%) 100%);
+}
+html[data-native-app="on"] .native-zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+html[data-native-app="on"] .native-zoom-slider:disabled { opacity: 0.45; }
+
+/* The ribbon's dropdown tabs (the chevron under a folded group, and under the shapes button): the accent instead of the group's colour. The chevron itself, the
+   tab's size and place, its turn when open and the dot that flags hidden objects are unchanged. */
+html[data-native-app="on"] .toolbar-section[data-collapsed] .toolbar-collapse-trigger::before,
+html[data-native-app="on"] .shape-menu-trigger::before { background-color: var(--accent-live); }
+
 /* The Settings windows. */
 html[data-native-app="on"] .workspace-settings-nav button.active { color: var(--accent-live); }
 html[data-native-app="on"] .workspace-settings-nav button.active svg { color: var(--accent-live); }

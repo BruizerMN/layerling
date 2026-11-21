@@ -4,6 +4,7 @@ import { EyeOff, Maximize2, Minus, PanelRight, Pin, PinOff, Plus } from "lucide-
 import { GridEyeIcon } from "@/components/GridEyeIcon";
 import { hiddenObjectsLabel } from "@/lib/hiddenObjects";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { ZOOM_PRESET_PERCENTS, distanceFromPercent, distanceFromSlider, formatZoomPercent, getCameraController, getCameraStatus, parseZoomPercent, percentRange, sliderFromDistance, subscribeCameraStatus, zoomPercent, type CameraStatus } from "@/lib/cameraStatus";
 import { setFooterSnapSlot } from "@/lib/footerSnap";
@@ -330,6 +331,7 @@ export function NativeStatusBar({
           <input
             type="range"
             className="native-zoom-slider"
+            style={{ "--zoom-pos": `${Math.round(position * 1000) / 10}%` } as CSSProperties}
             aria-label="Zoom"
             min={0}
             max={1000}

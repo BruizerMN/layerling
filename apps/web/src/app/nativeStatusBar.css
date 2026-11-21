@@ -249,7 +249,7 @@ html[data-presentation="on"][data-native-chrome="on"][data-inspector="on"] .work
 .native-presentation-standby:hover { background: rgba(127, 127, 127, 0.28); }
 .native-presentation-exit:focus-visible,
 .native-presentation-enter:focus-visible,
-.native-presentation-standby:focus-visible { outline: 2px solid #0a84ff; outline-offset: 1px; }
+.native-presentation-standby:focus-visible { outline: 2px solid var(--accent-live, #0a84ff); outline-offset: 1px; }
 /* Standby: the model is hidden, so the zoom and grid controls rest. */
 .native-status-bar[data-standby="on"] .native-zoom,
 .native-status-bar[data-standby="on"] [data-presentation-grid] { pointer-events: none; opacity: 0.4; }
