@@ -54,6 +54,7 @@ import type { PaintMode } from "@/lib/paint";
 import type { PaintLassoView } from "@/lib/paintMesh";
 import { onCustomFontsChanged } from "@/lib/textFonts";
 import { readSavedViews, readStartView, SAVED_VIEW_KEYS, savedViewForKey, writeStartView } from "@/lib/designView";
+import { PresentationLogo } from "@/components/PresentationLogo";
 import { chooseBackground, currentBackgrounds, subscribeBackgrounds } from "@/lib/host/viewportBackgrounds";
 import { setBackgroundImage } from "@/components/workplane/viewportBackgroundImage";
 import { readCornerRulers, writeCornerRulers } from "@/lib/cornerRulerStore";
@@ -209,6 +210,8 @@ type WorkplaneViewportProps = {
   hideEmptyHint?: boolean;
   /** Native app, Presentation Mode: selection outlines are not drawn (nothing is selected or changed), and the background follows the presentation rules. */
   presentation?: boolean;
+  /** Native Presentation Mode: the standby screen. The model and the grid are hidden (not removed); only the background and the logo show. */
+  standby?: boolean;
   /** Places the fit test that measures the printer's play (fitTest.ts), from the button in the settings window. */
   onMakeFitTest?: () => void;
   /** Shape following the cursor until a click drops it. Null places immediately. */
@@ -1636,6 +1639,7 @@ export function WorkplaneViewport({
   frameOnOpenRef,
   hideEmptyHint = false,
   presentation = false,
+  standby = false,
   onMakeFitTest,
   cruiseAsset = null,
   carryIds = null,
@@ -3657,6 +3661,27 @@ export function WorkplaneViewport({
     const choice = chooseBackground(currentBackgrounds(), { presentation, preference: themePreference, resolved: resolvedTheme });
     setBackgroundImage(state, choice.url);
   }, [backgroundTick, themePreference, resolvedTheme, presentation]);
+
+  // Standby: everything the scene draws on top of its background is hidden, and put back exactly as it was on Resume. Nothing is rebuilt or reloaded.
+  const standbyHiddenRef = useRef<Map<THREE.Object3D, boolean> | null>(null);
+  useEffect(() => {
+    const state = threeRef.current;
+    if (!state) return;
+    const restore = () => {
+      standbyHiddenRef.current?.forEach((visible, object) => { object.visible = visible; });
+      standbyHiddenRef.current = null;
+      state.needsRender = true;
+    };
+    if (standby && presentation) {
+      if (!standbyHiddenRef.current) {
+        const saved = new Map<THREE.Object3D, boolean>();
+        state.scene.children.forEach((child) => { saved.set(child, child.visible); child.visible = false; });
+        standbyHiddenRef.current = saved;
+        state.needsRender = true;
+      }
+    } else restore();
+    return restore;
+  }, [standby, presentation]);
 
   // Presentation Mode draws no selection outlines (the selection itself is untouched), and fits the whole model on F or Home (camera only).
   useEffect(() => {
@@ -8953,6 +8978,7 @@ export function WorkplaneViewport({
 
   return (
     <main className="workplane-stage">
+      {presentation ? <PresentationLogo standby={standby} /> : null}
       <ViewCube getRig={getViewCubeRig} cubeRef={viewCubeRef} />
       {/* Scrollbars that slide the view, switched in the view bar (Discussion #1241). */}
       {viewScrollbarsOn && !pickOnly ? <ViewScrollbars threeRef={threeRef} /> : null}

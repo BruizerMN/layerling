@@ -3649,8 +3649,14 @@ export function LayerlingEditor({
   // is part of the document: it changes no shape, no selection, no camera, no saved state.
   const [presentationMode, setPresentationMode] = useState(false);
   const gridBeforePresentationRef = useRef<boolean | null>(null);
+  // Standby (Build 0022): a state of Presentation Mode, not a document mode. The model is hidden, nothing is rebuilt; Resume shows it again exactly as it was.
+  const [standbyMode, setStandbyMode] = useState(false);
+  const standbyRef = useRef(false);
+  standbyRef.current = standbyMode;
+  const toggleStandby = useCallback(() => setStandbyMode((on) => !on), []);
   const enterPresentation = useCallback(() => {
     if (!nativeDocument) return;
+    setStandbyMode(false);   // a presentation always starts with the model showing
     gridBeforePresentationRef.current = window.layerlingWorkplaneDisplay?.().visible ?? null;
     setPresentationMode(true);
   }, [nativeDocument]);
@@ -3658,17 +3664,18 @@ export function LayerlingEditor({
     // The grid goes back the way it was before the presentation (the footer's grid button is only for the presentation).
     if (gridBeforePresentationRef.current !== null) window.layerlingWorkplaneDisplay?.(gridBeforePresentationRef.current);
     gridBeforePresentationRef.current = null;
+    setStandbyMode(false);
     setPresentationMode(false);
   }, []);
   useEffect(() => {
     if (!presentationMode) return;
     document.documentElement.dataset.presentation = "on";
-    const stop = startPresentationGuard({ onExit: exitPresentation, onFit: () => void window.layerlingFrameAll?.(), viewport: () => document.querySelector(".workplane-stage") });
+    const stop = startPresentationGuard({ onExit: exitPresentation, onFit: () => void window.layerlingFrameAll?.(), onStandby: toggleStandby, standby: () => standbyRef.current, viewport: () => document.querySelector(".workplane-stage") });
     return () => {
       stop();
       delete document.documentElement.dataset.presentation;
     };
-  }, [presentationMode, exitPresentation]);
+  }, [presentationMode, exitPresentation, toggleStandby]);
   const focusMode = useFocusMode({ followFullScreen: !nativeDocument });
   const setFocusModeRef = useRef(focusMode.set);
   setFocusModeRef.current = focusMode.set;
@@ -19692,6 +19699,8 @@ export function LayerlingEditor({
         hideProjectName={Boolean(nativeDocument)}
         nativeChrome={Boolean(nativeDocument)}
         presentationActive={presentationMode}
+        presentationStandby={standbyMode}
+        onPresentationStandby={toggleStandby}
         onPresentationEnter={enterPresentation}
         onPresentationExit={exitPresentation}
         toolbarMode={toolbarMode}
@@ -20070,6 +20079,7 @@ export function LayerlingEditor({
           frameOnOpenRef={frameOnOpenRef}
           hideEmptyHint={Boolean(nativeDocument)}
           presentation={presentationMode}
+          standby={standbyMode}
           threadInsertPreview={threadInsertFaceCurrent && threadInsertTool?.face && threadInsertSizeSpec ? {
             origin:threadInsertTool.face.workplane.origin,
             normal:threadInsertTool.face.workplane.normal,
@@ -20281,6 +20291,8 @@ export function LayerlingEditor({
           unitsLabel={lengthDisplayUnit(workspaceSettings).label}
           hiddenCount={hiddenObjectCount}
           presentation={presentationMode}
+          standby={standbyMode}
+          onToggleStandby={toggleStandby}
           onExitPresentation={exitPresentation}
           plate={{ width: workspaceSettings.width, depth: workspaceSettings.depth }}
           workspace={workspaceSettings}

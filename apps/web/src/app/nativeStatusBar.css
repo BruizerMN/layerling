@@ -221,7 +221,9 @@ html[data-presentation="on"][data-native-chrome="on"][data-inspector="on"] .work
 .native-status-bar[data-presentation="on"] { position: fixed; }
 /* With the info group gone the controls would slide to the left edge: keep them where they always are. */
 .native-status-bar[data-presentation="on"] .native-status-controls { margin-left: auto; }
-.native-presentation-exit {
+.native-presentation-exit,
+.native-presentation-enter,
+.native-presentation-standby {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -233,6 +235,22 @@ html[data-presentation="on"][data-native-chrome="on"][data-inspector="on"] .work
   border: 1px solid rgba(127, 127, 127, 0.4);
   border-radius: 6px;
   cursor: default;
+  box-sizing: border-box;
+  white-space: nowrap;
+  text-align: center;
 }
-.native-presentation-exit:hover { background: rgba(127, 127, 127, 0.28); }
-.native-presentation-exit:focus-visible { outline: 2px solid #0a84ff; outline-offset: 1px; }
+/* The Enter and the Exit button are the same size in the same place (the footer's centre, measured from the whole window), so one spot always toggles the mode. */
+.native-presentation-exit,
+.native-presentation-enter { width: 176px; }
+.native-presentation-standby { left: calc(50% + 98px); transform: translateY(-50%); min-width: 78px; }
+.native-presentation-exit:hover,
+.native-presentation-enter:hover,
+.native-presentation-standby:hover { background: rgba(127, 127, 127, 0.28); }
+.native-presentation-exit:focus-visible,
+.native-presentation-enter:focus-visible,
+.native-presentation-standby:focus-visible { outline: 2px solid #0a84ff; outline-offset: 1px; }
+/* Standby: the model is hidden, so the zoom and grid controls rest. */
+.native-status-bar[data-standby="on"] .native-zoom,
+.native-status-bar[data-standby="on"] [data-presentation-grid] { pointer-events: none; opacity: 0.4; }
+/* The Enter button covers the footer's middle: the info on the left gives way before it. */
+.native-status-bar[data-enter-button="on"] .native-status-info { max-width: calc(50% - 104px); }

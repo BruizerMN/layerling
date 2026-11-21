@@ -534,6 +534,8 @@ export function WorkspaceSettingsModal({
   showWelcome,
   onShowWelcomeChange,
   viewportBackgrounds,
+  presentationLogo,
+  onPresentationLogoChange,
   onChooseBackground,
   onClearBackground,
   hasStartView,
@@ -561,9 +563,12 @@ export function WorkspaceSettingsModal({
   showWelcome?: boolean;
   onShowWelcomeChange?: (show: boolean) => void;
   /** Native app (Application Settings): the custom viewport background images by mode (an address the page can show, or null), and what to do about each. */
-  viewportBackgrounds?: Record<"light" | "dark" | "presentation", string | null>;
-  onChooseBackground?: (kind: "light" | "dark" | "presentation") => void;
-  onClearBackground?: (kind: "light" | "dark" | "presentation") => void;
+  viewportBackgrounds?: Record<"light" | "dark" | "presentation" | "logo", string | null>;
+  /** Presentation Mode's Organization Logo preferences (native Application Settings): where the corner watermark sits and how opaque it is. */
+  presentationLogo?: { position: string; opacity: number };
+  onPresentationLogoChange?: (patch: { position?: string; opacity?: number }) => void;
+  onChooseBackground?: (kind: "light" | "dark" | "presentation" | "logo") => void;
+  onClearBackground?: (kind: "light" | "dark" | "presentation" | "logo") => void;
   /** Whether a start view of the user's own is set (#853). */
   hasStartView: boolean;
   onSaveStartView: () => void;
@@ -1072,6 +1077,36 @@ export function WorkspaceSettingsModal({
                           <button type="button" data-action="clear" disabled={!viewportBackgrounds[kind]} onClick={() => onClearBackground(kind)}>Clear</button>
                         </div>
                       ))}
+                    </div>
+                  ) : null}
+                  {viewportBackgrounds && onChooseBackground && onClearBackground && presentationLogo && onPresentationLogoChange ? (
+                    <div className="presentation-logo-settings" style={{ display: "grid", gap: 10, margin: "10px 0 6px" }}>
+                      <div className="workspace-section-heading"><strong>Presentation Mode logo</strong><span>Your organization&apos;s logo (a PNG with transparency, or an SVG) shown over the model in Presentation Mode, and large on the Standby screen.</span></div>
+                      <div data-background-kind="logo" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ width: 96, height: 54, flex: "0 0 auto", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(127,127,127,.4)", display: "grid", placeItems: "center", fontSize: 11, background: "repeating-conic-gradient(rgba(127,127,127,.25) 0% 25%, rgba(127,127,127,.1) 0% 50%) 50% / 12px 12px", opacity: viewportBackgrounds.logo ? 1 : 0.6 }}>
+                          {viewportBackgrounds.logo ? <img src={viewportBackgrounds.logo} alt="Organization Logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <span>None</span>}
+                        </div>
+                        <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+                          <div>Organization Logo</div>
+                          <small style={{ opacity: 0.7 }}>Kept in the application&apos;s folder, never in a document. Without one there is no watermark.</small>
+                        </div>
+                        <button type="button" data-action="choose" onClick={() => onChooseBackground("logo")}>{viewportBackgrounds.logo ? "Replace…" : "Choose Logo…"}</button>
+                        <button type="button" data-action="clear" disabled={!viewportBackgrounds.logo} onClick={() => onClearBackground("logo")}>Clear</button>
+                      </div>
+                      <label data-logo-setting="position" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <span style={{ flex: "1 1 auto" }}>Watermark position</span>
+                        <select value={presentationLogo.position} onChange={(event) => onPresentationLogoChange({ position: event.currentTarget.value })}>
+                          <option value="topLeft">Top left</option>
+                          <option value="topRight">Top right</option>
+                          <option value="bottomLeft">Bottom left</option>
+                          <option value="bottomRight">Bottom right</option>
+                        </select>
+                      </label>
+                      <label data-logo-setting="opacity" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <span style={{ flex: "1 1 auto" }}>Watermark opacity</span>
+                        <input type="range" min={10} max={100} step={5} value={Math.round(presentationLogo.opacity * 100)} onChange={(event) => onPresentationLogoChange({ opacity: Number(event.currentTarget.value) / 100 })} />
+                        <span style={{ width: 40, textAlign: "right" }}>{Math.round(presentationLogo.opacity * 100)}%</span>
+                      </label>
                     </div>
                   ) : null}
                   {onShowWelcomeChange ? (

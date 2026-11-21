@@ -244,6 +244,8 @@ export function SecondaryToolbar({
   hideProjectName = false,
   nativeChrome = false,
   presentationActive = false,
+  presentationStandby = false,
+  onPresentationStandby,
   onPresentationEnter,
   onPresentationExit,
   onCut,
@@ -436,6 +438,8 @@ export function SecondaryToolbar({
   nativeChrome?: boolean;
   /** Native app: Presentation Mode is on (the host's menus are told through ui.state); the commands below are the host's way in and out. */
   presentationActive?: boolean;
+  presentationStandby?: boolean;
+  onPresentationStandby?: () => void;
   onPresentationEnter?: () => void;
   onPresentationExit?: () => void;
   /** Cut (Edit > Cut in the native app; the ribbon never had a button for it). */
@@ -950,6 +954,7 @@ export function SecondaryToolbar({
       inspectorVisible,
       textFocus,
       presentation: presentationActive,
+      standby: presentationActive && presentationStandby,
       // Edit: the Clipboard and History ribbon groups' commands, for the active mode (a sketch has its own undo, copy, paste, duplicate and delete).
       edit: sketching
         ? { undo: sketchCanUndo, redo: sketchCanRedo, cut: false, copy: sketchHasSelection, paste: sketchHasClipboard, duplicate: sketchHasSelection, delete: sketchHasSelection, history: false, historyActive: false }
@@ -959,11 +964,12 @@ export function SecondaryToolbar({
       // File: the File group's commands (3D only, as the ribbon group was).
       file: sketching ? null : { import: !historyViewActive, export: true, attachments: true },
     });
-  }, [nativeChrome, toolbarMode, historyViewActive, focusMode, ribbonPinned, inspectorVisible, textFocus, presentationActive, sketchCanUndo, sketchCanRedo, sketchHasSelection, sketchHasClipboard, canUndo, canRedo, canModifySelection, hasSelection, hasClipboard, canHistoryView, hiddenShapeCount, selectionHidden, outlinerOpen, noteCount, notesVisible, overhangsVisible, overhangAngle]);
+  }, [nativeChrome, toolbarMode, historyViewActive, focusMode, ribbonPinned, inspectorVisible, textFocus, presentationActive, presentationStandby, sketchCanUndo, sketchCanRedo, sketchHasSelection, sketchHasClipboard, canUndo, canRedo, canModifySelection, hasSelection, hasClipboard, canHistoryView, hiddenShapeCount, selectionHidden, outlinerOpen, noteCount, notesVisible, overhangsVisible, overhangAngle]);
   const nativeCommandRef = useRef<(command: string) => void>(() => undefined);
   nativeCommandRef.current = (command) => {
-    // Presentation Mode is read-only: the only command it takes from the host is to leave.
-    if (presentationActive && command !== "presentation.exit") return;
+    // Presentation Mode is read-only: the only commands it takes from the host are to leave and to toggle Standby.
+    if (presentationActive && command !== "presentation.exit" && command !== "presentation.standby") return;
+    if (command === "presentation.standby") { if (presentationActive) onPresentationStandby?.(); return; }
     if (command === "presentation.enter") { if (toolbarMode === "geometry") onPresentationEnter?.(); return; }
     if (command === "presentation.exit") { onPresentationExit?.(); return; }
     switch (command) {

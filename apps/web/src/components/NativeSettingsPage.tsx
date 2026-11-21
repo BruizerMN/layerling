@@ -8,6 +8,7 @@ import { effectiveWorkspace, splitWorkspace } from "@/lib/settingsScope";
 import { useLanguage } from "@/lib/useLanguage";
 import { startNativeAppSync } from "@/lib/nativeAppSync";
 import type { BackgroundKind } from "@/lib/host/viewportBackgrounds";
+import { normalizeLogo } from "@/lib/host/presentationLogo";
 import { DEFAULT_SNAP_GRID, DEFAULT_WORKPLANE_WORKSPACE, normalizeSnapGrid, normalizeWorkspaceSettings, readWorkspaceDefault, saveWorkspaceDefault } from "@/lib/workplaneSettings";
 import type { GridSize, WorkplaneWorkspaceSettings } from "@/types/layerling";
 
@@ -74,14 +75,17 @@ export function NativeSettingsPage({ bootstrap }: { bootstrap: SettingsBootstrap
   // The Welcome window preference lives in the host (it decides what a launch shows); Application Settings reads and writes it through the bridge.
   const [showWelcome, setShowWelcome] = useState(true);
   // The viewport background images (Build 0020): the host keeps them; this page shows what is set and asks the host to choose, replace or clear.
-  const [backgrounds, setBackgrounds] = useState<Record<BackgroundKind, string | null>>({ light: null, dark: null, presentation: null });
+  const [backgrounds, setBackgrounds] = useState<Record<BackgroundKind | "logo", string | null>>({ light: null, dark: null, presentation: null, logo: null });
+  const [logoPrefs, setLogoPrefs] = useState<{ position: string; opacity: number }>({ position: "bottomRight", opacity: 0.75 });
   useEffect(() => {
     if (scope !== "app") return;
     const w = window as unknown as { layerlingSettingsPage?: { welcome?: (on: boolean) => void; backgrounds?: (value: unknown) => void } };
     const take = (value: unknown) => {
       const source = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
       const pick = (key: string) => (typeof source[key] === "string" && source[key] ? (source[key] as string) : null);
-      setBackgrounds({ light: pick("light"), dark: pick("dark"), presentation: pick("presentation") });
+      setBackgrounds({ light: pick("light"), dark: pick("dark"), presentation: pick("presentation"), logo: pick("logo") });
+      const logo = normalizeLogo(source);
+      setLogoPrefs({ position: logo.position, opacity: logo.opacity });
     };
     w.layerlingSettingsPage = { welcome: (on) => setShowWelcome(Boolean(on)), backgrounds: take };
     void hostHandler()?.postMessage({ type: "backgrounds.get" }).then((reply) => take((reply as { backgrounds?: unknown } | null)?.backgrounds));
@@ -176,6 +180,11 @@ export function NativeSettingsPage({ bootstrap }: { bootstrap: SettingsBootstrap
       startInPerspective={startInPerspective}
       showWelcome={showWelcome}
       viewportBackgrounds={scope === "app" ? backgrounds : undefined}
+      presentationLogo={scope === "app" ? logoPrefs : undefined}
+      onPresentationLogoChange={scope === "app" ? (patch) => {
+        setLogoPrefs((current) => ({ ...current, ...patch }));
+        void hostHandler()?.postMessage({ type: "logo.set", ...patch });
+      } : undefined}
       onChooseBackground={scope === "app" ? (kind) => void hostHandler()?.postMessage({ type: "background.choose", kind }) : undefined}
       onClearBackground={scope === "app" ? (kind) => void hostHandler()?.postMessage({ type: "background.clear", kind }) : undefined}
       onShowWelcomeChange={scope === "app" ? (on) => {

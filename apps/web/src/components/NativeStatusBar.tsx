@@ -10,7 +10,7 @@ import { setFooterSnapSlot } from "@/lib/footerSnap";
 import { toggleInspectorVisible, useInspectorVisible } from "@/lib/inspectorDock";
 import { formatPlateValue, parsePlateInput, plateRange, plateSizePatch, plateSummary, plateUnitLabel } from "@/lib/plateSize";
 import type { WorkplaneWorkspaceSettings } from "@/types/layerling";
-import { getUiState, runUiCommand, subscribeUiState } from "@/lib/host/nativeUi";
+import { getUiState, requestHostAction, runUiCommand, subscribeUiState } from "@/lib/host/nativeUi";
 
 /**
  * The native app's status bar (Build 0003): replaces the browser footer in the macOS app only. It is a web bar inside the editor because
@@ -199,6 +199,8 @@ export function NativeStatusBar({
   objectCount,
   hiddenCount,
   presentation = false,
+  standby = false,
+  onToggleStandby,
   onExitPresentation,
   selectionLabel,
   unitsLabel,
@@ -211,6 +213,9 @@ export function NativeStatusBar({
   hiddenCount: number;
   /** Presentation Mode: the footer holds only the Exit button (centred in the window), a grid toggle and the zoom controls. */
   presentation?: boolean;
+  /** Presentation Mode is on standby: the model is hidden, the zoom and grid controls rest. */
+  standby?: boolean;
+  onToggleStandby?: () => void;
   onExitPresentation?: () => void;
   selectionLabel: string;
   unitsLabel: string;
@@ -236,10 +241,19 @@ export function NativeStatusBar({
   const mode = ui?.mode ?? "geometry";
 
   return (
-    <footer className="dashboard-legal editor-legal native-status-bar" aria-label="Status bar" data-presentation={presentation ? "on" : undefined}>
+    <footer className="dashboard-legal editor-legal native-status-bar" aria-label="Status bar" data-presentation={presentation ? "on" : undefined} data-standby={presentation && standby ? "on" : undefined} data-enter-button={!presentation && mode === "geometry" ? "on" : undefined}>
       {presentation ? (
-        <button type="button" className="native-presentation-exit" data-presentation-exit onClick={onExitPresentation} title="Exit Presentation Mode (Esc)">
-          Exit Presentation Mode
+        <>
+          <button type="button" className="native-presentation-button native-presentation-exit" data-presentation-exit onClick={onExitPresentation} title="Exit Presentation Mode (Esc)">
+            Exit Presentation Mode
+          </button>
+          <button type="button" className="native-presentation-standby" data-presentation-standby onClick={onToggleStandby} title={standby ? "Resume the presentation (Space)" : "Show the standby screen (Space)"}>
+            {standby ? "Resume" : "Standby"}
+          </button>
+        </>
+      ) : mode === "geometry" ? (
+        <button type="button" className="native-presentation-button native-presentation-enter" data-presentation-enter onClick={() => requestHostAction("enterPresentation")} title="Enter Presentation Mode (⌃⌘P)">
+          Enter Presentation Mode
         </button>
       ) : null}
       <div className="native-status-group native-status-info">
@@ -286,6 +300,7 @@ export function NativeStatusBar({
             aria-label="Show grid"
             title={gridVisible ? "Hide the grid" : "Show the grid"}
             aria-pressed={gridVisible}
+            disabled={standby}
             onClick={() => {
               const next = !gridVisible;
               window.layerlingWorkplaneDisplay?.(next);

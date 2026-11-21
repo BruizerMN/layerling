@@ -19,6 +19,8 @@ export type NativeUiState = {
   textFocus?: boolean;
   /** Presentation Mode is on in this document (the host disables its menus except Exit and Quit). */
   presentation?: boolean;
+  /** Presentation Mode is showing the standby screen (the model is hidden); the host titles its Presentation menu from it. */
+  standby?: boolean;
   edit?: { undo: boolean; redo: boolean; cut: boolean; copy: boolean; paste: boolean; duplicate: boolean; delete: boolean; history: boolean; historyActive: boolean } | null;
   view?: { hiddenCount: number; selectionHidden: boolean; hasSelection: boolean; outlinerOpen: boolean; noteCount: number; notesVisible: boolean; overhangsVisible: boolean; overhangAngle: number } | null;
   file?: { import: boolean; export: boolean; attachments: boolean } | null;
@@ -69,7 +71,7 @@ export function publishUiState(state: NativeUiState) {
 }
 
 /** Asks the host to open one of its windows. */
-export function requestHostAction(action: "openSettings" | "openDocumentSettings") {
+export function requestHostAction(action: "openSettings" | "openDocumentSettings" | "enterPresentation") {
   const bridge = getHostBridge();
   if (!documentId || !bridge?.supportsUi()) return false;
   void bridge.sendUi("ui.action", { documentId, action });

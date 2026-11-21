@@ -14,10 +14,24 @@ describe("Presentation Mode input policy", () => {
     expect(presentationKeyAction(key("q", { metaKey: true }))).toBe("allow");
   });
   it("blocks every editing key", () => {
-    for (const k of ["Delete", "Backspace", "a", "g", "d", "c", "v", "x", "z", "ArrowLeft", "ArrowUp", "Enter", " ", "Tab", "1"]) expect(presentationKeyAction(key(k))).toBe("block");
+    for (const k of ["Delete", "Backspace", "a", "g", "d", "c", "v", "x", "z", "ArrowLeft", "ArrowUp", "Enter", "Tab", "1"]) expect(presentationKeyAction(key(k))).toBe("block");
     for (const k of ["a", "z", "c", "v", "d", "g", "s", "w"]) expect(presentationKeyAction(key(k, { metaKey: true }))).toBe("block");
     expect(presentationKeyAction(key("f", { metaKey: true }))).toBe("block");   // Cmd+F is not "fit"
     expect(presentationKeyAction(key("z", { ctrlKey: true }))).toBe("block");
+  });
+  it("Space toggles standby once per press and is never a plain key", () => {
+    expect(presentationKeyAction({ ...key(" "), repeat: false })).toBe("standby");
+    expect(presentationKeyAction({ ...key(" "), repeat: true })).toBe("swallow");
+    expect(presentationKeyAction(key(" ", { type: "keyup" }))).toBe("swallow");
+    expect(presentationKeyAction(key(" ", { metaKey: true }))).toBe("block");
+    expect(presentationKeyAction(key("f"), true)).toBe("block");   // no fitting while the model is hidden
+    expect(presentationKeyAction(key("Escape"), true)).toBe("exit");
+  });
+  it("blocks the wheel and gestures only on standby", () => {
+    const base = { buttons: 0, ctrlKey: false, metaKey: false, pointerType: "mouse", button: 0 };
+    expect(presentationBlocksPointer({ ...base, type: "wheel" })).toBe(false);
+    expect(presentationBlocksPointer({ ...base, type: "gesturechange" })).toBe(false);
+    for (const type of ["wheel", "gesturestart", "pointerdown", "pointermove"]) expect(presentationBlocksPointer({ ...base, type, buttons: 2, button: 2 }, true)).toBe(true);
   });
   it("lets the camera's gestures through and stops what would select or move", () => {
     const base = { buttons: 0, ctrlKey: false, metaKey: false, pointerType: "mouse" };
