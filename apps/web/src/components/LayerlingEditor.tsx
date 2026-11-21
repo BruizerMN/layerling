@@ -3482,7 +3482,7 @@ export function LayerlingEditor({
   // The model scale chosen last stays for the next time the window opens: a model railway builder keeps to one gauge.
   const lastModelScaleRef = useRef<Pick<ScalePercentSettings, "by" | "ratio" | "useRealSize" | "realSize" | "axis"> | null>(null);
   const editorLanguage = useLanguage();
-  const { notice, noticeAction, noticeAt, noticeOrdinary, setNotice, holdNotice, releaseNotice, dismissNotice, reportNoticesRef } = useEditorNotice();
+  const { notice, noticeAction, noticeAt, noticeOrdinary, setNotice, holdNotice, releaseNotice, dismissNotice, reportNoticesRef } = useEditorNotice({ errorsOnly: Boolean(nativeDocument) });
   // Cuts and splits run in a worker (lib/geometryWorker.ts): one that takes a moment says so, and
   // the editor stays usable meanwhile. Leaving the editor calls off what it still had running.
   const geometryAbortRef = useRef<AbortController | null>(null);

@@ -1,5 +1,6 @@
 import { MESSAGES_DE } from "@/lib/messages.de";
 import { MESSAGES_EN, type MessageKey } from "@/lib/messages.en";
+import { noteNoticeText } from "@/lib/noticeKind";
 import {
   DEFAULT_LANGUAGE,
   LANGUAGE_INFO,
@@ -210,7 +211,9 @@ export function translate(
 
 /** The everyday form: uses whatever language is current right now. */
 export function t(key: MessageKey, values?: Record<string, string | number>): string {
-  return translate(current, key, values);
+  const text = translate(current, key, values);
+  noteNoticeText(key, text);   // lets the native app tell an error notice from a confirmation (noticeKind.ts)
+  return text;
 }
 
 /** Whether a text is one of the current language's own interface sentences, as it stands. */

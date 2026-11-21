@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { rememberBugReportEvent, type BugReportEvent } from "@/lib/bugReport";
 import { NOTICE_AFTER_HOVER_MS, noticeDurationMs } from "@/lib/noticeTiming";
+import { noticeIsError } from "@/lib/noticeKind";
 
 export type NoticeAction = { label: string; run: () => void };
 
@@ -11,7 +12,10 @@ export type NoticeAction = { label: string; run: () => void };
  * bleibt stehen, bis es abgeloest wird: Eine Aufforderung, die sich von
  * selbst zurueckzieht, ist keine.
  */
-export function useEditorNotice() {
+export function useEditorNotice(options: { errorsOnly?: boolean } = {}) {
+  // Native app: only errors are shown (a message about something that failed, was refused or cannot proceed, or that was marked to stay); confirmations,
+  // tool guidance, progress and routine remarks are not raised at all. The browser shows everything, as before.
+  const errorsOnly = options.errorsOnly === true;
   // Leer heisst Ruhe: Dann steht kein Fenster auf der Arbeitsflaeche. Ein
   // „Bereit" braucht niemand zu lesen - dass nichts los ist, sieht man.
   const [notice, setNoticeText] = useState("");
@@ -36,6 +40,7 @@ export function useEditorNotice() {
   // "stay": the message stays until the next one or the close button - for work that runs long and for what went wrong (#286).
   const setNotice = useCallback((message: string, patient: boolean | "stay" = false, action: NoticeAction | null = null) => {
     reportNoticesRef.current = rememberBugReportEvent(reportNoticesRef.current, message);
+    if (errorsOnly && message !== "" && patient !== "stay" && !noticeIsError(message)) return;
     setNoticeText(message);
     setNoticeAction(action);
     setNoticeAt(performance.now());
@@ -46,7 +51,7 @@ export function useEditorNotice() {
       return;
     }
     clearLater(noticeDurationMs(message, patient));
-  }, [clearLater]);
+  }, [clearLater, errorsOnly]);
   // A message stays while the pointer rests on it, and goes a few seconds after it leaves (#422).
   const holdNotice = useCallback(() => {
     if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
