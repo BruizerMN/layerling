@@ -219,6 +219,8 @@ html[data-presentation="on"][data-native-chrome="on"][data-inspector="on"] .work
 .native-status-bar[data-presentation="on"] .native-status-info,
 .native-status-bar[data-presentation="on"] .native-status-controls > :not([data-presentation-grid]):not(.native-zoom) { display: none; }
 .native-status-bar[data-presentation="on"] { position: fixed; }
+/* With the info group gone the controls would slide to the left edge: keep them where they always are. */
+.native-status-bar[data-presentation="on"] .native-status-controls { margin-left: auto; }
 .native-presentation-exit {
   position: absolute;
   left: 50%;
