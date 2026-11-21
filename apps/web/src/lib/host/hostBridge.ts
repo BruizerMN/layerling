@@ -6,6 +6,7 @@ import {
   SAVE_PROTOCOL_MIN,
   UI_CAPABILITY,
   UI_MENU_CAPABILITY,
+  RIBBON_CAPABILITY,
   HOST_BOOTSTRAP_KEY,
   HOST_HANDLER_NAME,
   HOST_PROTOCOL_MAX,
@@ -125,6 +126,8 @@ export interface HostBridge {
   supportsUi(): boolean;
   /** True once the host granted `ui.menu.v1` (native contextual menus). */
   supportsMenu(): boolean;
+  /** True once the host granted `ribbon.v1` (the native toolbar prototype). */
+  supportsRibbon(): boolean;
   getConnection(): HostConnection;
   subscribe(listener: (connection: HostConnection) => void): () => void;
   dispose(): void;
@@ -149,7 +152,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 export type DocumentMessageType = "document.request" | "document.progress" | "document.opened" | "document.failed";
-export type UiMessageType = "ui.state" | "ui.action" | "settings.state" | "menu.show";
+export type UiMessageType = "ui.state" | "ui.action" | "settings.state" | "menu.show" | "ribbon.state";
 export type SaveMessageType = "document.changed" | "document.save.progress" | "document.save.commit" | "document.save.failed";
 
 export function createHostBridge(env: HostEnvironment | null, options: HostBridgeOptions): HostBridge {
@@ -200,6 +203,7 @@ export function createHostBridge(env: HostEnvironment | null, options: HostBridg
 
   const uiGranted = () => saveGranted() && connection.state !== "failed" && connection.state !== "inactive" && connection.state !== "connecting" && connection.capabilities.includes(UI_CAPABILITY);
 
+  const ribbonGranted = () => uiGranted() && (connection.state === "connected" || connection.state === "ready") && connection.capabilities.includes(RIBBON_CAPABILITY);
   const menuGranted = () => uiGranted() && (connection.state === "connected" || connection.state === "ready") && connection.capabilities.includes(UI_MENU_CAPABILITY);
 
   const receive: HostReceiver = (event) => {
@@ -214,8 +218,8 @@ export function createHostBridge(env: HostEnvironment | null, options: HostBridg
       eventListeners.forEach((listener) => listener(parsed));
       return { ok: true };
     }
-    if (parsed.type === "ui.command" || parsed.type === "settings.apply" || parsed.type === "settings.watch" || parsed.type === "menu.result" || parsed.type === "menu.highlight") {
-      if (!uiGranted()) return { ok: false, code: "bad-request", message: "ui events were not negotiated" };
+    if (parsed.type === "ui.command" || parsed.type === "settings.apply" || parsed.type === "settings.watch" || parsed.type === "menu.result" || parsed.type === "menu.highlight" || parsed.type === "ribbon.invoke" || parsed.type === "ribbon.native") {
+      if (!uiGranted() || ((parsed.type === "ribbon.invoke" || parsed.type === "ribbon.native") && !ribbonGranted())) return { ok: false, code: "bad-request", message: "ui events were not negotiated" };
       env?.log("debug", `host event ${parsed.type}`);
       eventListeners.forEach((listener) => listener(parsed));
       return { ok: true };
@@ -294,13 +298,14 @@ export function createHostBridge(env: HostEnvironment | null, options: HostBridg
       return outcome.kind === "ok" ? { ok: true as const, payload: outcome.payload } : { ok: false as const, failure: outcome.failure };
     },
     async sendUi(type, payload) {
-      if (!uiGranted() || (type === "menu.show" && !menuGranted())) return { ok: false as const, failure: { code: "unsupported-capability" as const, message: "the host did not grant ui support" } };
+      if (!uiGranted() || (type === "menu.show" && !menuGranted()) || (type === "ribbon.state" && !ribbonGranted())) return { ok: false as const, failure: { code: "unsupported-capability" as const, message: "the host did not grant ui support" } };
       const request = { id: nextId(), session, type, protocol: negotiated, payload } as HostRequest;
       const outcome = await exchange(request, `${type}.ok`);
       return outcome.kind === "ok" ? { ok: true as const, payload: outcome.payload } : { ok: false as const, failure: outcome.failure };
     },
     supportsUi: uiGranted,
     supportsMenu: menuGranted,
+    supportsRibbon: ribbonGranted,
     supportsDocuments: documentsGranted,
     supportsSave: saveGranted,
 
@@ -344,7 +349,7 @@ export function startHostBridge(win?: HostWindow): () => void {
   const bridge = createHostBridge(env, {
     editorVersion: process.env.NEXT_PUBLIC_APP_VERSION ?? "unknown",
     editorBuild: process.env.NEXT_PUBLIC_BUILD_ID ?? "unknown",
-    capabilities: [DOCUMENT_CAPABILITY, SAVE_CAPABILITY, UI_CAPABILITY, UI_MENU_CAPABILITY],
+    capabilities: [DOCUMENT_CAPABILITY, SAVE_CAPABILITY, UI_CAPABILITY, UI_MENU_CAPABILITY, RIBBON_CAPABILITY],
   });
   activeBridge = bridge;
   bridgeListeners.forEach((listener) => listener(bridge));

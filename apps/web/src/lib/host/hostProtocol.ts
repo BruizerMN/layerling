@@ -25,6 +25,11 @@ export const UI_CAPABILITY = "ui.v1";
  * runs the chosen item's own function; the host only draws, tracks and reports (`menu.result`, `menu.highlight`).
  */
 export const UI_MENU_CAPABILITY = "ui.menu.v1";
+/**
+ * Native toolbar prototype (additive, needs `ui.v1`): the host draws some ribbon groups as a native toolbar. The page publishes each group's tools with the state its own
+ * rules give them (`ribbon.state`); the host asks the page to run one (`ribbon.invoke`) and tells it when its toolbar is on or off (`ribbon.native`).
+ */
+export const RIBBON_CAPABILITY = "ribbon.v1";
 /** One entry of a native menu. `items` makes it a submenu. */
 export interface NativeMenuItem {
   key: string;
@@ -188,6 +193,14 @@ export interface UiStateRequest {
   protocol: number;
   payload: { documentId: string; state: { mode: "geometry" | "sketch"; sketchEnabled: boolean; focusMode: boolean; ribbonPinned: boolean; inspectorVisible?: boolean } & Record<string, unknown> };
 }
+/** Prototype (`ribbon.v1`): the ribbon groups the host draws natively, with each tool's state. Sent on change only. */
+export interface RibbonStateRequest {
+  id: string;
+  session: string;
+  type: "ribbon.state";
+  protocol: number;
+  payload: { documentId: string; state: { groups: Array<{ id: string; label: string; tools: Array<{ id: string; label: string; enabled: boolean; active: boolean; hint: string | null; shortcut: string | null; icon: string }> }> } };
+}
 /** Build 0007 (`ui.menu.v1`): show a native menu at a point of the page. Answered at once; the choice comes back as the event `menu.result`. */
 export interface MenuShowRequest {
   id: string;
@@ -253,6 +266,7 @@ export interface SaveFailedRequest {
   payload: { documentId: string; saveId: string; code: SaveFailureCode; message: string };
 }
 export type HostRequest =
+  | RibbonStateRequest
   | HelloRequest
   | ReadyRequest
   | PingRequest
@@ -322,6 +336,10 @@ export type HostEvent =
   | { session: string; protocol: number; id: string; type: "menu.result"; payload: { documentId: string; menuId: string; key: string | null; shift: boolean } }
   /** Build 0007 (`ui.menu.v1`): the item under the pointer or the keyboard while the menu is open (null: none). */
   | { session: string; protocol: number; id: string; type: "menu.highlight"; payload: { documentId: string; menuId: string; key: string | null } }
+  /** Prototype (`ribbon.v1`): run this tool, as its ribbon button would. The page checks its own rules first. */
+  | { session: string; protocol: number; id: string; type: "ribbon.invoke"; payload: { documentId: string; toolId: string } }
+  /** Prototype (`ribbon.v1`): the host's native toolbar is on or off for this document. */
+  | { session: string; protocol: number; id: string; type: "ribbon.native"; payload: { documentId: string; enabled: boolean } }
   /** Build 0003 (`ui.v1`): the Document Settings window opened or closed; the page sends `settings.state` while it is open. */
   | { session: string; protocol: number; id: string; type: "settings.watch"; payload: { documentId: string; watching: boolean } }
   /** The file was changed by another application (not reloaded automatically). */
@@ -420,6 +438,12 @@ export function parseHostEvent(value: unknown): HostEvent | { invalid: string } 
     return isText(documentId) && isText(value.payload.menuId) && (value.payload.key === null || isText(value.payload.key))
       ? { ...base, type: "menu.highlight", payload: { documentId, menuId: value.payload.menuId, key: value.payload.key as string | null } }
       : { invalid: "menu.highlight needs documentId, menuId and key (or null)" };
+  }
+  if (value.type === "ribbon.invoke") {
+    return isText(documentId) && isText(value.payload.toolId) ? { ...base, type: "ribbon.invoke", payload: { documentId, toolId: value.payload.toolId } } : { invalid: "ribbon.invoke needs documentId and toolId" };
+  }
+  if (value.type === "ribbon.native") {
+    return isText(documentId) && typeof value.payload.enabled === "boolean" ? { ...base, type: "ribbon.native", payload: { documentId, enabled: value.payload.enabled } } : { invalid: "ribbon.native needs documentId and enabled" };
   }
   if (value.type === "settings.watch") {
     return isText(documentId) && typeof value.payload.watching === "boolean" ? { ...base, type: "settings.watch", payload: { documentId, watching: value.payload.watching } } : { invalid: "settings.watch needs documentId and watching" };

@@ -31,6 +31,11 @@ let lastState = "";
 let latestUiState: NativeUiState | null = null;
 const uiStateListeners = new Set<() => void>();
 
+/** The document this page runs (null before the editor says which). */
+export function nativeDocumentId(): string | null {
+  return documentId;
+}
+
 /** The menu-relevant state as the toolbar last reported it (the status bar's focus and pin buttons read it). */
 export function getUiState(): NativeUiState | null {
   return latestUiState;

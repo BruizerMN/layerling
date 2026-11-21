@@ -2,6 +2,7 @@
 
 import { GuideHelpLink } from "@/components/GuideHelpLink";
 import { RibbonIconOr, RibbonToolIcon } from "@/components/RibbonIcon";
+import { ribbonIconKey } from "@/lib/host/ribbonIcons";
 import { FocusModeBar } from "@/components/workplane/FocusModeBar";
 import { ProjectNameField } from "@/components/workplane/ProjectNameField";
 import { FOCUS_MODE_CHANGE_EVENT, FOCUS_MODE_SHORTCUT } from "@/lib/focusMode";
@@ -9,7 +10,7 @@ import { ShapeMenuPanel } from "@/components/workplane/ShapeMenuPanel";
 import { ShapeLibraryList } from "@/components/workplane/ShapeLibraryList";
 import { AlertTriangle, ArchiveRestore, ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, Check, CircleHelp, Percent, Circle as CircleIcon, Eye, EyeOff, Hexagon as HexagonIcon, ListTree, Maximize2, Minimize2, Pentagon as PentagonIcon, Pin, PinOff, Rotate3d, Route as RouteIcon, ScanEye, Search, Sparkles, Square as SquareIcon, Star as StarIcon, Triangle as TriangleIcon, X } from "lucide-react";
 import { OPEN_FILE_BACKUPS_EVENT } from "@/lib/fileBackups";
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { useWheelField } from "@/lib/useWheelField";
 import { wheelNextValue } from "@/lib/wheelValueStep";
@@ -41,6 +42,7 @@ import { TopPanel } from "./TopActionPanel";
 import { useToolbarCollapse } from "./useToolbarCollapse";
 import { createHoverOpener, type HoverOpener } from "@/lib/hoverOpen";
 import { publishUiState, requestHostAction, subscribeNativeUiEvents } from "@/lib/host/nativeUi";
+import { nativeRibbonActive, onNativeRibbonInvoke, publishRibbonState, useNativeRibbonActiveSubscribe, type RibbonToolState } from "@/lib/host/nativeRibbon";
 import { toggleInspectorVisible, useInspectorVisible } from "@/lib/inspectorDock";
 
 
@@ -1222,6 +1224,35 @@ export function SecondaryToolbar({
   ];
   type ToolbarTool = (typeof leftTools)[number] | (typeof visibilityTools)[number] | (typeof combineTools)[number] | (typeof modifyTools)[number] | (typeof arrangeTools)[number]
     | Pick<(typeof leftTools)[number], "id" | "label" | "icon" | "action" | "enabled">;
+
+  // Native toolbar prototype (ribbon.v1): when the host draws Shapes, Combine and Mirror & pattern itself, the editor still decides everything: it publishes each tool
+  // with the state its own rules give it (the same rules as toolButton), and runs a tool when the host asks. Nothing here exists without a host.
+  const nativeRibbonOn = useSyncExternalStore(useNativeRibbonActiveSubscribe, nativeRibbonActive, () => false);
+  const nativeToolState = (tool: ToolbarTool): RibbonToolState => {
+    const { id, label } = tool;
+    const enabled = tool.enabled && (!historyViewActive || id === "history");
+    const active = "active" in tool && Boolean(tool.active);
+    const missing = missingForTool({ id, enabled, needs: "needs" in tool ? tool.needs : undefined }, historyViewActive, selectionFacts);
+    const hint = missing ?? ("hint" in tool && tool.hint ? tool.hint : null);
+    return { id, label, enabled, active, hint: hint ?? null, shortcut: COMMAND_SHORTCUTS[id] ?? null, icon: ribbonIconKey(id) };
+  };
+  const nativeRibbonGroups = nativeRibbonOn && toolbarMode === "geometry" ? [
+    { id: "shapes", label: t("editor.group.shapes"), tools: [{ id: "add-shape", label: t("editor.addShape"), enabled: !historyViewActive, active: shapesOpen, hint: null, shortcut: null, icon: "add-shape" }] },
+    { id: "combine", label: t("editor.group.combine"), tools: combineTools.map(nativeToolState) },
+    { id: "mirrorPattern", label: t(modifySectionLabel("pattern")), tools: modifyTools.filter((tool) => tool.section === "pattern").map(nativeToolState) },
+  ] : null;
+  const nativeRibbonKey = JSON.stringify(nativeRibbonGroups);
+  useEffect(() => {
+    if (nativeRibbonGroups) publishRibbonState(nativeRibbonGroups);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nativeRibbonKey]);
+  const nativeInvokeRef = useRef<(toolId: string) => void>(() => undefined);
+  nativeInvokeRef.current = (toolId) => {
+    if (toolId === "add-shape") { if (!historyViewActive) toggleShapesFromButton(); return; }
+    const tool = [...combineTools, ...modifyTools].find((candidate) => candidate.id === toolId);
+    if (tool && nativeToolState(tool).enabled) tool.action();
+  };
+  useEffect(() => onNativeRibbonInvoke((toolId) => nativeInvokeRef.current(toolId)), []);
   const renderToolButton = (tool: ToolbarTool) => toolButton(tool, false);
   /** One shape of the library: a click puts it in, a drag drops it where it is let go, a tap does on a touch screen. */
   function shapeTile(shape: ToolbarShapeAsset) {
