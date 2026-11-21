@@ -33,6 +33,9 @@ const STYLE = `
 @media (prefers-reduced-motion: reduce) { .native-loading-sweep { left: 33%; animation: none; opacity: .7; } }
 `;
 
+/** Once Levi has been fetched, a later copy of the screen (a new element at each stage) shows him at once. */
+let leviReady = false;
+
 export function NativeLoadingScreen() {
   const state = useLoadingState();
   const fraction = measuredFraction(state);
@@ -41,8 +44,13 @@ export function NativeLoadingScreen() {
   // The screen is replaced by itself as the shell moves from stage to stage (a new element each time): the fade-in belongs to the page's first moments only, measured
   // from the page's start, so a later arrival shows at once instead of fading in again.
   const [leviFailed, setLeviFailed] = useState(false);
+  const [leviLoaded, setLeviLoaded] = useState(leviReady);
   const elapsed = typeof performance === "undefined" ? 0 : performance.now();
-  const cardStyle = elapsed >= 700 ? { animation: "none", opacity: 1 } : { animationDelay: `${Math.max(0, Math.round(350 - elapsed))}ms` };
+  const cardStyle = {
+    ...(elapsed >= 700 ? { animation: "none", opacity: 1 } : { animationDelay: `${Math.max(0, Math.round(350 - elapsed))}ms` }),
+    // The card appears with Levi in it (a picture arriving after the text would pop in), or without him if he cannot be fetched.
+    visibility: leviLoaded || leviFailed ? ("visible" as const) : ("hidden" as const),
+  };
   return (
     <main className="native-loading" role="status" aria-live="polite" aria-label="Loading Project">
       <style>{STYLE}</style>
@@ -55,7 +63,7 @@ export function NativeLoadingScreen() {
           </svg>
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
-          <img className="native-loading-levi" src="/__host__/art/loading-levi.jpg" width={268} height={200} alt="" aria-hidden="true" draggable={false} onError={() => setLeviFailed(true)} />
+          <img className="native-loading-levi" src="/__host__/art/loading-levi.jpg" width={268} height={200} alt="" aria-hidden="true" draggable={false} onLoad={() => { leviReady = true; setLeviLoaded(true); }} onError={() => setLeviFailed(true)} />
         )}
         <h1>Loading Project...</h1>
         <div className="native-loading-name" title={state.name ?? undefined}>{state.name ?? ""}</div>
