@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseHostEvent, VISUAL_GROUPS_CAPABILITY, VISUAL_GROUPS_OPS } from "@/lib/host/hostProtocol";
 import { parseVisualGroupsInvoke } from "@/lib/host/nativeVisualGroups";
 import { EMPTY_VISUAL_GROUPS, createVisualGroup, moveObjectsToGroup, type VisualGroupsRegistry } from "@/lib/visualGroups";
-import { existingGroupId, visualGroupsOutline, visualGroupsPaletteState } from "@/lib/visualGroupsSnapshot";
+import { MENU_MAX_GROUP_DEPTH, existingGroupId, visualGroupsMenuFits, visualGroupsOutline, visualGroupsPaletteState, type ChooserGroup } from "@/lib/visualGroupsSnapshot";
 import type { WorkplaneShape } from "@/types/layerling";
 
 /*
@@ -109,5 +109,24 @@ describe("visualGroups.v1 messages", () => {
       { ...base, type: "visualGroups.watch", payload: { documentId: "d", watching: "yes" } },
       { ...base, type: "visualGroups.watch", payload: { watching: true } },
     ]) expect(parseHostEvent(event)).toHaveProperty("invalid");
+  });
+});
+
+describe("the cascading menu or the chooser", () => {
+  const chain = (depth: number): ChooserGroup[] => {
+    let node: ChooserGroup = { id: `g${depth}`, name: `g${depth}`, groups: [] };
+    for (let i = depth - 1; i >= 1; i--) node = { id: `g${i}`, name: `g${i}`, groups: [node] };
+    return [node];
+  };
+  it("a menu is used for nesting up to the host's depth and for a modest number of groups", () => {
+    expect(visualGroupsMenuFits([])).toBe(true);
+    expect(visualGroupsMenuFits(visualGroupsOutline(sample()))).toBe(true);
+    expect(visualGroupsMenuFits(chain(MENU_MAX_GROUP_DEPTH))).toBe(true);
+  });
+  it("a hierarchy too deep, or with too many groups, uses the chooser", () => {
+    expect(visualGroupsMenuFits(chain(MENU_MAX_GROUP_DEPTH + 1))).toBe(false);
+    const many = Array.from({ length: 121 }, (_, i): ChooserGroup => ({ id: `m${i}`, name: `m${i}`, groups: [] }));
+    expect(visualGroupsMenuFits(many.slice(0, 120))).toBe(true);
+    expect(visualGroupsMenuFits(many)).toBe(false);
   });
 });

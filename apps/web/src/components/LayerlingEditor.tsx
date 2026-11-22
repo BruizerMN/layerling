@@ -169,7 +169,7 @@ import { historyStepText } from "@/lib/historyStepText";
 import { historyViewMcpCommand } from "./workplane/historyViewMcp";
 import { attachmentsFingerprint } from "@/lib/projectAttachments";
 import { nativeVisualGroupsAvailable, nativeVisualGroupsWatching, onNativeVisualGroupsInvoke, onNativeVisualGroupsWatch, publishVisualGroupsState, requestVisualGroupChooser, type VisualGroupsInvoke } from "@/lib/host/nativeVisualGroups";
-import { existingGroupId, visualGroupsOutline, visualGroupsPaletteState } from "@/lib/visualGroupsSnapshot";
+import { existingGroupId, visualGroupsMenuFits, visualGroupsOutline, visualGroupsPaletteState, type ChooserGroup } from "@/lib/visualGroupsSnapshot";
 import { EMPTY_VISUAL_GROUPS, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, moveObjectsToGroup, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
 import { ATTACHMENT_MCP_READ_ACTIONS, attachmentMcpCommand, attachmentMcpList } from "@/lib/projectAttachmentsMcp";
 import { appendEditorHistorySnapshot, boundedEditorHistoryState, continuesKeyRun, type KeyRun, editorHistoryBranch, editorHistoryEntry, editorHistoryForExport, historyStateAt, hydrateEditorHistoryState, notesForHistoryIndex, projectSceneFingerprint, projectShapesFingerprint, workplaneForHistoryIndex, type EditorHistoryEntry, type EditorHistoryState } from "@/lib/editorHistory";
@@ -18908,7 +18908,10 @@ export function LayerlingEditor({
         // A group that was deleted while the chooser was open is not a place any more; a new name makes the group first.
         let groupId = existingGroupId(visualGroupsRef.current, command.groupId);
         if (!groupId && command.newName) groupId = ops.create({ name: command.newName, parentId: existingGroupId(visualGroupsRef.current, command.parentId) });
-        if (groupId) ops.moveObjects(ids, groupId);
+        // Objects already in that group stay where they are (moving them would put them last).
+        const owners = membershipMap(visualGroupsRef.current, live);
+        const movable = groupId ? ids.filter((id) => owners.get(id) !== groupId) : [];
+        if (groupId && movable.length > 0) ops.moveObjects(movable, groupId);
         break;
       }
     }
@@ -19711,6 +19714,44 @@ export function LayerlingEditor({
       { key: "selectMultiple", label: t("contextMenu.selectMultiple"), onSelect: startMultiSelect },
       ...selectOther,
     ];
+    // Visual Groups (native app only, English only in this version) lead the menu: where the selected objects are filed, as a cascading submenu that
+    // follows the groups' nesting (a hierarchy too deep or large for a menu opens the host's chooser instead). Organisation only; nothing here touches geometry.
+    if (nativeVisualGroupsAvailable()) {
+      const owners = membershipMap(visualGroups, liveObjectIds(shapes));
+      const objectIds = selectedShapes.map((shape) => shape.id);
+      const assignedIds = objectIds.filter((id) => owners.has(id));
+      const moving = assignedIds.length === objectIds.length;
+      const outline = visualGroupsOutline(visualGroups);
+      const clip = (text: string) => (text.length > 60 ? `${text.slice(0, 59)}\u2026` : text);
+      const assignTo = (groupId: string) => () => visualGroupsInvokeRef.current({ op: "assign", objectIds, groupId });
+      const entry = (group: ChooserGroup): ShapeContextMenuItem => group.groups.length === 0
+        ? { key: `vg/${group.id}`, label: clip(group.name), onSelect: assignTo(group.id) }
+        : {
+          key: `vg/${group.id}`,
+          label: clip(group.name),
+          onSelect: () => undefined,
+          submenu: [
+            { key: `vgHere/${group.id}`, label: `${moving ? "Move to" : "Add to"} \u201c${clip(group.name)}\u201d`, onSelect: assignTo(group.id) },
+            ...group.groups.map((child, index) => ({ ...entry(child), separated: index === 0 })),
+          ],
+        };
+      const mode = moving ? "move" : "add";
+      const visualGroupItems: ShapeContextMenuItem[] = visualGroupsMenuFits(outline)
+        ? [{
+          key: "visualGroupMove",
+          label: moving ? "Move to Visual Group" : "Add to Visual Group",
+          onSelect: () => undefined,
+          submenu: [
+            ...outline.map((group) => entry(group)),
+            { key: "visualGroupNew", label: "New Visual Group\u2026", separated: outline.length > 0, onSelect: () => requestVisualGroupChooser({ mode, objectIds, groups: [], newGroupOnly: true }) },
+          ],
+        }]
+        : [{ key: "visualGroupMove", label: moving ? "Move to Visual Group\u2026" : "Add to Visual Group\u2026", onSelect: () => requestVisualGroupChooser({ mode, objectIds, groups: outline }) }];
+      if (assignedIds.length > 0) visualGroupItems.push({ key: "visualGroupRemove", label: "Remove from Visual Group", onSelect: () => visualGroupOps.removeObjects(assignedIds) });
+      items.unshift(...visualGroupItems);
+      // a line below the Visual Groups commands
+      items[visualGroupItems.length] = { ...items[visualGroupItems.length], separated: true };
+    }
     if (!bodyHeld) {
       items.push(allHoles
         ? { key: "solid", label: t("contextMenu.toSolid"), shortcut: "S", separated: true, onSelect: () => setSelectionHoleMode(false) }
@@ -19764,19 +19805,6 @@ export function LayerlingEditor({
         ...(referencePoints(notes).length > 0 ? [{ key: "removePoints", label: t("contextMenu.removeAllPoints", { count: referencePoints(notes).length }), danger: true, onSelect: removeAllReferencePoints }] : []),
       );
     }
-    // Visual Groups (native app only, English only in this version): where the selected objects are filed. Organisation only; nothing here touches geometry.
-    if (nativeVisualGroupsAvailable()) {
-      const owners = membershipMap(visualGroups, liveObjectIds(shapes));
-      const assignedIds = selectedShapes.filter((shape) => owners.has(shape.id)).map((shape) => shape.id);
-      const allAssigned = assignedIds.length === selectedShapes.length;
-      items.push({
-        key: "visualGroupMove",
-        label: allAssigned ? "Move to Visual Group\u2026" : "Add to Visual Group\u2026",
-        separated: true,
-        onSelect: () => requestVisualGroupChooser({ mode: allAssigned ? "move" : "add", objectIds: selectedShapes.map((shape) => shape.id), groups: visualGroupsOutline(visualGroups) }),
-      });
-      if (assignedIds.length > 0) items.push({ key: "visualGroupRemove", label: "Remove from Visual Group", onSelect: () => visualGroupOps.removeObjects(assignedIds) });
-    }
     items.push(
       { key: "hide", label: t("contextMenu.hide"), shortcut: "Ctrl+H", separated: true, onSelect: toggleHidden },
       { key: "hideOthers", label: t("contextMenu.hideOthers"), onSelect: () => { hideOthers(); } },
@@ -19806,6 +19834,8 @@ export function LayerlingEditor({
               // A list with nothing in it is no submenu (the web menu would show an empty page).
               return sub.length === 0 ? [] : [{ key, title: item.label, separatorBefore: item.separated, items: convert(sub, `${key}/`) }];
             }
+            // Visual Groups: a cascading submenu (native menus only), built from the same items.
+            if (item.submenu) return item.submenu.length === 0 ? [] : [{ key, title: item.label, separatorBefore: item.separated, items: convert(item.submenu, `${key}/`) }];
             registry.set(key, item);
             return [{ key, title: item.label, shortcut: item.shortcut, danger: item.danger, separatorBefore: item.separated, color: item.color }];
           });

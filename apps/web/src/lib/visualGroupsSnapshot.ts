@@ -69,6 +69,25 @@ export function visualGroupsOutline(registry: VisualGroupsRegistry): ChooserGrou
   return registry.items.map(outline);
 }
 
+/** How deep a group tree may go to be shown as nested menus, and how many entries: past either the chooser is used (the host's menus nest 6 deep and hold 300 entries in all). */
+export const MENU_MAX_GROUP_DEPTH = 5;
+export const MENU_MAX_GROUP_ENTRIES = 120;
+
+/** Whether the groups can be a cascading menu (the menu's own other items also count against the host's limit). */
+export function visualGroupsMenuFits(groups: readonly ChooserGroup[]): boolean {
+  let entries = 0;
+  const fits = (list: readonly ChooserGroup[], depth: number): boolean => {
+    if (list.length === 0) return true;
+    if (depth > MENU_MAX_GROUP_DEPTH) return false;
+    for (const group of list) {
+      entries += group.groups.length > 0 ? 2 : 1; // a group that holds groups also has its own "Add to" line
+      if (entries > MENU_MAX_GROUP_ENTRIES || !fits(group.groups, depth + 1)) return false;
+    }
+    return true;
+  };
+  return fits(groups, 1);
+}
+
 /** The id of a group that exists, or null: a palette or chooser that answers late may name one that is gone. */
 export function existingGroupId(registry: VisualGroupsRegistry, id: unknown): string | null {
   return typeof id === "string" && findVisualGroup(registry, id) ? id : null;

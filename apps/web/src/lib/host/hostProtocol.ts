@@ -222,7 +222,7 @@ export interface VisualGroupsChooseRequest {
   session: string;
   type: "visualGroups.choose";
   protocol: number;
-  payload: { documentId: string; mode: "add" | "move"; objectIds: string[]; groups: unknown[] };
+  payload: { documentId: string; mode: "add" | "move"; objectIds: string[]; groups: unknown[]; newGroupOnly?: boolean };
 }
 /** Build 0007 (`ui.menu.v1`): show a native menu at a point of the page. Answered at once; the choice comes back as the event `menu.result`. */
 export interface MenuShowRequest {

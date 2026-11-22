@@ -105,8 +105,9 @@ export function publishVisualGroupsState(state: VisualGroupsPaletteState) {
 
 /**
  * Asks the host to show its chooser for where objects should go (Add to / Move to Visual Group). The answer arrives as an `assign` command; Cancel sends nothing.
+ * `newGroupOnly`: only ask for the name of a new group (the menu's "New Visual Group…").
  */
-export function requestVisualGroupChooser(request: { mode: "add" | "move"; objectIds: string[]; groups: ChooserGroup[] }) {
+export function requestVisualGroupChooser(request: { mode: "add" | "move"; objectIds: string[]; groups: ChooserGroup[]; newGroupOnly?: boolean }) {
   const bridge = getHostBridge();
   const documentId = nativeDocumentId();
   if (!documentId || !bridge?.supportsVisualGroups()) return;
