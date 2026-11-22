@@ -74,6 +74,8 @@ describe("commands from the palette", () => {
     expect(parseVisualGroupsInvoke("toggleObject", { id: "o" })).toEqual({ op: "toggleObject", id: "o" });
     expect(parseVisualGroupsInvoke("removeObject", { id: "o" })).toEqual({ op: "removeObject", id: "o" });
     expect(parseVisualGroupsInvoke("select", { ids: ["a", "b"], mode: "toggle" })).toEqual({ op: "select", ids: ["a", "b"], mode: "toggle" });
+    // A click on a Visual Group with no objects replaces the selection with its members: none.
+    expect(parseVisualGroupsInvoke("select", { ids: [], mode: "replace" })).toEqual({ op: "select", ids: [], mode: "replace" });
     expect(parseVisualGroupsInvoke("assign", { objectIds: ["a"], groupId: "g" })).toEqual({ op: "assign", objectIds: ["a"], groupId: "g" });
     expect(parseVisualGroupsInvoke("assign", { objectIds: ["a"], newName: "New", parentId: "p" })).toEqual({ op: "assign", objectIds: ["a"], newName: "New", parentId: "p" });
     expect(parseVisualGroupsInvoke("pickResult", { requestId: "pick1", cancelled: false, groupId: "g" })).toEqual({ op: "pickResult", requestId: "pick1", cancelled: false, groupId: "g" });
