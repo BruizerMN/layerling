@@ -539,3 +539,91 @@ html[data-native-chrome="on"] .toolbar-section .action-buttons { column-gap: 7px
    icon colours, opacity and the disabled/active states are untouched. */
 :root[data-native-chrome="on"] :is(.toolbar-icon, .action-icon-button) :is(svg.toolbar-vector-art-icon, .toolbar-sprite-icon) { zoom: 0.88; }
 :root[data-native-chrome="on"] :is(.toolbar-icon, .action-icon-button) svg.toolbar-vector-art-icon { stroke-width: 2.4; }
+
+/*
+ * Build 0027: Inspector tabs and section bars.
+ *
+ * The dock becomes a column: the tab bar (Project | Object, icons only) stays at the top and the selected tab's panel scrolls beneath it. The dock
+ * itself no longer scrolls; the panels element does, with the scrollbar gutter the dock had before.
+ */
+.native-inspector-dock {
+  --insp-bar-bg: #e4e4e8;
+  --insp-bar-line: #c4c4ca;
+  --insp-tab-hover: rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-right: 0;
+  scrollbar-gutter: auto;
+}
+html[data-theme="dark"] .native-inspector-dock {
+  --insp-bar-bg: #333336;
+  --insp-bar-line: #505055;
+  --insp-tab-hover: rgba(255, 255, 255, 0.08);
+}
+.native-inspector-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  height: 36px;
+  box-sizing: border-box;
+  background: var(--insp-bg);
+  border-bottom: 1px solid var(--insp-line);
+}
+.native-inspector-tab {
+  flex: 1 1 0;
+  max-width: 96px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  color: var(--insp-muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  cursor: default;
+}
+.native-inspector-tab:hover { color: var(--insp-fg); background: var(--insp-tab-hover); }
+.native-inspector-tab.active { color: var(--insp-fg); border-bottom-color: var(--accent-live, var(--insp-accent)); }
+.native-inspector-tab:focus-visible { outline: 2px solid var(--accent-live, var(--insp-accent)); outline-offset: -3px; }
+.native-inspector-panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 8px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+.native-inspector-panel[hidden] { display: none; }
+.native-inspector-panels .shape-inspector-header { top: 0; }
+
+/* Section bars (the FileMaker Inspector's way): a full-width band a shade away from the panel, hairlines above and below, a solid triangle at the left, then the name. */
+html[data-native-chrome="on"] .native-inspector-dock .property-card { margin-right: -8px; border-bottom: 0 !important; }
+html[data-native-chrome="on"] .native-inspector-dock .property-card > .property-list { margin-right: 8px; }
+html[data-native-chrome="on"] .native-inspector-dock .property-card-header {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: 28px;
+  margin-top: -1px;
+  padding: 0 18px 0 10px;
+  background: var(--insp-bar-bg) !important;
+  border-top: 1px solid var(--insp-bar-line);
+  border-bottom: 1px solid var(--insp-bar-line);
+  border-left: 0;
+  border-right: 0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: default;
+}
+html[data-native-chrome="on"] .native-inspector-dock .property-card-header:hover:not(:disabled) { background: color-mix(in srgb, var(--insp-fg) 6%, var(--insp-bar-bg)) !important; }
+html[data-native-chrome="on"] .native-inspector-dock .property-card-header .property-card-title { font-size: 12px; font-weight: 600; }
+html[data-native-chrome="on"] .native-inspector-dock .property-card-header:focus-visible { outline: 2px solid var(--accent-live, var(--insp-accent)); outline-offset: -2px; }
+/* The chevron becomes a solid triangle: pointing down when open, right when closed. */
+.native-inspector-dock .property-card-header > svg { width: 9px; height: 9px; fill: currentColor; stroke: currentColor; stroke-width: 1; stroke-linejoin: round; color: var(--insp-fg); }
+/* The hidden-objects row, now inside the Project tab's Visibility section. */
+.native-inspector-dock .property-list .inspector-hidden-banner { margin: 6px 0 2px; padding: 0; border: 0; background: transparent; }
+.native-inspector-dock .inspector-hidden-banner button:disabled { opacity: 0.45; }

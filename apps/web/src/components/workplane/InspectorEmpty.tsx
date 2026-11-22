@@ -3,7 +3,6 @@
 import { ChevronUp } from "lucide-react";
 import { t } from "@/lib/i18n";
 import { useLanguage } from "@/lib/useLanguage";
-import { HiddenObjectsBanner } from "@/components/workplane/HiddenObjectsBanner";
 
 /**
  * The Inspector with nothing to inspect (native app). The panel stays where it is; every object-specific control stays in its place, disabled, with no
@@ -50,7 +49,6 @@ export function InspectorEmpty({ toolActive = false }: { toolActive?: boolean })
           <strong>{toolActive ? "Tool Active" : "No Selection"}</strong>
         </div>
       </div>
-      <HiddenObjectsBanner />
       <div className="shape-state-card" role="group" aria-label={t("inspector.shapeMode")} aria-disabled="true">
         <button className="solid-choice" type="button" disabled>
           <span className="large-solid-swatch" />
