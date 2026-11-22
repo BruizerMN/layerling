@@ -349,6 +349,29 @@ export function placeDerivedObjects(registry: VisualGroupsRegistry, pairs: Reado
   return pairs.reduce((current, [source, ids]) => insertObjectsNear(current, source, ids), registry);
 }
 
+/**
+ * A tool replaced `sourceIds` by new objects (a lid and its body from a box, a pattern of holes merged into a body, a cut-out): the merge rules decide the
+ * group, without asking (nothing here combines what the person picked): the same group, the one group if only some sources are in a group, none otherwise;
+ * sources in different groups leave the new objects unassigned. The new objects go right after the first source of that group; ids that are sources
+ * themselves stay where they are.
+ */
+export function placeReplacementObjects(registry: VisualGroupsRegistry, sourceIds: readonly string[], newIds: readonly string[]): VisualGroupsRegistry {
+  const fresh = newIds.filter((id) => !sourceIds.includes(id));
+  if (fresh.length === 0) return registry;
+  const destination = mergeDestination(registry, sourceIds);
+  if (destination.kind !== "group") return registry;
+  const owners = membershipMap(registry, new Set(sourceIds));
+  const anchor = sourceIds.find((id) => owners.get(id) === destination.groupId);
+  return anchor ? insertObjectsNear(registry, anchor, fresh) : registry;
+}
+
+/** Copies of objects as (source, copy) pairs, in the order the copies were made, as (source, its copies) pairs for `placeDerivedObjects`: copies of one source stay together in order. */
+export function copyPairs(pairs: ReadonlyArray<readonly [string, string]>): Array<readonly [string, string[]]> {
+  const bySource = new Map<string, string[]>();
+  for (const [source, copy] of pairs) bySource.set(source, [...(bySource.get(source) ?? []), copy]);
+  return [...bySource.entries()];
+}
+
 // ---- geometric merge ------------------------------------------------------------------------------------------------
 
 export type MergeDestination =

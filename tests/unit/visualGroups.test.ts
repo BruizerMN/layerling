@@ -17,6 +17,8 @@ import {
   moveVisualGroup,
   mergePickCandidates,
   placeDerivedObjects,
+  placeReplacementObjects,
+  copyPairs,
   placementOf,
   revertMembership,
   normalizeVisualGroups,
@@ -480,5 +482,49 @@ describe("objects that replace a source (ungroup, split, separate, take out)", (
     const r = placeDerivedObjects(sample(), [["a", ["a1", "a2"]]]);
     expect(descendantObjectIds(resolveVisualGroups(r, new Set(["a", "b", "c", "d", "e", "f"])), "ped")).toEqual(["a", "b", "c", "d"]);
     expect(descendantObjectIds(resolveVisualGroups(r, new Set(["a1", "a2", "b", "c", "d", "e", "f"])), "ped")).toEqual(["a1", "a2", "b", "c", "d"]);
+  });
+});
+
+describe("objects a tool makes from other objects, and copies", () => {
+  const items = (r: VisualGroupsRegistry, id: string) => findVisualGroup(r, id)!.items.map((i) => ("object" in i ? i.object : i.id));
+
+  it("a tool's new objects take the merge rules' group, right after the first source in it", () => {
+    const r = placeReplacementObjects(sample(), ["f", "b"], ["lid", "body"]); // f unassigned, b in Pedestal
+    expect(items(r, "ped")).toEqual(["a", "b", "lid", "body", "cor"]);
+  });
+
+  it("sources in different groups, or none in a group, leave the new objects unassigned (nobody is asked here)", () => {
+    const r = sample();
+    expect(placeReplacementObjects(r, ["a", "e"], ["x"])).toBe(r);
+    expect(placeReplacementObjects(r, ["f", "g"], ["x"])).toBe(r);
+    expect(placeReplacementObjects(r, ["a"], [])).toBe(r);
+  });
+
+  it("an id that is also a source stays where it is", () => {
+    const r = placeReplacementObjects(sample(), ["a", "b"], ["a", "ab"]);
+    expect(items(r, "ped")).toEqual(["a", "ab", "b", "cor"]);
+  });
+
+  it("a cut-out: the new group takes the host's group and the part is untouched", () => {
+    const r = placeReplacementObjects(sample(), ["b"], ["cut"]); // host b in Pedestal; the part (e, in Lamp) is not a source
+    expect(items(r, "ped")).toEqual(["a", "b", "cut", "cor"]);
+    expect(items(r, "lamp")).toEqual(["e"]);
+  });
+
+  it("copies of one source stay together in order, each source's copies after it", () => {
+    expect(copyPairs([["a", "a1"], ["b", "b1"], ["a", "a2"], ["b", "b2"]])).toEqual([["a", ["a1", "a2"]], ["b", ["b1", "b2"]]]);
+    const r = placeDerivedObjects(sample(), copyPairs([["a", "a1"], ["b", "b1"], ["a", "a2"], ["e", "e1"]]));
+    expect(items(r, "ped")).toEqual(["a", "a1", "a2", "b", "b1", "cor"]);
+    expect(items(r, "lamp")).toEqual(["e", "e1"]);
+  });
+
+  it("copies of an unassigned object are unassigned", () => {
+    const r = sample();
+    expect(placeDerivedObjects(r, copyPairs([["f", "f1"]]))).toBe(r);
+  });
+
+  it("undo of Duplicate: the copies are stale, the original in place", () => {
+    const r = placeDerivedObjects(sample(), copyPairs([["a", "a1"]]));
+    expect(descendantObjectIds(resolveVisualGroups(r, new Set(["a", "b", "c", "d", "e", "f"])), "ped")).toEqual(["a", "b", "c", "d"]);
   });
 });

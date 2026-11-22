@@ -170,7 +170,7 @@ import { historyViewMcpCommand } from "./workplane/historyViewMcp";
 import { attachmentsFingerprint } from "@/lib/projectAttachments";
 import { nativeVisualGroupsAvailable, nativeVisualGroupsWatching, onNativeVisualGroupsInvoke, onNativeVisualGroupsWatch, publishVisualGroupsState, requestVisualGroupChooser, requestVisualGroupPick, type VisualGroupsInvoke } from "@/lib/host/nativeVisualGroups";
 import { existingGroupId, visualGroupsMenuFits, visualGroupsOutline, visualGroupsPaletteState, type ChooserGroup } from "@/lib/visualGroupsSnapshot";
-import { EMPTY_VISUAL_GROUPS, applyMerge, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, mergePickCandidates, moveObjectsToGroup, placeDerivedObjects, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
+import { EMPTY_VISUAL_GROUPS, applyMerge, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, copyPairs, mergePickCandidates, moveObjectsToGroup, placeDerivedObjects, placeReplacementObjects, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
 import { ATTACHMENT_MCP_READ_ACTIONS, attachmentMcpCommand, attachmentMcpList } from "@/lib/projectAttachmentsMcp";
 import { appendEditorHistorySnapshot, boundedEditorHistoryState, continuesKeyRun, type KeyRun, editorHistoryBranch, editorHistoryEntry, editorHistoryForExport, historyStateAt, hydrateEditorHistoryState, notesForHistoryIndex, projectSceneFingerprint, projectShapesFingerprint, workplaneForHistoryIndex, type EditorHistoryEntry, type EditorHistoryState } from "@/lib/editorHistory";
 import { deleteHistoryEntries, formatHistoryBytes, historyFreedBytes, historyIndexAfterDelete } from "@/lib/historyStepSizes";
@@ -5287,6 +5287,20 @@ export function LayerlingEditor({
   }, [updateVisualGroups]);
   const placeDerivedRef = useRef(placeDerived);
   placeDerivedRef.current = placeDerived;
+  /** A tool replaced these sources by new objects: the merge rules give them a Visual Group, without asking (see placeReplacementObjects). */
+  const placeReplacement = useCallback((sourceIds: readonly string[], newIds: readonly string[]) => {
+    if (visualGroupsRef.current.items.length === 0) return;
+    updateVisualGroups((current) => placeReplacementObjects(current, sourceIds, newIds));
+  }, [updateVisualGroups]);
+  const placeReplacementRef = useRef(placeReplacement);
+  placeReplacementRef.current = placeReplacement;
+  /** Copies (Duplicate, Array) take the place of the object they were made from. Pairs are (source id, copy id). */
+  const placeCopies = useCallback((pairs: ReadonlyArray<readonly [string, string]>) => {
+    if (visualGroupsRef.current.items.length === 0 || pairs.length === 0) return;
+    updateVisualGroups((current) => placeDerivedObjects(current, copyPairs(pairs)));
+  }, [updateVisualGroups]);
+  const placeCopiesRef = useRef(placeCopies);
+  placeCopiesRef.current = placeCopies;
   /** Undo/redo of a geometric step also takes back / brings again the membership change it made in place. */
   const restoreMembership = useCallback((entry: EditorHistoryEntry | undefined, direction: "undo" | "redo") => {
     const changes = entry ? membershipHistoryRef.current.get(entry) : undefined;
@@ -7339,6 +7353,8 @@ export function LayerlingEditor({
     const deltas = selectedShapes.map((shape, index) => (repeatLast ? links.get(shape.id)?.delta ?? ZERO_MOVE_DELTA : moved[index]));
     const duplicates = selectedShapes.map((shape, index) =>
       applyShapeMoveDelta(withCopyName(cloneWorkplaneShapeTreeWithFreshIds(shape, "copy"), takenNames, copyNamePatterns()), deltas[index]));
+    // Visual Groups: a duplicate is in the group of its original.
+    placeCopiesRef.current(duplicates.map((duplicate, index) => [selectedShapes[index].id, duplicate.id] as const));
     commitShapes(
       [...shapes, ...duplicates],
       duplicates.map((shape) => shape.id),
@@ -7415,6 +7431,8 @@ export function LayerlingEditor({
     setArrayTool(null);
     const keepLoose = (message: string) => {
       const ids = [...selectedIds, ...copies.map((shape) => shape.id)];
+      // Visual Groups: each copy is in the group of the object it was made from (copy i comes from original i mod n, as arrayCopies makes them).
+      if (copies.length % selectedShapes.length === 0) placeCopies(copies.map((copy, index) => [selectedShapes[index % selectedShapes.length].id, copy.id] as const));
       commitShapes([...shapes, ...copies], ids, message);
       if (circlePivot) setRotationPivot({ selectionKey: ids.join("|"), point: circlePivot });
     };
@@ -7454,7 +7472,7 @@ export function LayerlingEditor({
       result.openGapEdges ? t("status.cutLeftOpen", { count: result.openGapEdges }) : result.mergeWarning ?? t("status.groupedMany", { count: pieces.length }),
     );
     placeMergeResult(mergeSources, editableGroup.id, place.groupId);
-  }, [activeRotationPivot, arrayTool, commitShapes, selectedIds, selectedShapes, shapes, inSelectionOrder, chooseMergeGroup, placeMergeResult]);
+  }, [activeRotationPivot, arrayTool, commitShapes, selectedIds, selectedShapes, shapes, inSelectionOrder, chooseMergeGroup, placeMergeResult, placeCopies]);
 
   // A new gap moves the originals; a run of changes is one step of the history, like a run of arrow keys.
   const setArrayFitGap = useCallback((gap: number) => {
@@ -7470,6 +7488,7 @@ export function LayerlingEditor({
     const shape = shapesRef.current.find((entry) => entry.id === id);
     if (!shape) return;
     const duplicate = { ...withCopyName(cloneWorkplaneShapeTreeWithFreshIds(shape, "copy"), shapeNamesIn(shapesRef.current), copyNamePatterns()), x: position.x, z: position.z };
+    placeCopiesRef.current([[id, duplicate.id]]);
     commitShapes([...shapesRef.current, duplicate], [duplicate.id], t("status.duplicatedOne"));
   }, [commitShapes]);
 
@@ -7482,6 +7501,8 @@ export function LayerlingEditor({
     });
     if (duplicates.length === 0) return;
     smartDuplicateRef.current = null;
+    const copiedIds = ids.filter((id) => shapesRef.current.some((entry) => entry.id === id));
+    placeCopiesRef.current(duplicates.map((duplicate, index) => [copiedIds[index], duplicate.id] as const));
     commitShapes(
       [...shapesRef.current, ...duplicates],
       duplicates.map((shape) => shape.id),
@@ -9055,6 +9076,8 @@ export function LayerlingEditor({
         const remaining = shapesRef.current.filter((shape) => shape.id !== host.id);
         const size = Number(clearance.toFixed(2));
         const message = clearance > 0.0001 ? t("status.cutOutDoneClearance", { part: part.name, host: host.name, size }) : t("status.cutOutDone", { part: part.name, host: host.name });
+        // Visual Groups: the new group replaces the host body and takes its Visual Group (the part is untouched).
+        if (group) placeReplacementRef.current([host.id], [group.id]);
         commitShapes(group ? [...remaining, group] : remaining, group ? group.id : part.id, withClosedHolesNote(message, closedHoles));
         setCutOutTool(null);
       })
@@ -9137,6 +9160,7 @@ export function LayerlingEditor({
     void punchShape(punch, target, axis, clearance)
       .then(({ group, closedHoles }) => {
         const remaining = shapesRef.current.filter((shape) => shape.id !== target.id);
+        if (group) placeReplacementRef.current([target.id], [group.id]);
         commitShapes(group ? [...remaining, group] : remaining, group ? group.id : punch.id, withClosedHolesNote(t("status.punchDone", { punch: displayShapeName(punch), target: displayShapeName(target) }), closedHoles));
         setPunchTool(null);
       })
@@ -9176,6 +9200,7 @@ export function LayerlingEditor({
     if (!group) return fail(t("flexi.error.empty", { link: 1 }));
     const body = withSelectionPivot(canonicalizeShape({ ...group, name: t("flexi.name", { name: targets.find((shape) => !shape.hole)?.name ?? "" }), groupOperation: "bundle" }), activeRotationPivot);
     const consumed = new Set(targets.map((shape) => shape.id));
+    placeReplacementRef.current([...consumed], [body.id]);
     commitShapes([...shapesRef.current.filter((shape) => !consumed.has(shape.id)), body], body.id, t(result.bend === "fold" ? "status.flexiFolded" : "status.flexiMade", { joints: result.joints, links: result.links.length, swing: result.swing }));
     return { ok: true as const, id: body.id, joints: result.joints, links: result.links.length, swing: result.swing, axis: result.axis, bend: result.bend };
   }, [commitShapes, selectedShapes, activeRotationPivot]);
@@ -9402,6 +9427,8 @@ export function LayerlingEditor({
         ? t(posts.length ? "status.lidMadeMagnetsPosts" : "status.lidMadeMagnets", { type, count: magnetCount })
         : t("status.lidMade", { type });
     // A pin printed apart, end plugs and a tether are bodies of their own beside the lid.
+    // Visual Groups: the body, the lid and their extra parts are made from the targets: they take the targets' Visual Group.
+    placeReplacementRef.current([...consumed], [body.id, lid.id, ...(hinge?.pin ? [hinge.pin.id] : []), ...(hinge?.plugs ? [hinge.plugs.id] : []), ...(latch ? [latch.clips.id] : []), ...(tether ? [tether.part.id] : [])]);
     commitShapes([...remaining, body, lid, ...(hinge?.pin ? [hinge.pin] : []), ...(hinge?.plugs ? [hinge.plugs] : []), ...(latch ? [latch.clips] : []), ...(tether ? [tether.part] : [])], lid.id, withClosedHolesNote(withExtras(message), grouped.closedHoles));
     return {
       ok: true as const, id: lid.id, type: options.type, bodyId: body.id, magnets: magnetCount, posts: posts.length > 0, clickBumps: result.clickBumps?.count ?? slide?.bumps ?? 0, handle,
@@ -9499,6 +9526,7 @@ export function LayerlingEditor({
     if (!result.group) throw new Error(result.failureNotice || t("cable.error.kernel"));
     const group = canonicalizeShape({ ...result.group, groupOperation: "group" });
     const length = Math.round(path.length);
+    placeReplacementRef.current([target.id], [group.id]);
     commitShapes(
       [...shapesRef.current.filter((shape) => shape.id !== target.id), group],
       group.id,
@@ -10761,6 +10789,7 @@ export function LayerlingEditor({
       }
       const group = canonicalizeShape({ ...built.group, groupOperation: "group" });
       closeThreadInsert();
+      placeReplacementRef.current([live.id], [group.id]);
       commitShapes(
         [...shapesRef.current.filter((shape) => shape.id !== live.id), group],
         group.id,
@@ -10939,6 +10968,7 @@ export function LayerlingEditor({
     }
     const editableGroup = canonicalizeShape({ ...result.group, groupOperation: "group" });
     setHolePatternTool(null);
+    placeReplacementRef.current([source.id], [editableGroup.id]);
     commitShapes(
       [...shapesRef.current.filter((shape) => shape.id !== source.id), editableGroup],
       editableGroup.id,
@@ -11246,6 +11276,7 @@ export function LayerlingEditor({
     }
     const editableGroup = canonicalizeShape({ ...result.group, groupOperation: "group" });
     setFaceTool(null);
+    placeReplacementRef.current([source.id], [editableGroup.id]);
     commitShapes(
       [...shapesRef.current.filter((shape) => shape.id !== source.id), editableGroup],
       editableGroup.id,
@@ -11560,6 +11591,7 @@ export function LayerlingEditor({
     const message = built.plan.unheld > 0
       ? t("status.stencilBridgesCreatedUnheld", { count: built.bridges.length, parts: built.plan.parts, unheld: built.plan.unheld })
       : t("status.stencilBridgesCreated", { count: built.bridges.length, parts: built.plan.parts });
+    placeReplacementRef.current([...removed], [built.group.id]);
     commitShapes([...shapesRef.current.filter((shape) => !removed.has(shape.id)), built.group], built.group.id, message);
   }, [buildStencilBridgeGroup, commitShapes, stencilBridgeTool]);
 
@@ -12028,6 +12060,7 @@ export function LayerlingEditor({
     if (!port || bodyLocked(port) || !shapesRef.current.some((shape) => shape.id === port.id)) return;
     const group = portWithScrewHolesGroup(canonicalizeShape({ ...port, ...patch }));
     if (!group) return;
+    placeReplacementRef.current([port.id], [group.id]);
     commitShapes(shapesRef.current.map((shape) => (shape.id === port.id ? group : shape)), group.id, t("status.portScrewHolesAdded"));
   }, [commitShapes, selectedShape, selectedShapes.length]);
 
@@ -12548,6 +12581,7 @@ export function LayerlingEditor({
       if (!group) return fail(t("status.cookieCutterNoOutline"));
       const cutter = withSelectionPivot(canonicalizeShape({ ...group, name: t("cookieCutter.name"), groupOperation: "bundle" }), activeRotationPivot);
       const consumed = new Set(targets.map((shape) => shape.id));
+      placeReplacementRef.current([...consumed], [cutter.id]);
       commitShapes([...shapesRef.current.filter((shape) => !consumed.has(shape.id)), cutter], cutter.id, t(edgeLeftOut ? "status.cookieCutterMadeFlat" : "status.cookieCutterMade"));
       return { ok: true as const, id: cutter.id, ...(edgeLeftOut ? { edgeLeftOut } : {}) };
     } catch (error) {
@@ -13311,6 +13345,7 @@ export function LayerlingEditor({
       if (historyViewStateRef.current) return fail(t("status.historyViewBlocksEdits"));
       const pieces = gridfinityPlatePieces(plate, split, displayShapeName(plate), () => createLocalId("gridfinity"), (piece) => rebasePaintStrokes(plate.paint ?? [], plate, piece)).map(canonicalizeShape);
       const keys = gridfinityPlatePieceKeys(pieces, split, boundsForShapes([plate]), built, shapeDepth(built), t("gridfinity.swallowtailKey"), () => createLocalId("swallowtail-key")).map(canonicalizeShape);
+      placeDerivedRef.current([[plate.id, pieces.map((piece) => piece.id)]]);
       commitShapes(gridfinitySceneWithPieces(shapesRef.current, plate.id, pieces, keys), pieces.map((piece) => piece.id), t("status.gridfinitySplit", { count: pieces.length, printer: `${printer.vendor} ${printer.model}`, keys: keys.length }));
       return { ok: true as const, pieces, keys };
     } catch (error) {
@@ -15008,6 +15043,7 @@ export function LayerlingEditor({
         }
         if (!result.group) throw new Error(result.failureNotice);
         const editableGroup = canonicalizeShape({ ...result.group, groupOperation: "group" });
+        placeReplacementRef.current([target.id], [editableGroup.id]);
         commitShapes(
           [...currentShapes().filter((shape) => shape.id !== target.id), editableGroup],
           editableGroup.id,
@@ -15113,6 +15149,7 @@ export function LayerlingEditor({
         }
         if (!result.group) throw new Error(result.failureNotice);
         const editableGroup = canonicalizeShape({ ...result.group, groupOperation: "group" });
+        placeReplacementRef.current([target.id], [editableGroup.id]);
         commitShapes(
           [...currentShapes().filter((shape) => shape.id !== target.id), editableGroup],
           editableGroup.id,
@@ -15404,6 +15441,7 @@ export function LayerlingEditor({
         }
         if (!result.group) throw new Error(result.failureNotice);
         const editableGroup = canonicalizeShape({ ...result.group, groupOperation: "group" });
+        placeReplacementRef.current([target.id], [editableGroup.id]);
         commitShapes(
           [...currentShapes().filter((shape) => shape.id !== target.id), editableGroup],
           editableGroup.id,
@@ -16158,6 +16196,7 @@ export function LayerlingEditor({
           throw new Error(result.failureNotice);
         }
         const editableGroup = canonicalizeShape({ ...result.group, groupOperation: "group" });
+        placeReplacementRef.current([...operandIds], [editableGroup.id]);
         commitShapes([...remainingShapes, editableGroup], editableGroup.id, withClosedHolesNote(t("status.mcpBooleanCut"), result.closedHoles));
         return result.closedHoles ? { object: mcpShapeSummary(editableGroup), closedHoles: result.closedHoles } : { object: mcpShapeSummary(editableGroup) };
       }
@@ -16625,6 +16664,7 @@ export function LayerlingEditor({
         const clearance = Math.min(10, Math.max(0, mcpNumber(params.clearance, 0)));
         const { group, closedHoles } = await cutOutShape(part, host, clearance);
         const remaining = shapesRef.current.filter((shape) => shape.id !== host.id);
+        if (group) placeReplacementRef.current([host.id], [group.id]);
         commitShapes(group ? [...remaining, group] : remaining, group ? group.id : part.id, withClosedHolesNote(t("status.cutOutMcp", { part: part.name, host: host.name }), closedHoles));
         return group ? { object: mcpShapeSummary(group), part: mcpShapeSummary(part), clearance, ...(closedHoles ? { closedHoles } : {}) } : { consumed: true, part: mcpShapeSummary(part), clearance };
       }
@@ -16639,6 +16679,7 @@ export function LayerlingEditor({
         const clearance = Math.min(MAX_PUNCH_CLEARANCE, Math.max(0, mcpNumber(params.clearance, 0)));
         const { group, closedHoles } = await punchShape(punch, target, axis, clearance);
         const remaining = shapesRef.current.filter((shape) => shape.id !== target.id);
+        if (group) placeReplacementRef.current([target.id], [group.id]);
         commitShapes(group ? [...remaining, group] : remaining, group ? group.id : punch.id, withClosedHolesNote(t("status.punchMcp", { punch: displayShapeName(punch), target: displayShapeName(target) }), closedHoles));
         const direction = axis === "x" ? "x" : axis === "z" ? "y" : "z";
         return group ? { object: mcpShapeSummary(group), punch: mcpShapeSummary(punch), direction, clearance, ...(closedHoles ? { closedHoles } : {}) } : { consumed: true, punch: mcpShapeSummary(punch), direction, clearance };
@@ -16708,6 +16749,7 @@ export function LayerlingEditor({
           : gridSize ? { grid: { columns: gridSize.columns, rows: gridSize.rows, ...(gridSize.capped ? { capped: true } : {}) } } : {};
         const looseResult = (message: string, warning?: string) => {
           const ids = [...sources.map((shape) => shape.id), ...copies.map((shape) => shape.id)];
+          if (copies.length % sources.length === 0) placeCopiesRef.current(copies.map((copy, index) => [sources[index % sources.length].id, copy.id] as const));
           commitShapes([...withMovedSources(shapesRef.current), ...copies], ids, message);
           if (circlePivot) setRotationPivot({ selectionKey: ids.join("|"), point: circlePivot });
           return { settings, originals: sources.map((shape) => shape.id), copies: copies.map(mcpShapeSummary), ...pivotAnswer, ...(warning ? { warning } : {}) };
@@ -16732,6 +16774,7 @@ export function LayerlingEditor({
         }
         const sourceIds = new Set(sources.map((shape) => shape.id));
         const editableGroup = withSelectionPivot(canonicalizeShape({ ...result.group, groupOperation: "group" }), circlePivot);
+        placeReplacementRef.current([...sourceIds], [editableGroup.id]);
         commitShapes([...currentShapes().filter((shape) => !sourceIds.has(shape.id)), editableGroup], editableGroup.id, result.mergeWarning ?? t("status.groupedMany", { count: pieces.length }));
         return { settings, group: mcpShapeSummary(editableGroup), pieces: pieces.length, ...pivotAnswer, ...(result.mergeWarning ? { warning: result.mergeWarning } : {}) };
       }
