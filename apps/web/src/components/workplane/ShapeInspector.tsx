@@ -8681,6 +8681,8 @@ function SwatchColorPicker({ color, disabled, title, ariaLabel, onCommit, onInte
     input.style.top = `${window.innerHeight - box.bottom}px`;
     input.style.width = `${box.width}px`;
     input.style.height = `${box.height}px`;
+    // Lay the moved input out NOW: WebKit reads its rect at the click, and without this it still sees the parked position (Build 0034: no popover in view).
+    input.getBoundingClientRect();
     input.focus({ preventScroll: true });
     input.click();
   };
