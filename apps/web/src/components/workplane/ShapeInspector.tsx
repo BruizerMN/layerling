@@ -5050,6 +5050,7 @@ export function ShapeInspector({
   const cancelNameRef = useRef(false);
   const dockedNameControl = (
     <div className="inspector-name">
+      <span className="inspector-name-label">Name</span>
       <input
         type="text"
         className="inspector-name-input inspector-name-field"
@@ -9664,6 +9665,11 @@ export function SelectionInspector({
           <InspectorDockSection name="object.group" title="Group">
             <GroupEditPlaceholder />
             <GroupResizePlaceholder />
+            {/* Separate Parts works on one object, so with several selected it is only greyed out, keeping the section the same height (Build 0032). */}
+            <button className="inspector-action-button" type="button" disabled data-separate-parts-placeholder>
+              <Split size={17} strokeWidth={2.5} />
+              <span>{t("inspector.separateParts")}</span>
+            </button>
           </InspectorDockSection>
         </>
       ) : (

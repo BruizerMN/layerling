@@ -753,7 +753,11 @@ html[data-native-chrome="on"] .native-inspector-dock :is(
   text-align: center;
 }
 .native-inspector-dock .shape-state-card.solid-hole-card .large-solid-swatch,
-.native-inspector-dock .shape-state-card.solid-hole-card .large-hole-swatch { flex: 0 0 auto; width: 36px; height: 36px; border-radius: 7px; }
+.native-inspector-dock .shape-state-card.solid-hole-card .large-hole-swatch { flex: 0 0 auto; width: 44px; height: 44px; border-radius: 8px; }
 .native-inspector-dock .shape-state-card.solid-hole-card .selection-mixed-note { grid-column: 1 / -1; }
 /* Disabled tiles: the swatch is dimmed with the tile (the colour is still readable), the selected one turns neutral through the shared disabled rules. */
 .native-inspector-dock .shape-state-card.solid-hole-card button:disabled { opacity: 0.55; cursor: default; }
+
+/* Build 0032: a Name label to the left of the name field, on the same 78 px label column as the property rows; the field takes the width of a slider and its value box. */
+.native-inspector-dock .inspector-name-row .inspector-name { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 0 6px; align-items: center; }
+.native-inspector-dock .inspector-name-label { min-width: 0; overflow: hidden; color: var(--insp-muted); font-size: 11px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
