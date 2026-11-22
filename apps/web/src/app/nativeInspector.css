@@ -614,7 +614,7 @@ html[data-native-chrome="on"] .native-inspector-dock .property-card-header {
   box-sizing: border-box;
   width: 100%;
   height: 28px;
-  margin-top: -1px;
+  margin: -1px 0 0;   /* the base style gives the button side margins of -14px */
   padding: 0 10px;
   background: var(--insp-bar-bg) !important;
   border-top: 1px solid var(--insp-bar-line);
