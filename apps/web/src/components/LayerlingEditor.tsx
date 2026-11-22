@@ -170,7 +170,7 @@ import { historyViewMcpCommand } from "./workplane/historyViewMcp";
 import { attachmentsFingerprint } from "@/lib/projectAttachments";
 import { nativeVisualGroupsAvailable, nativeVisualGroupsWatching, onNativeVisualGroupsInvoke, onNativeVisualGroupsWatch, publishVisualGroupsState, requestVisualGroupChooser, requestVisualGroupPick, type VisualGroupsInvoke } from "@/lib/host/nativeVisualGroups";
 import { existingGroupId, visualGroupsMenuFits, visualGroupsOutline, visualGroupsPaletteState, type ChooserGroup } from "@/lib/visualGroupsSnapshot";
-import { EMPTY_VISUAL_GROUPS, applyMerge, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, copyPairs, mergePickCandidates, moveObjectsToGroup, placeDerivedObjects, placeReplacementObjects, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
+import { EMPTY_VISUAL_GROUPS, applyMerge, moveItemsToGroup, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, copyPairs, mergePickCandidates, moveObjectsToGroup, placeDerivedObjects, placeReplacementObjects, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
 import { ATTACHMENT_MCP_READ_ACTIONS, attachmentMcpCommand, attachmentMcpList } from "@/lib/projectAttachmentsMcp";
 import { appendEditorHistorySnapshot, boundedEditorHistoryState, continuesKeyRun, type KeyRun, editorHistoryBranch, editorHistoryEntry, editorHistoryForExport, historyStateAt, hydrateEditorHistoryState, notesForHistoryIndex, projectSceneFingerprint, projectShapesFingerprint, workplaneForHistoryIndex, type EditorHistoryEntry, type EditorHistoryState } from "@/lib/editorHistory";
 import { deleteHistoryEntries, formatHistoryBytes, historyFreedBytes, historyIndexAfterDelete } from "@/lib/historyStepSizes";
@@ -10271,6 +10271,9 @@ export function LayerlingEditor({
     moveGroup: (groupId: string, parentId: string | null, index?: number) => updateVisualGroups((current) => moveVisualGroup(current, groupId, parentId, index)),
     moveObjects: (objectIds: readonly string[], groupId: string, index?: number) => updateVisualGroups((current) => moveObjectsToGroup(current, objectIds, groupId, index)),
     removeObjects: (objectIds: readonly string[]) => updateVisualGroups((current) => removeObjectsFromGroups(current, objectIds)),
+    /** The palette's drop: re-order, nest or move rows (groups with their contents, objects) in one operation. */
+    moveItems: (items: ReadonlyArray<{ kind: "group" | "object"; id: string }>, parentId: string | null, index: number) =>
+      updateVisualGroups((current) => moveItemsToGroup(current, items, parentId, index, liveObjectIds(shapesRef.current))),
     toggleVisibility: toggleVisualGroupVisibility,
   }), [toggleVisualGroupVisibility, updateVisualGroups]);
   const visualGroupOpsRef = useRef(visualGroupOps);
@@ -19078,6 +19081,7 @@ export function LayerlingEditor({
       case "toggleGroup": ops.toggleVisibility(command.groupId); break;
       case "toggleObject": if (live.has(command.id)) toggleShapeHiddenById(command.id, true); break;
       case "removeObject": ops.removeObjects([command.id]); break;
+      case "move": ops.moveItems(command.items, command.parentId, command.index); break;
       case "select": selectShape(command.ids.filter((id) => live.has(id)), command.mode); break;
       case "assign": {
         const ids = command.objectIds.filter((id) => live.has(id));

@@ -36,7 +36,7 @@ export const RIBBON_CAPABILITY = "ribbon.v1";
  * out what the palette asks for (`visualGroups.invoke`). The editor stays the only source of truth.
  */
 export const VISUAL_GROUPS_CAPABILITY = "visualGroups.v1";
-export const VISUAL_GROUPS_OPS = ["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign", "pickResult"] as const;
+export const VISUAL_GROUPS_OPS = ["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign", "pickResult", "move"] as const;
 /** One entry of a native menu. `items` makes it a submenu. */
 export interface NativeMenuItem {
   key: string;

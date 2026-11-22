@@ -304,6 +304,61 @@ export function moveVisualGroup(registry: VisualGroupsRegistry, groupId: string,
   return withRoot(registry, moved);
 }
 
+// ---- drag and drop ---------------------------------------------------------------------------------------------------------
+
+/** One row dragged in the palette: a group (with everything in it) or an object. */
+export interface MoveItem {
+  kind: "group" | "object";
+  id: string;
+}
+
+/**
+ * The palette's drop: the dragged rows go into `parentId` (null: the top level, where only groups may go) at `index` among that group's
+ * remaining rows (the rows it shows, without the dragged ones; negative or too large: the end). One operation for re-ordering among siblings,
+ * for nesting (re-parenting) and for moving objects between groups: the rows keep the order they were given in.
+ *
+ * `index` counts what the palette shows. A group's item list also holds stale entries (objects that are gone but may come back with Undo), so
+ * the place is looked up among the rows that exist (`live`), not by raw position. A group cannot go into itself or into a group inside it; a group
+ * dragged together with one of its own groups carries it along. Changes nothing (the same registry) when the result would be the same.
+ */
+export function moveItemsToGroup(registry: VisualGroupsRegistry, items: readonly MoveItem[], parentId: string | null, index: number, live: ReadonlySet<string>): VisualGroupsRegistry {
+  if (parentId !== null && !findVisualGroup(registry, parentId)) return registry;
+  const seen = new Set<string>();
+  const wanted = items.filter((item) => {
+    const key = `${item.kind}:${item.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return item.kind === "group" ? Boolean(findVisualGroup(registry, item.id)) : live.has(item.id);
+  });
+  if (wanted.length === 0) return registry;
+  if (parentId === null && wanted.some((item) => item.kind === "object")) return registry;
+  // A group dragged together with one of its own groups carries it along.
+  const draggedGroups = wanted.filter((item) => item.kind === "group");
+  const effective = wanted.filter((item) => item.kind === "object" || !draggedGroups.some((other) => other.id !== item.id && findVisualGroup({ items: [findVisualGroup(registry, other.id)!] }, item.id)));
+  const movingGroups = effective.filter((item) => item.kind === "group");
+  // Not into itself or into a group inside it.
+  if (parentId !== null && movingGroups.some((item) => item.id === parentId || findVisualGroup({ items: [findVisualGroup(registry, item.id)!] }, parentId))) return registry;
+  const nodes = new Map(movingGroups.map((item) => [item.id, findVisualGroup(registry, item.id)!]));
+  const objectIds = new Set(effective.filter((item) => item.kind === "object").map((item) => item.id));
+  let rest: VisualGroupItem[] = stripObjects(registry.items, objectIds) ?? registry.items;
+  for (const item of movingGroups) rest = stripGroup(rest, item.id) ?? rest;
+  const next = editChildren(rest, parentId, (list) => {
+    let shown = 0;
+    let at = list.length;
+    if (index >= 0) {
+      for (let position = 0; position < list.length; position += 1) {
+        const entry = list[position];
+        if (!isVisualGroup(entry) && !live.has(entry.object)) continue;
+        if (shown === index) { at = position; break; }
+        shown += 1;
+      }
+    }
+    return insertAt(list, at, effective.map((item): VisualGroupItem => (item.kind === "group" ? nodes.get(item.id)! : { object: item.id })));
+  });
+  const result = withRoot(registry, next);
+  return visualGroupsFingerprint(result) === visualGroupsFingerprint(registry) ? registry : result;
+}
+
 // ---- membership operations ------------------------------------------------------------------------------------------
 
 /**

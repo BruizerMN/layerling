@@ -17,7 +17,8 @@ export type VisualGroupsInvoke =
   | { op: "removeObject"; id: string }
   | { op: "select"; ids: string[]; mode: "replace" | "toggle" }
   | { op: "assign"; objectIds: string[]; groupId?: string | null; newName?: string; parentId?: string | null }
-  | { op: "pickResult"; requestId: string; cancelled: boolean; groupId?: string };
+  | { op: "pickResult"; requestId: string; cancelled: boolean; groupId?: string }
+  | { op: "move"; items: Array<{ kind: "group" | "object"; id: string }>; parentId: string | null; index: number };
 
 let watching = false;
 let lastState = "";
@@ -44,6 +45,19 @@ export function parseVisualGroupsInvoke(op: string, args: Record<string, unknown
       return { op, objectIds: args.objectIds as string[], ...(isText(args.groupId) ? { groupId: args.groupId } : {}), ...(isText(args.newName) ? { newName: args.newName } : {}), ...(typeof args.parentId === "string" ? { parentId: args.parentId } : {}) };
     }
     case "pickResult": return isText(args.requestId) && typeof args.cancelled === "boolean" ? { op, requestId: args.requestId, cancelled: args.cancelled, ...(isText(args.groupId) ? { groupId: args.groupId } : {}) } : null;
+    case "move": {
+      if (!Array.isArray(args.items) || args.items.length === 0 || args.items.length > 1000) return null;
+      const items: Array<{ kind: "group" | "object"; id: string }> = [];
+      for (const entry of args.items) {
+        if (typeof entry !== "object" || entry === null) return null;
+        const { kind, id } = entry as Record<string, unknown>;
+        if ((kind !== "group" && kind !== "object") || !isText(id)) return null;
+        items.push({ kind, id });
+      }
+      if (args.parentId !== undefined && args.parentId !== null && !isText(args.parentId)) return null;
+      if (typeof args.index !== "number" || !Number.isFinite(args.index)) return null;
+      return { op, items, parentId: typeof args.parentId === "string" ? args.parentId : null, index: Math.trunc(args.index) };
+    }
     default: return null;
   }
 }

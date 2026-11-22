@@ -16,6 +16,7 @@ import {
   moveObjectsToGroup,
   moveVisualGroup,
   mergePickCandidates,
+  moveItemsToGroup,
   placeDerivedObjects,
   placeReplacementObjects,
   copyPairs,
@@ -526,5 +527,97 @@ describe("objects a tool makes from other objects, and copies", () => {
   it("undo of Duplicate: the copies are stale, the original in place", () => {
     const r = placeDerivedObjects(sample(), copyPairs([["a", "a1"]]));
     expect(descendantObjectIds(resolveVisualGroups(r, new Set(["a", "b", "c", "d", "e", "f"])), "ped")).toEqual(["a", "b", "c", "d"]);
+  });
+});
+
+describe("the palette's drop (reorder, nest, move between groups)", () => {
+  const live = new Set(["a", "b", "c", "d", "e", "f"]);
+  const rowIds = (r: VisualGroupsRegistry, id: string) => findVisualGroup(r, id)!.items.map((i) => ("object" in i ? i.object : i.id));
+  const g = (id: string) => ({ kind: "group" as const, id });
+  const o = (id: string) => ({ kind: "object" as const, id });
+
+  it("reorders objects among their siblings (index counts the rows left after the dragged ones are taken out)", () => {
+    // Pedestal shows: a, b, Cornice. Drag a to after Cornice: remaining rows are b, Cornice: index 2.
+    const r = moveItemsToGroup(sample(), [o("a")], "ped", 2, live);
+    expect(rowIds(r, "ped")).toEqual(["b", "cor", "a"]);
+    const back = moveItemsToGroup(r, [o("a")], "ped", 0, live);
+    expect(rowIds(back, "ped")).toEqual(["a", "b", "cor"]);
+  });
+
+  it("reorders top-level groups", () => {
+    const r = moveItemsToGroup(sample(), [g("lamp")], null, 0, live);
+    expect(names(r)).toEqual(["Lamp", "Pedestal"]);
+    expect(names(moveItemsToGroup(r, [g("lamp")], null, 99, live))).toEqual(["Pedestal", "Lamp"]);
+  });
+
+  it("nests a group, with everything in it, into another", () => {
+    const r = moveItemsToGroup(sample(), [g("lamp")], "cor", -1, live);
+    expect(names(r)).toEqual(["Pedestal"]);
+    expect(descendantObjectIds(r, "ped")).toEqual(["a", "b", "c", "d", "e"]);
+    expect(membershipMap(r).get("e")).toBe("lamp");
+    expect(findVisualGroup(r, "cor")!.items.some((i) => "id" in i && i.id === "lamp")).toBe(true);
+  });
+
+  it("takes a nested group to the top level", () => {
+    const r = moveItemsToGroup(sample(), [g("cor")], null, 1, live);
+    expect(names(r)).toEqual(["Pedestal", "Cornice", "Lamp"]);
+    expect(descendantObjectIds(r, "ped")).toEqual(["a", "b"]);
+  });
+
+  it("moves objects between groups at a place, in the order given, and an object stays in one group", () => {
+    const r = moveItemsToGroup(sample(), [o("a"), o("c")], "lamp", 0, live);
+    expect(rowIds(r, "lamp")).toEqual(["a", "c", "e"]);
+    expect(membershipMap(r).get("a")).toBe("lamp");
+    expect(rowIds(r, "ped")).toEqual(["b", "cor"]);
+    expect(rowIds(r, "cor")).toEqual(["d"]);
+  });
+
+  it("moves groups and objects together", () => {
+    const r = moveItemsToGroup(sample(), [g("cor"), o("e")], "lamp", -1, live);
+    expect(rowIds(r, "lamp")).toEqual(["cor", "e"]);
+    expect(descendantObjectIds(r, "lamp")).toEqual(["c", "d", "e"]);
+  });
+
+  it("places by the rows that exist, not by raw position: stale entries do not shift the drop", () => {
+    // Pedestal holds a, GONE, b, Cornice; the palette shows a, b, Cornice. Dropping f at index 2 means between b and Cornice.
+    const withStale = moveObjectsToGroup(sample(), ["gone"], "ped", 1);
+    expect(rowIds(withStale, "ped")).toEqual(["a", "gone", "b", "cor"]);
+    const r = moveItemsToGroup(withStale, [o("f")], "ped", 2, live);
+    expect(rowIds(r, "ped")).toEqual(["a", "gone", "b", "f", "cor"]);
+    expect(descendantObjectIds(resolveVisualGroups(r, live), "ped")).toEqual(["a", "b", "f", "c", "d"]);
+  });
+
+  it("a group cannot go into itself or into a group inside it", () => {
+    const r = sample();
+    expect(moveItemsToGroup(r, [g("ped")], "ped", -1, live)).toBe(r);
+    expect(moveItemsToGroup(r, [g("ped")], "cor", -1, live)).toBe(r);
+  });
+
+  it("a group dragged together with one of its own groups carries it along", () => {
+    const r = moveItemsToGroup(sample(), [g("ped"), g("cor")], "lamp", -1, live);
+    expect(names(r)).toEqual(["Lamp"]);
+    expect(findVisualGroup(r, "cor")).not.toBeNull();
+    expect(membershipMap(r).get("c")).toBe("cor");
+  });
+
+  it("only groups go to the top level, and unknown parents or rows change nothing", () => {
+    const r = sample();
+    expect(moveItemsToGroup(r, [o("a")], null, 0, live)).toBe(r);
+    expect(moveItemsToGroup(r, [g("lamp"), o("a")], null, 0, live)).toBe(r);
+    expect(moveItemsToGroup(r, [o("a")], "nope", 0, live)).toBe(r);
+    expect(moveItemsToGroup(r, [g("nope")], null, 0, live)).toBe(r);
+    expect(moveItemsToGroup(r, [o("not-live")], "ped", 0, live)).toBe(r);
+    expect(moveItemsToGroup(r, [], "ped", 0, live)).toBe(r);
+  });
+
+  it("dropping where things already are changes nothing", () => {
+    const r = sample();
+    expect(moveItemsToGroup(r, [o("a")], "ped", 0, live)).toBe(r);
+    expect(moveItemsToGroup(r, [g("lamp")], null, 1, live)).toBe(r);
+  });
+
+  it("never touches visibility (no shapes are involved) and keeps the objects' own order inside a moved group", () => {
+    const r = moveItemsToGroup(sample(), [g("cor")], "lamp", -1, live);
+    expect(descendantObjectIds(r, "cor")).toEqual(["c", "d"]);
   });
 });
