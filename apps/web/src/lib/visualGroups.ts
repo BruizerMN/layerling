@@ -341,6 +341,14 @@ export function insertObjectsNear(registry: VisualGroupsRegistry, anchorId: stri
   return withRoot(registry, next);
 }
 
+/**
+ * New objects that replace a source (Ungroup, Separate Parts, Split, Take out of group, ...): they take the source's place in its group, each pair
+ * (source, new ids) on its own. A source that is in no group gives nothing. The sources stay as stale entries (Undo finds them in place).
+ */
+export function placeDerivedObjects(registry: VisualGroupsRegistry, pairs: ReadonlyArray<readonly [string, readonly string[]]>): VisualGroupsRegistry {
+  return pairs.reduce((current, [source, ids]) => insertObjectsNear(current, source, ids), registry);
+}
+
 // ---- geometric merge ------------------------------------------------------------------------------------------------
 
 export type MergeDestination =

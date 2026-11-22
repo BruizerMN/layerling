@@ -170,7 +170,7 @@ import { historyViewMcpCommand } from "./workplane/historyViewMcp";
 import { attachmentsFingerprint } from "@/lib/projectAttachments";
 import { nativeVisualGroupsAvailable, nativeVisualGroupsWatching, onNativeVisualGroupsInvoke, onNativeVisualGroupsWatch, publishVisualGroupsState, requestVisualGroupChooser, requestVisualGroupPick, type VisualGroupsInvoke } from "@/lib/host/nativeVisualGroups";
 import { existingGroupId, visualGroupsMenuFits, visualGroupsOutline, visualGroupsPaletteState, type ChooserGroup } from "@/lib/visualGroupsSnapshot";
-import { EMPTY_VISUAL_GROUPS, applyMerge, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, mergePickCandidates, moveObjectsToGroup, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
+import { EMPTY_VISUAL_GROUPS, applyMerge, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, mergePickCandidates, moveObjectsToGroup, placeDerivedObjects, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
 import { ATTACHMENT_MCP_READ_ACTIONS, attachmentMcpCommand, attachmentMcpList } from "@/lib/projectAttachmentsMcp";
 import { appendEditorHistorySnapshot, boundedEditorHistoryState, continuesKeyRun, type KeyRun, editorHistoryBranch, editorHistoryEntry, editorHistoryForExport, historyStateAt, hydrateEditorHistoryState, notesForHistoryIndex, projectSceneFingerprint, projectShapesFingerprint, workplaneForHistoryIndex, type EditorHistoryEntry, type EditorHistoryState } from "@/lib/editorHistory";
 import { deleteHistoryEntries, formatHistoryBytes, historyFreedBytes, historyIndexAfterDelete } from "@/lib/historyStepSizes";
@@ -5280,6 +5280,13 @@ export function LayerlingEditor({
   }, [updateVisualGroups]);
   const placeMergeResultRef = useRef(placeMergeResult);
   placeMergeResultRef.current = placeMergeResult;
+  /** New objects that replace a source (ungroup, separate, split, take out, ...) take the source's place in its Visual Group; each pair is (source id, new ids). */
+  const placeDerived = useCallback((pairs: ReadonlyArray<readonly [string, readonly string[]]>) => {
+    if (visualGroupsRef.current.items.length === 0 || pairs.length === 0) return;
+    updateVisualGroups((current) => placeDerivedObjects(current, pairs));
+  }, [updateVisualGroups]);
+  const placeDerivedRef = useRef(placeDerived);
+  placeDerivedRef.current = placeDerived;
   /** Undo/redo of a geometric step also takes back / brings again the membership change it made in place. */
   const restoreMembership = useCallback((entry: EditorHistoryEntry | undefined, direction: "undo" | "redo") => {
     const changes = entry ? membershipHistoryRef.current.get(entry) : undefined;
@@ -8132,6 +8139,8 @@ export function LayerlingEditor({
 
     const nextShapes = shapesRef.current.flatMap((shape) => replacements.get(shape.id) ?? [shape]);
     const nextSelection = [...replacements.values()].flat().map((shape) => shape.id);
+    // Visual Groups: the parts of each split (or stretched) body take its place in its Visual Group.
+    placeDerived([...replacements.entries()].map(([sourceId, parts]) => [sourceId, parts.map((part) => part.id)] as const));
     setSplitSession(null);
     if (stretch !== undefined) {
       commitShapes(nextShapes, nextSelection, withClosedHolesNote(stretchNotice(stretch, splitCount, stretchLengthLabel(stretch)), closedHoles));
@@ -8144,7 +8153,7 @@ export function LayerlingEditor({
         ? t("status.splitOne", { count: nextSelection.length })
         : t("status.splitMany", { count: splitCount, bodies: nextSelection.length }), closedHoles), session.connectors.kind, outcome.connectors),
     );
-  }, [commitShapes, splitPlane, splitSession, splitTargetShapes]);
+  }, [commitShapes, splitPlane, splitSession, splitTargetShapes, placeDerived]);
 
   useEffect(() => {
     if (!splitSession) return;
@@ -10195,7 +10204,7 @@ export function LayerlingEditor({
     );
   }, [commitShapes, selectedIds, setNotice, shapes]);
 
-  const toggleShapeHiddenById = useCallback((id: string) => {
+  const toggleShapeHiddenById = useCallback((id: string, quiet = false) => {
     const target = shapes.find((s) => s.id === id);
     if (!target) return;
     const nextHidden = !target.hidden;
@@ -10203,7 +10212,8 @@ export function LayerlingEditor({
     commitShapes(
       shapes.map((s) => (s.id === id ? { ...s, hidden: nextHidden } : s)),
       nextHidden ? selectedIds.filter((selId) => selId !== id) : selectedIds,
-      nextHidden ? t("status.shapeHidden", { name: shapeLabel }) : t("status.shapeShown", { name: shapeLabel }),
+      // The Visual Groups palette's eye changes visibility silently (the native app raises errors only, and an unclassified message counts as one).
+      quiet ? undefined : nextHidden ? t("status.shapeHidden", { name: shapeLabel }) : t("status.shapeShown", { name: shapeLabel }),
     );
   }, [commitShapes, selectedIds, shapes]);
 
@@ -12741,6 +12751,8 @@ export function LayerlingEditor({
         outer[outer.length - 1] = { ...parent, childIds: [...parent.childIds.slice(0, at), parts[0].id, ...parent.childIds.slice(at)] };
       }
       endOpenGroupLevelsWithoutStep(outer);
+      // Visual Groups: the part that is left takes the place of the group that is not coming back.
+      if (parts[0]) placeDerivedRef.current([[original.id, [parts[0].id]]]);
       // The group is not coming back: its notes go to the part left, or stay where they stand.
       const notesLeft = notesAfterShapeChange(notesRef.current, shapesRef.current.filter((shape) => shape.id !== parts[0]?.id), shapesRef.current, new Set(outer.map((level) => level.original.id)));
       if (notesLeft !== notesRef.current) commitNotes(notesLeft);
@@ -12801,7 +12813,7 @@ export function LayerlingEditor({
    * Loose shapes dragged onto an expanded group in the object list go into it (Discussion #1338): the group is built
    * again with them, as Done builds an opened one, so it keeps its id, name and pivot, and the parts keep theirs.
    */
-  const addShapesToGroup = useCallback(async (shapeIds: string[], groupId: string, amendNewest = false): Promise<OpenGroupOutcome> => {
+  const addShapesToGroup = useCallback(async (shapeIds: string[], groupId: string, amendNewest = false, interactive = true): Promise<OpenGroupOutcome> => {
     const refused = groupPartsStepRefused();
     if (refused) return refuseOpenGroupStep(refused);
     const group = shapesRef.current.find((shape) => shape.id === groupId);
@@ -12816,7 +12828,7 @@ export function LayerlingEditor({
     // Visual Groups (the merge rules over the group and what is added). The group keeps its id, so its own Visual Group may change here; asked first if the
     // objects are in different groups (Cancel stops the step).
     const mergeSources = [group.id, ...inSelectionOrder(added.map((shape) => shape.id))];
-    const place = await chooseMergeGroup(mergeSources, true, "Add to group");
+    const place = await chooseMergeGroup(mergeSources, interactive, "Add to group");
     if (!place.proceed) return { ok: false, message: "Cancelled." };
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
@@ -12883,6 +12895,8 @@ export function LayerlingEditor({
     if (rest.length < 2) {
       // Nothing left to group: the other part takes the group's place.
       const left = rest[0];
+      // Visual Groups: the part taken out (and the one left, which replaces the group) take the group's place in its Visual Group.
+      placeDerived([[group.id, [taken.id, ...(left ? [left.id] : [])]]]);
       const held = commitGroupPartsStep(place(shapesRef.current.flatMap((shape) => (shape.id === group.id ? (left ? [left] : []) : [shape]))), taken.id, `${message} ${t("status.groupOnePartLeft")}`);
       if (held) return refuseOpenGroupStep(held);
       return { ok: true, message, partIds: left ? [taken.id, left.id] : [taken.id] };
@@ -12898,6 +12912,8 @@ export function LayerlingEditor({
       }
       if (!result.group) return refuseOpenGroupStep(result.failure);
       const regrouped = result.group;
+      // The group stays (it is modified in place); the part taken out takes its place in the group's Visual Group.
+      placeDerived([[group.id, [taken.id]]]);
       const held = commitGroupPartsStep(place(shapesRef.current.map((shape) => (shape.id === group.id ? regrouped : shape))), taken.id, result.mergeWarning || message);
       if (held) return refuseOpenGroupStep(held);
       return { ok: true, message, partIds: [taken.id], groupId: regrouped.id };
@@ -12905,7 +12921,7 @@ export function LayerlingEditor({
       openGroupBusyRef.current = false;
       setOpenGroupBusy(false);
     }
-  }, [commitGroupPartsStep, groupPartsStepRefused, rebuildGroupFromParts, refuseOpenGroupStep]);
+  }, [commitGroupPartsStep, groupPartsStepRefused, rebuildGroupFromParts, refuseOpenGroupStep, placeDerived]);
 
   /**
    * A group set to keep its holes and small parts (Discussion #526) is built again from its parts once it has been
@@ -13073,13 +13089,16 @@ export function LayerlingEditor({
     const groupIds = new Set(groups.map((shape) => shape.id));
     // A group with a fillet or chamfer is one mesh with the history of its features: they are taken back first (#514).
     const tookEdgesBack = groups.some((shape) => !shape.groupedShapes?.length);
-    const restored = groups.flatMap((shape) => restoreGroupedChildren(shape.groupedShapes?.length ? shape : groupBeforeEdgeTreatments(shape)!));
+    const partsByGroup = groups.map((shape) => [shape.id, restoreGroupedChildren(shape.groupedShapes?.length ? shape : groupBeforeEdgeTreatments(shape)!)] as const);
+    const restored = partsByGroup.flatMap(([, parts]) => parts);
+    // Visual Groups: the parts of each group take its place in its Visual Group.
+    placeDerived(partsByGroup.map(([groupId, parts]) => [groupId, parts.map((part) => part.id)] as const));
     commitShapes(
       [...shapes.filter((shape) => !groupIds.has(shape.id)), ...restored],
       restored.map((shape) => shape.id),
       tookEdgesBack ? t("status.ungroupedEdgesTakenBack") : groups.length === 1 ? t("status.ungroupedOne") : t("status.ungroupedMany", { count: groups.length }),
     );
-  }, [refuseLockedSelection, commitShapes, selectedShapes, shapes, refuseHeldGroupSelection]);
+  }, [refuseLockedSelection, commitShapes, selectedShapes, shapes, refuseHeldGroupSelection, placeDerived]);
 
   /** Why a wrap failed, in the units the editor shows. */
   const cylinderWrapErrorText = useCallback((error: CylinderWrapError, shape: WorkplaneShape, diameter: number) => {
@@ -13769,6 +13788,7 @@ export function LayerlingEditor({
         (parts) => {
           const current = shapesRef.current;
           if (parts.length <= 1 || !current.some((shape) => shape.id === target.id)) return;
+          placeDerived([[target.id, parts.map((shape) => shape.id)]]);
           commitShapes(
             [...current.filter((shape) => shape.id !== target.id), ...parts],
             parts.map((shape) => shape.id),
@@ -13784,12 +13804,13 @@ export function LayerlingEditor({
       setNotice(t("status.onlyOnePart"));
       return;
     }
+    placeDerived([[selectedShape.id, parts.map((shape) => shape.id)]]);
     commitShapes(
       [...shapes.filter((shape) => shape.id !== selectedShape.id), ...parts],
       parts.map((shape) => shape.id),
       t("status.separatedParts", { count: parts.length }),
     );
-  }, [commitShapes, selectedShape, selectedShapes.length, shapes]);
+  }, [commitShapes, selectedShape, selectedShapes.length, shapes, placeDerived]);
 
   const mcpSceneSnapshot = useCallback((includeRawShapes = false): LayerlingMcpSceneSummary & { rawShapes?: WorkplaneShape[] } => {
     const projectInfo = projectInfoRef.current;
@@ -14661,7 +14682,7 @@ export function LayerlingEditor({
         if (typeof params.groupId !== "string") throw new Error("add_to_group needs groupId");
         const ids = mcpStringArray(params.ids);
         if (!ids.length) throw new Error("add_to_group needs the ids of the objects to put into the group");
-        const outcome = await addShapesToGroup(ids, params.groupId);
+        const outcome = await addShapesToGroup(ids, params.groupId, false, false);
         if (!outcome.ok) throw new Error(outcome.message);
         const group = outcome.groupId ? findShape(outcome.groupId) : null;
         return { message: outcome.message, object: group ? mcpShapeSummary(group) : null };
@@ -16099,7 +16120,9 @@ export function LayerlingEditor({
         if (groups.some((shape) => groupHeld(shape))) throw new Error("Unlock the groups before ungrouping them");
         const groupIds = new Set(groups.map((shape) => shape.id));
         // A group with a fillet or chamfer is one mesh; its edge features are taken back first (#514).
-        const restored = groups.flatMap((shape) => restoreGroupedChildren(shape.groupedShapes?.length ? shape : groupBeforeEdgeTreatments(shape)!));
+        const partsByGroup = groups.map((shape) => [shape.id, restoreGroupedChildren(shape.groupedShapes?.length ? shape : groupBeforeEdgeTreatments(shape)!)] as const);
+        const restored = partsByGroup.flatMap(([, parts]) => parts);
+        placeDerivedRef.current(partsByGroup.map(([groupId, parts]) => [groupId, parts.map((part) => part.id)] as const));
         commitShapes([...currentShapes().filter((shape) => !groupIds.has(shape.id)), ...restored], restored.map((shape) => shape.id), groups.length === 1 ? t("status.mcpUngroupedOne") : t("status.mcpUngroupedMany", { count: groups.length }));
         return { objects: restored.map(mcpShapeSummary) };
       }
@@ -16366,6 +16389,7 @@ export function LayerlingEditor({
         // A sketch body comes apart by its outlines, one exact body with its own sketch each (#669).
         const parts = separatesBySketch(target) ? await separateSketchBodyParts(target) : separateShapeParts(target);
         if (parts.length <= 1) throw new Error("The selected object has only one connected part");
+        placeDerivedRef.current([[target.id, parts.map((shape) => shape.id)]]);
         commitShapes([...currentShapes().filter((shape) => shape.id !== target.id), ...parts], parts.map((shape) => shape.id), t("status.mcpSeparated", { count: parts.length }));
         return { objects: parts.map(mcpShapeSummary) };
       }
@@ -16460,6 +16484,7 @@ export function LayerlingEditor({
         if (outcome.status === "failed") throw new Error(t(stretch === undefined ? "split.error.failed" : "split.error.stretchFailed", { name: outcome.shape.name, detail: outcome.error }));
         if (outcome.splitCount === 0) throw new Error("The plane does not cut through any of the objects - move it with position");
         const parts = [...outcome.replacements.values()].flat();
+        placeDerivedRef.current([...outcome.replacements.entries()].map(([sourceId, replaced]) => [sourceId, replaced.map((part) => part.id)] as const));
         if (stretch !== undefined) {
           commitShapes(
             currentShapes().flatMap((shape) => outcome.replacements.get(shape.id) ?? [shape]),
@@ -18994,10 +19019,10 @@ export function LayerlingEditor({
   useEffect(() => {
     if (!visualGroupsWatching) return;
     const timer = window.setTimeout(() => {
-      publishVisualGroupsState(visualGroupsPaletteState(visualGroupsRef.current, shapesRef.current, selectedIdsRef.current, displayShapeName, historyViewStateRef.current !== null));
+      publishVisualGroupsState(visualGroupsPaletteState(visualGroupsRef.current, shapesRef.current, selectedIdsRef.current, displayShapeName, historyViewStateRef.current !== null, openGroupsRef.current.map((level) => level.original)));
     }, 60);
     return () => window.clearTimeout(timer);
-  }, [visualGroupsWatching, visualGroups, shapes, selectedIds, historyViewState]);
+  }, [visualGroupsWatching, visualGroups, shapes, selectedIds, historyViewState, openGroups]);
   const visualGroupsInvokeRef = useRef<(command: VisualGroupsInvoke) => void>(() => undefined);
   visualGroupsInvokeRef.current = (command) => {
     if (historyViewStateRef.current) return;
@@ -19008,7 +19033,7 @@ export function LayerlingEditor({
       case "rename": ops.rename(command.groupId, command.name); break;
       case "delete": ops.delete(command.groupId); break;
       case "toggleGroup": ops.toggleVisibility(command.groupId); break;
-      case "toggleObject": if (live.has(command.id)) toggleShapeHiddenById(command.id); break;
+      case "toggleObject": if (live.has(command.id)) toggleShapeHiddenById(command.id, true); break;
       case "removeObject": ops.removeObjects([command.id]); break;
       case "select": selectShape(command.ids.filter((id) => live.has(id)), command.mode); break;
       case "assign": {

@@ -133,3 +133,47 @@ describe("the cascading menu or the chooser", () => {
     expect(visualGroupsMenuFits(many)).toBe(false);
   });
 });
+
+describe("an opened geometric group keeps its row in the palette, marked as being edited", () => {
+  // The group "b" is open: it is not among the shapes (its parts b1, b2 are), but the editor still has it as an open level.
+  const shapesOpen = [shape("a"), shape("b1"), shape("b2"), shape("c"), shape("loose")];
+  const openB = shape("b", true, "Cabinet");
+
+  it("lists it where it is, flagged, with the group's own name and hidden flag", () => {
+    const state = visualGroupsPaletteState(sample(), shapesOpen, ["a", "b1"], nameOf, false, [openB]);
+    const ped = state.groups[0];
+    expect(ped.items.map((item) => item.id)).toEqual(["a", "b", "cor"]);   // b is in the Pedestal group in the sample: its row stays while the group is open
+    expect((ped.items[1] as { editing?: true }).editing).toBe(true);
+  });
+
+  it("is in the same place after the group was put into its Visual Group", () => {
+    let r = sample();
+    r = moveObjectsToGroup(r, ["b"], "ped", 1);
+    const state = visualGroupsPaletteState(r, shapesOpen, ["a", "b1"], nameOf, false, [openB]);
+    const ped = state.groups[0];
+    expect(ped.items.map((item) => item.id)).toEqual(["a", "b", "cor"]);
+    expect(ped.items[1]).toEqual({ type: "object", id: "b", name: "<Cabinet>", kind: "box", hidden: true, editing: true });
+    expect("editing" in (ped.items[0] as object)).toBe(false);
+  });
+
+  it("is not selectable, and does not count for the groups' eye (bulk visibility acts on objects in the scene)", () => {
+    const r = moveObjectsToGroup(sample(), ["b"], "ped", 1);
+    const state = visualGroupsPaletteState(r, shapesOpen, ["b"], nameOf, false, [openB]);
+    expect(state.selected).toEqual([]);
+    expect(state.groups[0].visibility).toBe("visible"); // a, c, (d, e not in shapes): the open group's flag is not counted
+  });
+
+  it("a group that is open but in no Visual Group shows nothing; once it is done it is an ordinary object again", () => {
+    const state = visualGroupsPaletteState(sample(), shapesOpen, [], nameOf, false, [shape("z", false, "Loose group")]);
+    expect(JSON.stringify(state)).not.toContain("editing");
+    const done = visualGroupsPaletteState(sample(), [...shapesOpen, shape("b")], [], nameOf, false, []);
+    expect(JSON.stringify(done)).not.toContain("editing");
+    expect(done.groups[0].items.map((item) => item.id)).toEqual(["a", "b", "cor"]);
+  });
+
+  it("an open level whose group is also in the scene (not open any more) is just an object", () => {
+    const r = moveObjectsToGroup(sample(), ["b"], "ped", 1);
+    const state = visualGroupsPaletteState(r, [...shapesOpen, shape("b")], [], nameOf, false, [shape("b")]);
+    expect(JSON.stringify(state)).not.toContain("editing");
+  });
+});

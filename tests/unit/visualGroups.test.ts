@@ -16,6 +16,7 @@ import {
   moveObjectsToGroup,
   moveVisualGroup,
   mergePickCandidates,
+  placeDerivedObjects,
   placementOf,
   revertMembership,
   normalizeVisualGroups,
@@ -451,5 +452,33 @@ describe("membership changes that keep the object's id (undo and redo of a geome
     const moved = move(start, "a", "lamp");
     const withoutPed = deleteVisualGroup(moved, "ped");
     expect(placementOf(revertMembership(withoutPed, change, "undo"), "a")).toBeNull();
+  });
+});
+
+describe("objects that replace a source (ungroup, split, separate, take out)", () => {
+  const items = (r: VisualGroupsRegistry, id: string) => findVisualGroup(r, id)!.items.map((i) => ("object" in i ? i.object : i.id));
+
+  it("each source's new objects take its place in its own group", () => {
+    const r = placeDerivedObjects(sample(), [["a", ["a1", "a2"]], ["e", ["e1"]]]);
+    expect(items(r, "ped")).toEqual(["a", "a1", "a2", "b", "cor"]);
+    expect(items(r, "lamp")).toEqual(["e", "e1"]);
+  });
+
+  it("a source in no group gives nothing, and unknown sources change nothing", () => {
+    const r = sample();
+    expect(placeDerivedObjects(r, [["f", ["f1"]], ["nope", ["x"]]])).toBe(r);
+    expect(placeDerivedObjects(r, [])).toBe(r);
+  });
+
+  it("works for a source that is already gone (a group that is not coming back): its stale entry is the anchor", () => {
+    const r = placeDerivedObjects(sample(), [["b", ["b-part"]]]);
+    const live = resolveVisualGroups(r, new Set(["a", "b-part", "c", "d", "e", "f"]));
+    expect(descendantObjectIds(live, "ped")).toEqual(["a", "b-part", "c", "d"]);
+  });
+
+  it("undo finds the source in its group and not its parts; redo the parts and not the source", () => {
+    const r = placeDerivedObjects(sample(), [["a", ["a1", "a2"]]]);
+    expect(descendantObjectIds(resolveVisualGroups(r, new Set(["a", "b", "c", "d", "e", "f"])), "ped")).toEqual(["a", "b", "c", "d"]);
+    expect(descendantObjectIds(resolveVisualGroups(r, new Set(["a1", "a2", "b", "c", "d", "e", "f"])), "ped")).toEqual(["a1", "a2", "b", "c", "d"]);
   });
 });

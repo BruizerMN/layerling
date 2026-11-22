@@ -12,6 +12,8 @@ export interface PaletteObject {
   name: string;
   kind: string;
   hidden: boolean;
+  /** A geometric group that is open for editing: its row stays where it is, marked; the editor says so, the palette keeps no state of its own. */
+  editing?: true;
 }
 export interface PaletteGroup {
   type: "group";
@@ -41,11 +43,14 @@ export function visualGroupsPaletteState(
   selectedIds: readonly string[],
   nameOf: (shape: WorkplaneShape) => string,
   readOnly: boolean,
+  /** The original groups of the levels the editor has open: while open they are not among `shapes` (their parts are), but they keep their Visual Group. */
+  openGroups: readonly WorkplaneShape[] = [],
 ): VisualGroupsPaletteState {
   if (registry.items.length === 0) return { readOnly, groups: [], selected: [] };
   const live = liveObjectIds(shapes);
-  const resolved = resolveVisualGroups(registry, live);
-  const byId = new Map(shapes.map((shape) => [shape.id, shape]));
+  const editingGroups = new Map(openGroups.filter((group) => !live.has(group.id)).map((group) => [group.id, group]));
+  const resolved = resolveVisualGroups(registry, editingGroups.size > 0 ? new Set([...live, ...editingGroups.keys()]) : live);
+  const byId = new Map<string, WorkplaneShape>([...editingGroups, ...shapes.map((shape): [string, WorkplaneShape] => [shape.id, shape])]);
   const states = groupVisibilityStates(resolved, shapes);
   const member = new Set<string>();
   const build = (group: VisualGroup): PaletteGroup => ({
@@ -57,11 +62,12 @@ export function visualGroupsPaletteState(
       if (isVisualGroup(item)) return build(item);
       const shape = byId.get(item.object) as WorkplaneShape;
       member.add(shape.id);
-      return { type: "object" as const, id: shape.id, name: nameOf(shape), kind: shape.kind, hidden: Boolean(shape.hidden) };
+      return { type: "object" as const, id: shape.id, name: nameOf(shape), kind: shape.kind, hidden: Boolean(shape.hidden), ...(editingGroups.has(shape.id) ? { editing: true as const } : {}) };
     }),
   });
   const groups = resolved.items.map(build);
-  return { readOnly, groups, selected: selectedIds.filter((id) => member.has(id)) };
+  // Only objects that exist are selectable; an open group is not one of them.
+  return { readOnly, groups, selected: selectedIds.filter((id) => member.has(id) && !editingGroups.has(id)) };
 }
 
 export function visualGroupsOutline(registry: VisualGroupsRegistry): ChooserGroup[] {
