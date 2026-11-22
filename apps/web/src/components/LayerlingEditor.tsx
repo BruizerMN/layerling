@@ -168,7 +168,9 @@ import { describeHistoryStep, historyStepsAround } from "@/lib/historyStepDescri
 import { historyStepText } from "@/lib/historyStepText";
 import { historyViewMcpCommand } from "./workplane/historyViewMcp";
 import { attachmentsFingerprint } from "@/lib/projectAttachments";
-import { EMPTY_VISUAL_GROUPS, createVisualGroup, deleteVisualGroup, liveObjectIds, moveObjectsToGroup, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
+import { nativeVisualGroupsAvailable, nativeVisualGroupsWatching, onNativeVisualGroupsInvoke, onNativeVisualGroupsWatch, publishVisualGroupsState, requestVisualGroupChooser, type VisualGroupsInvoke } from "@/lib/host/nativeVisualGroups";
+import { existingGroupId, visualGroupsOutline, visualGroupsPaletteState } from "@/lib/visualGroupsSnapshot";
+import { EMPTY_VISUAL_GROUPS, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, moveObjectsToGroup, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
 import { ATTACHMENT_MCP_READ_ACTIONS, attachmentMcpCommand, attachmentMcpList } from "@/lib/projectAttachmentsMcp";
 import { appendEditorHistorySnapshot, boundedEditorHistoryState, continuesKeyRun, type KeyRun, editorHistoryBranch, editorHistoryEntry, editorHistoryForExport, historyStateAt, hydrateEditorHistoryState, notesForHistoryIndex, projectSceneFingerprint, projectShapesFingerprint, workplaneForHistoryIndex, type EditorHistoryEntry, type EditorHistoryState } from "@/lib/editorHistory";
 import { deleteHistoryEntries, formatHistoryBytes, historyFreedBytes, historyIndexAfterDelete } from "@/lib/historyStepSizes";
@@ -18873,6 +18875,49 @@ export function LayerlingEditor({
     });
   }, []);
 
+  // ---- Visual Groups palette (native app only): what it shows is published while it is open; what it asks for runs through the functions above ----
+  const [visualGroupsWatching, setVisualGroupsWatching] = useState(() => nativeVisualGroupsWatching());
+  useEffect(() => {
+    if (!nativeDocument) return;
+    return onNativeVisualGroupsWatch(setVisualGroupsWatching);
+  }, [nativeDocument]);
+  // Debounced, and read from the refs when it fires: a drag changes the shapes every frame, the palette needs only where they came to rest.
+  useEffect(() => {
+    if (!visualGroupsWatching) return;
+    const timer = window.setTimeout(() => {
+      publishVisualGroupsState(visualGroupsPaletteState(visualGroupsRef.current, shapesRef.current, selectedIdsRef.current, displayShapeName, historyViewStateRef.current !== null));
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [visualGroupsWatching, visualGroups, shapes, selectedIds, historyViewState]);
+  const visualGroupsInvokeRef = useRef<(command: VisualGroupsInvoke) => void>(() => undefined);
+  visualGroupsInvokeRef.current = (command) => {
+    if (historyViewStateRef.current) return;
+    const ops = visualGroupOpsRef.current;
+    const live = liveObjectIds(shapesRef.current);
+    switch (command.op) {
+      case "create": ops.create({ name: command.name, parentId: existingGroupId(visualGroupsRef.current, command.parentId) }); break;
+      case "rename": ops.rename(command.groupId, command.name); break;
+      case "delete": ops.delete(command.groupId); break;
+      case "toggleGroup": ops.toggleVisibility(command.groupId); break;
+      case "toggleObject": if (live.has(command.id)) toggleShapeHiddenById(command.id); break;
+      case "removeObject": ops.removeObjects([command.id]); break;
+      case "select": selectShape(command.ids.filter((id) => live.has(id)), command.mode); break;
+      case "assign": {
+        const ids = command.objectIds.filter((id) => live.has(id));
+        if (ids.length === 0) break;
+        // A group that was deleted while the chooser was open is not a place any more; a new name makes the group first.
+        let groupId = existingGroupId(visualGroupsRef.current, command.groupId);
+        if (!groupId && command.newName) groupId = ops.create({ name: command.newName, parentId: existingGroupId(visualGroupsRef.current, command.parentId) });
+        if (groupId) ops.moveObjects(ids, groupId);
+        break;
+      }
+    }
+  };
+  useEffect(() => {
+    if (!nativeDocument) return;
+    return onNativeVisualGroupsInvoke((command) => visualGroupsInvokeRef.current(command));
+  }, [nativeDocument]);
+
   // A selection made by the user on the workplane brings the Inspector's Object tab to the front (Build 0031). Selection changed any other way (the object list,
   // commands, undo) does not touch the tab, and neither does a click that selects nothing.
   const selectShapeOnWorkplane = useCallback((id: string | string[] | null, mode: "replace" | "toggle" = "replace") => {
@@ -19718,6 +19763,19 @@ export function LayerlingEditor({
         { key: "markMidpoints", label: t("contextMenu.markMidpoints"), onSelect: () => markSelectionPoints("midpoints") },
         ...(referencePoints(notes).length > 0 ? [{ key: "removePoints", label: t("contextMenu.removeAllPoints", { count: referencePoints(notes).length }), danger: true, onSelect: removeAllReferencePoints }] : []),
       );
+    }
+    // Visual Groups (native app only, English only in this version): where the selected objects are filed. Organisation only; nothing here touches geometry.
+    if (nativeVisualGroupsAvailable()) {
+      const owners = membershipMap(visualGroups, liveObjectIds(shapes));
+      const assignedIds = selectedShapes.filter((shape) => owners.has(shape.id)).map((shape) => shape.id);
+      const allAssigned = assignedIds.length === selectedShapes.length;
+      items.push({
+        key: "visualGroupMove",
+        label: allAssigned ? "Move to Visual Group\u2026" : "Add to Visual Group\u2026",
+        separated: true,
+        onSelect: () => requestVisualGroupChooser({ mode: allAssigned ? "move" : "add", objectIds: selectedShapes.map((shape) => shape.id), groups: visualGroupsOutline(visualGroups) }),
+      });
+      if (assignedIds.length > 0) items.push({ key: "visualGroupRemove", label: "Remove from Visual Group", onSelect: () => visualGroupOps.removeObjects(assignedIds) });
     }
     items.push(
       { key: "hide", label: t("contextMenu.hide"), shortcut: "Ctrl+H", separated: true, onSelect: toggleHidden },

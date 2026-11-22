@@ -30,6 +30,13 @@ export const UI_MENU_CAPABILITY = "ui.menu.v1";
  * rules give them (`ribbon.state`); the host asks the page to run one (`ribbon.invoke`) and tells it when its toolbar is on or off (`ribbon.native`).
  */
 export const RIBBON_CAPABILITY = "ribbon.v1";
+/**
+ * Visual Groups palette (additive, needs `ui.v1`): the host draws a floating palette of the design's Visual Groups. The page publishes what it shows
+ * (`visualGroups.state`, while the host says the palette is open: `visualGroups.watch`), asks the host for its chooser (`visualGroups.choose`) and carries
+ * out what the palette asks for (`visualGroups.invoke`). The editor stays the only source of truth.
+ */
+export const VISUAL_GROUPS_CAPABILITY = "visualGroups.v1";
+export const VISUAL_GROUPS_OPS = ["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign"] as const;
 /** One entry of a native menu. `items` makes it a submenu. */
 export interface NativeMenuItem {
   key: string;
@@ -201,6 +208,22 @@ export interface RibbonStateRequest {
   protocol: number;
   payload: { documentId: string; state: { mode: "geometry" | "sketch"; groups: Array<{ id: string; label: string; kind: "menu" | "button" | "buttons"; tools: Array<{ id: string; label: string; enabled: boolean; active: boolean; hint: string | null; shortcut: string | null; icon: string; toggle?: boolean; prominent?: boolean; separatorBefore?: boolean }> }> } };
 }
+/** `visualGroups.v1`: what the palette shows (groups with their aggregate eye, members with name and own hidden flag, the selected members). Sent on change only. */
+export interface VisualGroupsStateRequest {
+  id: string;
+  session: string;
+  type: "visualGroups.state";
+  protocol: number;
+  payload: { documentId: string; state: { readOnly: boolean; groups: unknown[]; selected: string[] } };
+}
+/** `visualGroups.v1`: show the host's chooser for the group these objects should go into. The answer is an `assign` command; Cancel sends nothing. */
+export interface VisualGroupsChooseRequest {
+  id: string;
+  session: string;
+  type: "visualGroups.choose";
+  protocol: number;
+  payload: { documentId: string; mode: "add" | "move"; objectIds: string[]; groups: unknown[] };
+}
 /** Build 0007 (`ui.menu.v1`): show a native menu at a point of the page. Answered at once; the choice comes back as the event `menu.result`. */
 export interface MenuShowRequest {
   id: string;
@@ -267,6 +290,8 @@ export interface SaveFailedRequest {
 }
 export type HostRequest =
   | RibbonStateRequest
+  | VisualGroupsStateRequest
+  | VisualGroupsChooseRequest
   | HelloRequest
   | ReadyRequest
   | PingRequest
@@ -340,6 +365,10 @@ export type HostEvent =
   | { session: string; protocol: number; id: string; type: "ribbon.invoke"; payload: { documentId: string; toolId: string } }
   /** Prototype (`ribbon.v1`): the host's native toolbar is on or off for this document. */
   | { session: string; protocol: number; id: string; type: "ribbon.native"; payload: { documentId: string; enabled: boolean } }
+  /** `visualGroups.v1`: the palette asks for this; the page checks it and uses its own functions. */
+  | { session: string; protocol: number; id: string; type: "visualGroups.invoke"; payload: { documentId: string; op: string; args: Record<string, unknown> } }
+  /** `visualGroups.v1`: the palette is open (the page publishes `visualGroups.state`) or closed. */
+  | { session: string; protocol: number; id: string; type: "visualGroups.watch"; payload: { documentId: string; watching: boolean } }
   /** Build 0003 (`ui.v1`): the Document Settings window opened or closed; the page sends `settings.state` while it is open. */
   | { session: string; protocol: number; id: string; type: "settings.watch"; payload: { documentId: string; watching: boolean } }
   /** The file was changed by another application (not reloaded automatically). */
@@ -444,6 +473,14 @@ export function parseHostEvent(value: unknown): HostEvent | { invalid: string } 
   }
   if (value.type === "ribbon.native") {
     return isText(documentId) && typeof value.payload.enabled === "boolean" ? { ...base, type: "ribbon.native", payload: { documentId, enabled: value.payload.enabled } } : { invalid: "ribbon.native needs documentId and enabled" };
+  }
+  if (value.type === "visualGroups.invoke") {
+    return isText(documentId) && typeof value.payload.op === "string" && (VISUAL_GROUPS_OPS as readonly string[]).includes(value.payload.op) && isRecord(value.payload.args)
+      ? { ...base, type: "visualGroups.invoke", payload: { documentId, op: value.payload.op, args: value.payload.args } }
+      : { invalid: "visualGroups.invoke needs documentId, a known op and args" };
+  }
+  if (value.type === "visualGroups.watch") {
+    return isText(documentId) && typeof value.payload.watching === "boolean" ? { ...base, type: "visualGroups.watch", payload: { documentId, watching: value.payload.watching } } : { invalid: "visualGroups.watch needs documentId and watching" };
   }
   if (value.type === "settings.watch") {
     return isText(documentId) && typeof value.payload.watching === "boolean" ? { ...base, type: "settings.watch", payload: { documentId, watching: value.payload.watching } } : { invalid: "settings.watch needs documentId and watching" };
