@@ -789,3 +789,49 @@ html[data-native-app="on"] .native-inspector-dock .shape-inspector .name-tag-sta
 }
 html[data-native-app="on"] .native-inspector-dock .name-tag-stepper button:hover:not(:disabled) { color: var(--insp-accent); border-color: var(--insp-accent); }
 html[data-native-app="on"] .native-inspector-dock .name-tag-more { color: var(--insp-accent); }
+
+/*
+ * Build 0033: the Solid swatch is a colour input of its own (WebKit's native colour popover opens at the swatch); the rest of the tile still selects Solid.
+ * The input lies over the swatch, invisible but really clickable. Swatches sit at a fixed distance from the tile's top so the input lines up in Solid and Hole alike.
+ * The name row gets 14 px more room below it (whitespace, no divider). The palette keeps a small toggle row of its own.
+ */
+.native-inspector-dock .inspector-name-row { padding-bottom: 22px; }
+.native-inspector-dock .shape-state-card.solid-hole-card button { justify-content: flex-start; padding-top: 18px; }
+.native-inspector-dock .shape-state-card.solid-hole-card .solid-tile { position: relative; display: flex; min-width: 0; }
+.native-inspector-dock .shape-state-card.solid-hole-card .solid-tile > button { flex: 1 1 auto; width: 100%; }
+.native-inspector-dock .solid-swatch-picker {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  margin: 0 0 0 -22px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.native-inspector-dock .solid-swatch-picker:disabled { cursor: default; pointer-events: none; }
+.native-inspector-dock .solid-tile:has(.solid-swatch-picker:hover:not(:disabled)) .large-solid-swatch { filter: brightness(1.12); }
+.native-inspector-dock .inspector-palette-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: calc(100% - 20px);
+  height: 22px;
+  min-height: 22px;
+  margin: 2px 10px 4px;
+  padding: 0 2px;
+  color: var(--insp-muted);
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  font: 400 11px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+.native-inspector-dock .inspector-palette-toggle:hover { color: var(--insp-fg); }
+.native-inspector-dock .inspector-palette-arrow { width: 10px; font-size: 9px; }

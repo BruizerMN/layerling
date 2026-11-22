@@ -5116,25 +5116,43 @@ export function ShapeInspector({
           )}
         </div>
   );
-  const solidChoice = (
-    <>
+  const solidTile = (
         <button
           className={!shape.hole ? "active solid-choice" : "solid-choice"}
           onClick={() => {
             const wasHole = Boolean(shape.hole);
             // Sending the colour too would paint it onto every part of a group or bundle and lose their own colours.
             onUpdate(shape.groupedShapes?.length ? { hole: false } : { hole: false, color: solidColor });
-            setColorOpen((open) => (wasHole ? false : !open));
+            // Docked: the tile only selects Solid; the colour is chosen from the swatch (native picker) or the palette toggle. Floating (browser): as before.
+            setColorOpen((open) => (wasHole ? false : docked ? open : !open));
           }}
           disabled={frozen}
           aria-pressed={!shape.hole}
-          aria-expanded={colorOpen}
+          aria-expanded={docked ? undefined : colorOpen}
         >
           <span className="large-solid-swatch" style={{ "--swatch": solidColor } as CSSProperties} />
           <span>{t("inspector.solid")} <span className="key-hint">(S)</span></span>
         </button>
-    </>
   );
+  // Docked (Build 0033): a real colour input lies over the swatch, invisible, so a click on the swatch opens WebKit's own macOS colour popover right there,
+  // anchored to the swatch (a genuine click, not a scripted one). The rest of the tile is the Solid button. It commits like the palette's Custom field.
+  const solidChoice = docked ? (
+    <div className="solid-tile">
+      {solidTile}
+      <CustomColorInput
+        className="solid-swatch-picker"
+        color={solidColor}
+        disabled={frozen}
+        title={t("inspector.customColor")}
+        ariaLabel={t("inspector.shapeColor")}
+        onCommit={(color) => {
+          onUpdate({ color, hole: false, ...singleColorPatch });
+          rememberColor(color);
+        }}
+        onInteractionActiveChange={onInteractionActiveChange}
+      />
+    </div>
+  ) : solidTile;
   const holeChoice = (
     <>
         <button
@@ -5449,6 +5467,7 @@ export function ShapeInspector({
                 {holeChoice}
               </div>
             ) : null}
+            {showsState ? <PaletteToggle open={colorOpen} onToggle={() => setColorOpen((open) => !open)} /> : null}
             {pieceColor}
             <div className="shape-state-card inspector-switch-card">
               <ToggleProperty label="Hidden" value={Boolean(shape.hidden)} keys="Ctrl+H" onChange={(hidden) => onUpdate({ hidden })} />
@@ -8571,9 +8590,12 @@ function useInteractionHold(onInteractionActiveChange?: (active: boolean) => voi
  * Farbe aendert - frueher wurde es dabei ausgetauscht, waehrend es noch den
  * Fokus hatte, und eine zweite eigene Farbe kam gar nicht mehr an.
  */
-function CustomColorInput({ color, disabled, onCommit, onInteractionActiveChange }: {
+function CustomColorInput({ color, disabled, onCommit, onInteractionActiveChange, className, title, ariaLabel }: {
   color: string;
   disabled?: boolean;
+  className?: string;
+  title?: string;
+  ariaLabel?: string;
   onCommit: (color: string) => void;
   onInteractionActiveChange?: (active: boolean) => void;
 }) {
@@ -8599,6 +8621,9 @@ function CustomColorInput({ color, disabled, onCommit, onInteractionActiveChange
     <input
       ref={inputRef}
       type="color"
+      className={className}
+      title={title}
+      aria-label={ariaLabel}
       defaultValue={color}
       disabled={disabled}
       onFocus={() => holdInteraction(true)}
@@ -9184,6 +9209,16 @@ function ToggleProperty({ label, value, area, sub, disabled, onChange, onReset, 
 }
 
 /** The group controls on an object that is not a group: in place, greyed out (Build 0029), so the Group section never comes and goes with the selection. */
+/** Docked Inspector: the palette (recent and kept colours, swatches, hex) is no longer opened by the Solid tile; this row opens and closes it. */
+function PaletteToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <button type="button" className="inspector-palette-toggle" aria-expanded={open} onClick={onToggle}>
+      <span className="inspector-palette-arrow" aria-hidden="true">{open ? "▾" : "▸"}</span>
+      <span>Color palette</span>
+    </button>
+  );
+}
+
 function GroupEditPlaceholder() {
   return (
     <button className="inspector-action-button" type="button" disabled data-group-placeholder="edit">
@@ -9494,23 +9529,29 @@ export function SelectionInspector({
     rememberColor(color);
     setColorOpen(false);
   };
-  const selSolid = (
-    <>
+  const selSolidTile = (
           <button
             className={noHoles ? "active solid-choice" : "solid-choice"}
             onClick={() => {
-              if (noHoles) setColorOpen((open) => !open);
-              else onSetHole(false);
+              // Docked: only selects Solid (the swatch picks the colour); floating (browser): the old toggle of the palette.
+              if (noHoles) {
+                if (!docked) setColorOpen((open) => !open);
+              } else onSetHole(false);
             }}
             disabled={anyLocked}
             aria-pressed={noHoles}
-            aria-expanded={colorOpen}
+            aria-expanded={docked ? undefined : colorOpen}
           >
             <span className="large-solid-swatch" style={{ "--swatch": swatch } as CSSProperties} />
             <span>{t("inspector.solid")} <span className="key-hint">(S)</span></span>
           </button>
-    </>
   );
+  const selSolid = docked ? (
+    <div className="solid-tile">
+      {selSolidTile}
+      <CustomColorInput className="solid-swatch-picker" color={swatch} disabled={anyLocked} title={t("inspector.customColor")} ariaLabel={t("inspector.shapeColor")} onCommit={pick} onInteractionActiveChange={onInteractionActiveChange} />
+    </div>
+  ) : selSolidTile;
   const selHole = (
     <>
           <button
@@ -9654,6 +9695,7 @@ export function SelectionInspector({
                 {selMixed}
               </div>
             ) : null}
+            {solidKinds.length > 0 ? <PaletteToggle open={colorOpen} onToggle={() => setColorOpen((open) => !open)} /> : null}
             {selColor}
             <div className="shape-state-card inspector-switch-card">
               {onToggleHidden ? <ToggleProperty label="Hidden" value={allHidden} keys="Ctrl+H" onChange={() => onToggleHidden()} /> : null}
