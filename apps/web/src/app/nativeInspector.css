@@ -807,15 +807,15 @@ html[data-native-app="on"] .native-inspector-dock .name-tag-more { color: var(--
   width: 44px;
   height: 44px;
   margin: 0 0 0 -22px;
-  padding: 0;
-  border: 0;
+  border-radius: 8px;
   opacity: 0;
   cursor: pointer;
-  -webkit-appearance: none;
-  appearance: none;
 }
-.native-inspector-dock .solid-swatch-picker:disabled { cursor: default; pointer-events: none; }
-.native-inspector-dock .solid-tile:has(.solid-swatch-picker:hover:not(:disabled)) .large-solid-swatch { filter: brightness(1.12); }
+.native-inspector-dock .solid-swatch-picker[aria-disabled="true"] { cursor: default; pointer-events: none; }
+.native-inspector-dock .solid-swatch-picker:focus-visible { opacity: 1; outline: 2px solid var(--accent-live); outline-offset: 1px; background: transparent; }
+/* The real colour input: invisible, parked off screen, moved next to the swatch only while the popover opens (see SwatchColorPicker). It must stay hit-testable. */
+.native-inspector-dock .solid-swatch-input { position: fixed; left: -100px; top: 0; width: 44px; height: 44px; padding: 0; border: 0; opacity: 0; -webkit-appearance: none; appearance: none; }
+.native-inspector-dock .solid-tile:has(.solid-swatch-picker:hover:not([aria-disabled="true"])) .large-solid-swatch { filter: brightness(1.12); }
 .native-inspector-dock .inspector-palette-toggle {
   display: flex;
   align-items: center;

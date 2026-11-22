@@ -5139,8 +5139,7 @@ export function ShapeInspector({
   const solidChoice = docked ? (
     <div className="solid-tile">
       {solidTile}
-      <CustomColorInput
-        className="solid-swatch-picker"
+      <SwatchColorPicker
         color={solidColor}
         disabled={frozen}
         title={t("inspector.customColor")}
@@ -8633,6 +8632,95 @@ function CustomColorInput({ color, disabled, onCommit, onInteractionActiveChange
 }
 
 /**
+ * The Solid swatch as a colour button (Build 0034): a click on it opens WebKit's own macOS colour popover next to the swatch.
+ *
+ * WebKit on macOS anchors that popover to the colour input as if the input's top edge were measured up from the bottom of the web view, so an input near the
+ * top of the window (the swatch) gets a popover near the bottom (measured in Build 0034: popover bottom = view bottom + input top + input height). The swatch itself
+ * therefore only takes the click; the real, invisible colour input is moved, for the click, to the mirrored spot (top = view height - swatch bottom) where WebKit
+ * then draws the popover against the swatch, and parked off screen again when the popover closes. The input must stay hit-testable (with pointer-events: none
+ * WebKit anchors it elsewhere). The click runs inside the user's own click, so WebKit's user-gesture rule is met. If WebKit ever anchors correctly, only `open`
+ * changes: set the input's top to the swatch's own.
+ */
+function SwatchColorPicker({ color, disabled, title, ariaLabel, onCommit, onInteractionActiveChange }: {
+  color: string;
+  disabled?: boolean;
+  title?: string;
+  ariaLabel?: string;
+  onCommit: (color: string) => void;
+  onInteractionActiveChange?: (active: boolean) => void;
+}) {
+  const swatchRef = useRef<HTMLSpanElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const holdInteraction = useInteractionHold(onInteractionActiveChange);
+  const commitRef = useRef(onCommit);
+  commitRef.current = onCommit;
+  const park = useCallback(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.style.left = "-100px";
+    input.style.top = "0px";
+  }, []);
+  useEffect(() => {
+    const input = inputRef.current;
+    if (input && input.value.toLowerCase() !== color.toLowerCase()) input.value = color;
+  }, [color]);
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    // As the Custom field: only the native change event (the user is done choosing) commits, so dragging in the picker stays light.
+    const commit = () => commitRef.current(input.value);
+    input.addEventListener("change", commit);
+    return () => input.removeEventListener("change", commit);
+  }, []);
+  const open = () => {
+    const swatch = swatchRef.current;
+    const input = inputRef.current;
+    if (!swatch || !input || disabled) return;
+    const box = swatch.getBoundingClientRect();
+    input.style.left = `${box.left}px`;
+    input.style.top = `${window.innerHeight - box.bottom}px`;
+    input.style.width = `${box.width}px`;
+    input.style.height = `${box.height}px`;
+    input.focus({ preventScroll: true });
+    input.click();
+  };
+  return (
+    <>
+      <span
+        ref={swatchRef}
+        className="solid-swatch-picker"
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled || undefined}
+        title={title}
+        aria-label={ariaLabel}
+        onClick={open}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            open();
+          }
+        }}
+      />
+      <input
+        ref={inputRef}
+        type="color"
+        className="solid-swatch-input"
+        tabIndex={-1}
+        aria-hidden="true"
+        defaultValue={color}
+        disabled={disabled}
+        onFocus={() => holdInteraction(true)}
+        onBlur={() => {
+          holdInteraction(false);
+          park();
+        }}
+      />
+    </>
+  );
+}
+
+/**
  * The colour code at the top of the colour card, to type or paste (Discussion #1674): the colour window of
  * Windows, which Firefox and the desktop app open for Custom, knows only red, green and blue. "#5EBDDB",
  * "5ebddb" and "#5bd" are taken as they are; a value that is no colour goes back to the colour there is.
@@ -9549,7 +9637,7 @@ export function SelectionInspector({
   const selSolid = docked ? (
     <div className="solid-tile">
       {selSolidTile}
-      <CustomColorInput className="solid-swatch-picker" color={swatch} disabled={anyLocked} title={t("inspector.customColor")} ariaLabel={t("inspector.shapeColor")} onCommit={pick} onInteractionActiveChange={onInteractionActiveChange} />
+      <SwatchColorPicker color={swatch} disabled={anyLocked} title={t("inspector.customColor")} ariaLabel={t("inspector.shapeColor")} onCommit={pick} onInteractionActiveChange={onInteractionActiveChange} />
     </div>
   ) : selSolidTile;
   const selHole = (
