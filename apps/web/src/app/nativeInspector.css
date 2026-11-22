@@ -644,3 +644,24 @@ html[data-native-chrome="on"] .native-inspector-dock .property-card-header:focus
 /* The hidden-objects row, now inside the Project tab's Visibility section. */
 .native-inspector-dock .property-list .inspector-hidden-banner { margin: 6px 0 2px; padding: 0; border: 0; background: transparent; }
 .native-inspector-dock .inspector-hidden-banner button:disabled { opacity: 0.45; }
+
+/*
+ * Build 0028.
+ * Nothing selected: the Object tab is only a message, centred in the panel under the tab bar. The Object panel grows to fill the panel (and past it
+ * when the Inspector is long), so the message sits in the middle of the area the content would have.
+ */
+.native-inspector-panels { display: flex; flex-direction: column; }
+.native-inspector-panel { flex: 1 0 auto; display: flex; flex-direction: column; }
+.native-inspector-panel[hidden] { display: none; }
+.native-inspector-panel > .shape-inspector { flex: 0 0 auto; }
+.native-inspector-panel > .shape-inspector.inspector-empty { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 16px; }
+.native-inspector-dock .inspector-empty-message { display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--insp-muted); text-align: center; }
+.native-inspector-dock .inspector-empty-message svg { width: 56px; height: 56px; color: var(--insp-muted); }
+.native-inspector-dock .inspector-empty-note { margin: 0; color: var(--insp-muted); font-size: 13px; text-align: center; }
+/* General (Object tab): the controls that were above Properties, inside the first section; they bring their own padding, and the header row scrolls with them. */
+.native-inspector-dock .property-list.inspector-section-bare { padding: 0; }
+.native-inspector-dock .inspector-section-bare .shape-inspector-header { position: static; }
+/* Transparent and Multicolor: one stack, the same left edge for the boxes and for the labels (they used to follow the width of their label). */
+.native-inspector-dock .shape-state-card .check-property { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; margin: 2px 0 0; padding: 0 2px; text-align: left; }
+.native-inspector-dock .shape-state-card .check-property input { flex: 0 0 auto; margin: 0; }
+.native-inspector-dock .shape-state-card .check-property > span { flex: 1 1 auto; text-align: left; }

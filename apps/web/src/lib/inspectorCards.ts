@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
+import { isNativeAppearance } from "@/lib/appTheme";
 
 /** One entry in this browser for all the folding cards of the shape settings: which of them stay open (#632). */
 export const INSPECTOR_CARDS_KEY = "layerling.editor.inspectorCards";
@@ -62,4 +63,52 @@ export function useInspectorCard(name: string, initial: boolean): [boolean, (nex
     });
   }, [name]);
   return [open, setOpen];
+}
+
+/**
+ * The native app's Inspector sections (Build 0028): open or closed is TEMPORARY UI state of this window's session. Every section starts open when the
+ * window (so the document) is loaded; the user's choices are kept while it stays open - across selection changes and Project/Object tab switches - and
+ * are gone when the document is closed or the app quits. Nothing is written anywhere: not the document, not the application preferences, not localStorage.
+ */
+const sessionSections = new Map<string, boolean>();
+const sessionListeners = new Set<() => void>();
+const subscribeSessionSections = (listener: () => void) => {
+  sessionListeners.add(listener);
+  return () => {
+    sessionListeners.delete(listener);
+  };
+};
+
+/** Whether a section is open in this session (open unless the user closed it). */
+export function getSessionSectionOpen(name: string): boolean {
+  return sessionSections.get(name) ?? true;
+}
+
+export function setSessionSectionOpen(name: string, open: boolean) {
+  if (getSessionSectionOpen(name) === open) return;
+  if (open) sessionSections.delete(name);
+  else sessionSections.set(name, false);
+  sessionListeners.forEach((listener) => listener());
+}
+
+/** For tests: every section back to open. */
+export function resetSessionSections() {
+  sessionSections.clear();
+  sessionListeners.forEach((listener) => listener());
+}
+
+/**
+ * One section's open state. In the native app it is the session state above (open by default, `initial` is ignored); in a browser it is what it always
+ * was: `useInspectorCard` (kept in this browser) when `keepInBrowser`, plain state otherwise.
+ */
+export function useInspectorSection(name: string, initial: boolean, keepInBrowser = true): [boolean, (next: boolean | ((open: boolean) => boolean)) => void] {
+  const native = isNativeAppearance(); // constant for the life of a page, so the hooks below are always called in the same order
+  const session = useSyncExternalStore(subscribeSessionSections, () => getSessionSectionOpen(name), () => true);
+  const setSession = useCallback((next: boolean | ((open: boolean) => boolean)) => {
+    setSessionSectionOpen(name, typeof next === "function" ? next(getSessionSectionOpen(name)) : next);
+  }, [name]);
+  const kept = useInspectorCard(name, initial);
+  const local = useState(initial);
+  if (native) return [session, setSession];
+  return keepInBrowser ? kept : local;
 }

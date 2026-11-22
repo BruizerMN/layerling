@@ -5,7 +5,8 @@ import { displayY, displayYTurn, insideZ, insideZTurn } from "@/lib/displayAxes"
 import { GuideHelpLink } from "@/components/GuideHelpLink";
 import { SnapGridMenuItems } from "@/components/workplane/SnapGridMenu";
 import { guideChapterForShape, guideSectionForShape } from "@/lib/guideLinks";
-import { useInspectorCard } from "@/lib/inspectorCards";
+import { useInspectorCard, useInspectorSection } from "@/lib/inspectorCards";
+import { InspectorGeneral } from "@/components/workplane/InspectorSection";
 import { AlignCenter, Cone, ChevronDown, ChevronUp, Cylinder, Eraser, Eye, EyeOff, FolderOpen, Grid3x3, ImageUp, Lasso, Layers, Link2, Lock, Minus, Move3d, MousePointerClick, Pencil, Plus, RefreshCw, RotateCcw, Rotate3d, Ruler, Shield, ShieldCheck, Shrink, SlidersHorizontal, Spline, Split, Tags, Trash2, TrendingDown, Unlock, Waves } from "lucide-react";
 import { holdsShapeLock } from "@/lib/shapeLock";
 import { createPortal } from "react-dom";
@@ -4970,9 +4971,9 @@ export function ShapeInspector({
   // Docked at the right edge until its title bar is dragged; then it floats where it was dropped.
   const movable = useMovablePanel<HTMLElement>("layerling.editor.inspectorPosition", INSPECTOR_PANEL);
   const inspectorRef = movable.panelRef;
-  const [propertiesOpen, setPropertiesOpen] = useInspectorCard("properties", true);
+  const [propertiesOpen, setPropertiesOpen] = useInspectorSection("properties", true);
   const [textFillMoreOpen, setTextFillMoreOpen] = useState(false);
-  const [positionOpen, setPositionOpen] = useInspectorCard("position", false);
+  const [positionOpen, setPositionOpen] = useInspectorSection("position", false);
   // Where X and Y measure from (#973): the middle of the body, or its left and front edges, as the angle ruler's
   // corner does. Z is its bottom either way. Kept in this browser with the cards.
   const [positionAtEdge, setPositionAtEdge] = useInspectorCard("positionAtEdge", false);
@@ -4992,21 +4993,21 @@ export function ShapeInspector({
         return property;
       })
     : positionProperties;
-  const [rotationOpen, setRotationOpen] = useInspectorCard("rotation", false);
-  const [taperOpen, setTaperOpen] = useInspectorCard("taper", false);
-  const [twistOpen, setTwistOpen] = useInspectorCard("twist", false);
-  const [slopeOpen, setSlopeOpen] = useInspectorCard("slope", false);
-  const [narrowOpen, setNarrowOpen] = useInspectorCard("narrow", false);
-  const [gearTeethOpen, setGearTeethOpen] = useInspectorCard("gearTeeth", true);
-  const [vaseFormOpen, setVaseFormOpen] = useInspectorCard("vaseForm", true);
-  const [vaseFloorOpen, setVaseFloorOpen] = useInspectorCard("vaseFloor", false);
-  const [vasePartsOpen, setVasePartsOpen] = useInspectorCard("vaseParts", false);
-  const [vasePrintOpen, setVasePrintOpen] = useInspectorCard("vasePrint", false);
+  const [rotationOpen, setRotationOpen] = useInspectorSection("rotation", false);
+  const [taperOpen, setTaperOpen] = useInspectorSection("taper", false);
+  const [twistOpen, setTwistOpen] = useInspectorSection("twist", false);
+  const [slopeOpen, setSlopeOpen] = useInspectorSection("slope", false);
+  const [narrowOpen, setNarrowOpen] = useInspectorSection("narrow", false);
+  const [gearTeethOpen, setGearTeethOpen] = useInspectorSection("gearTeeth", true);
+  const [vaseFormOpen, setVaseFormOpen] = useInspectorSection("vaseForm", true);
+  const [vaseFloorOpen, setVaseFloorOpen] = useInspectorSection("vaseFloor", false);
+  const [vasePartsOpen, setVasePartsOpen] = useInspectorSection("vaseParts", false);
+  const [vasePrintOpen, setVasePrintOpen] = useInspectorSection("vasePrint", false);
   // The window to draw the vase in; another body selected closes it.
   const [vaseDrawOpen, setVaseDrawOpen] = useState(false);
   useEffect(() => setVaseDrawOpen(false), [shape.id]);
-  const [threadOpen, setThreadOpen] = useInspectorCard("thread", true);
-  const [gearHelixOpen, setGearHelixOpen] = useInspectorCard("gearHelix", true);
+  const [threadOpen, setThreadOpen] = useInspectorSection("thread", true);
+  const [gearHelixOpen, setGearHelixOpen] = useInspectorSection("gearHelix", true);
   const [colorOpen, setColorOpen] = useState(false);
   const { colors: recentColors, remember: rememberColor } = useRecentColors(SOLID_COLORS);
   const { colors: keptColors, toggle: toggleKeptColor } = useKeptColors();
@@ -5050,6 +5051,7 @@ export function ShapeInspector({
       aria-label={t("inspector.settingsFor", { name: displayShapeName(shape) })}
       onPointerDown={(event) => event.stopPropagation()}
     >
+      <InspectorGeneral docked={docked}>
       <div className={docked ? "shape-inspector-header" : "shape-inspector-header movable"} title={docked ? undefined : t("inspector.moveHint")} {...(docked ? {} : movable.handleProps)}>
         {docked ? null : <button
           className="inspector-header-icon"
@@ -5345,6 +5347,11 @@ export function ShapeInspector({
           <span>{t("inspector.makeEllipse")}</span>
         </button>
       ) : null}
+        </>
+      ) : null}
+      </InspectorGeneral>
+      {!minimized ? (
+        <>
 
       {/* Every part of a plain shape's properties leads to the guide's section about them; the special shapes keep the answers of their own (#424). */}
       <div className={`property-card ${propertiesOpen ? "" : "collapsed"}`} data-help-section-all={guideSectionForShape(shape) === "shapeSettings" ? "shapeSettings" : undefined}>
@@ -5991,7 +5998,7 @@ function TextBlockCard({ shapeId, text, workspace, disabled, onTextBlock, onInte
   onTextBlock: (lines: string[], options: TextBlockOptions) => void;
   onInteractionActiveChange?: (active: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useInspectorSection("textBlock", false, false);
   const [value, setValue] = useState(`${text}\n`);
   const [align, setAlign] = useState<TextBlockAlign>("center");
   const [gap, setGap] = useState(DEFAULT_TEXT_BLOCK_GAP);
@@ -6048,7 +6055,7 @@ function NameListCard({ shapeId, disabled, onTextTags, onInteractionActiveChange
   onTextTags: (names: string[], gap: number) => void;
   onInteractionActiveChange?: (active: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useInspectorSection("nameList", false, false);
   return (
     <div className={`property-card ${open ? "" : "collapsed"}`}>
       <button className="property-card-header" type="button" aria-expanded={open} aria-controls={`name-list-${shapeId}`} onClick={() => setOpen((current) => !current)}>
@@ -6174,7 +6181,7 @@ function NameTagCard({
   onTextTags: (names: string[], gap: number) => void;
   onInteractionActiveChange?: (active: boolean) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useInspectorSection("nameTag", true, false);
   const { source, layers, keyring } = stack;
   // A long text takes no letter edge (MAX_EDGED_TEXT_LENGTH): the buttons are greyed out and a line says why.
   const edgeAllowed = textAllowsEdge(source);
@@ -6301,7 +6308,7 @@ export type QrCodeControls = {
  * it - where it stands, as wide as it is now. The other choices stay as they were made.
  */
 function QrCodeCard({ shapeId, controls, disabled }: { shapeId: string; controls: QrCodeControls; disabled: boolean }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useInspectorSection("qrCode", true, false);
   const [text, setText] = useState(controls.settings.text);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -6379,7 +6386,7 @@ function SbcBoardCard({ shapeId, controls, workspace, disabled, onInteractionAct
   disabled: boolean;
   onInteractionActiveChange?: (active: boolean) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useInspectorSection("sbcBoard", true, false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const regenerate = (patch: Partial<SbcBoardSettings>) => {
@@ -6533,7 +6540,7 @@ function ReferenceImageCard({ shapeId, controls, workspace, locked, onInteractio
   locked: boolean;
   onInteractionActiveChange?: (active: boolean) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useInspectorSection("referenceImage", true, false);
   const { calibration } = controls;
   const [distance, setDistance] = useState("");
   useEffect(() => {
@@ -6689,7 +6696,7 @@ function IconTagCard({ shapeId, controls, layerSteps, workspace, disabled, onInt
   disabled: boolean;
   onInteractionActiveChange?: (active: boolean) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useInspectorSection("iconTag", true, false);
   const [count, setCount] = useState(1);
   const [fitNote, setFitNote] = useState(false);
   const [replacing, setReplacing] = useState(false);
@@ -6811,7 +6818,7 @@ function CylinderWrapCard({
   onWrap: (diameter: number, inward: boolean) => void;
   onInteractionActiveChange?: (active: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useInspectorSection("cylinderWrap", false, false);
   // A diameter the body just goes once around reads as the natural start; most
   // people then type the diameter of their cup or tube.
   const [diameter, setDiameter] = useState(() => Math.max(10, Math.round(shapeWidth(shape) / Math.PI * 1.25)));
@@ -7804,7 +7811,7 @@ function BentTubeSegmentsCard({
   onInteractionActiveChange?: (active: boolean) => void;
   onSegmentChange?: (shapeId: string, segment: number | null) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useInspectorSection("bentTube", true, false);
   const [selected, setSelected] = useState(0);
   const fields = normalizedBentTubeFields(shape);
   const segments = fields.bentTubeSegments;
@@ -7966,7 +7973,7 @@ function GridfinityCompartmentsCard({
   onUpdate: ShapeInspectorUpdate;
   onInteractionActiveChange?: (active: boolean) => void;
 }) {
-  const [open, setOpen] = useInspectorCard("gridfinityCompartments", true);
+  const [open, setOpen] = useInspectorSection("gridfinityCompartments", true);
   const [chosen, setChosen] = useState({ x: 0, z: 0, row: 0, column: 0 });
 
   useEffect(() => setChosen({ x: 0, z: 0, row: 0, column: 0 }), [shape.id]);
@@ -9296,6 +9303,7 @@ export function SelectionInspector({
       aria-label={t("inspector.selectionTitle", { count: shapes.length })}
       onPointerDown={(event) => event.stopPropagation()}
     >
+      <InspectorGeneral docked={docked}>
       <div className={docked ? "shape-inspector-header" : "shape-inspector-header movable"} title={docked ? undefined : t("inspector.moveHint")} {...(docked ? {} : movable.handleProps)}>
         <div className="inspector-name">
           <strong>{t("inspector.selectionTitle", { count: shapes.length })}</strong>
@@ -9427,6 +9435,7 @@ export function SelectionInspector({
           <SnapGridControl units={workspace.units} onUnitsChange={onUnitsChange} customGrids={workspace.customSnapGrids} snap={snap} snapOpen={snapOpen} onSnapChange={onSnapChange} onSnapOpenChange={onSnapOpenChange} objectSnap={workspace.objectSnap} onObjectSnapChange={onObjectSnapChange} />
         </div>
       ) : null}
+      </InspectorGeneral>
     </aside>
   );
 }
