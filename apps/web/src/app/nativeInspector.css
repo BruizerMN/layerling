@@ -601,20 +601,27 @@ html[data-theme="dark"] .native-inspector-dock {
 .native-inspector-panels .shape-inspector-header { top: 0; }
 
 /* Section bars (the FileMaker Inspector's way): a full-width band a shade away from the panel, hairlines above and below, a solid triangle at the left, then the name. */
-html[data-native-chrome="on"] .native-inspector-dock .property-card { margin-right: -8px; border-bottom: 0 !important; }
-html[data-native-chrome="on"] .native-inspector-dock .property-card > .property-list { margin-right: 8px; }
+.native-inspector-panels { padding-right: 0; }
+.native-inspector-panels .shape-inspector-header { margin-right: 0; padding-right: 10px; }
+html[data-native-chrome="on"] .native-inspector-dock .property-card { border-bottom: 0 !important; border-radius: 0 !important; }
 html[data-native-chrome="on"] .native-inspector-dock .property-card-header {
   position: relative;
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 7px;
   box-sizing: border-box;
   width: 100%;
   height: 28px;
   margin-top: -1px;
-  padding: 0 18px 0 10px;
+  padding: 0 10px;
   background: var(--insp-bar-bg) !important;
   border-top: 1px solid var(--insp-bar-line);
   border-bottom: 1px solid var(--insp-bar-line);
   border-left: 0;
   border-right: 0;
+  border-radius: 0;
   font-size: 12px;
   font-weight: 600;
   cursor: default;
@@ -622,8 +629,18 @@ html[data-native-chrome="on"] .native-inspector-dock .property-card-header {
 html[data-native-chrome="on"] .native-inspector-dock .property-card-header:hover:not(:disabled) { background: color-mix(in srgb, var(--insp-fg) 6%, var(--insp-bar-bg)) !important; }
 html[data-native-chrome="on"] .native-inspector-dock .property-card-header .property-card-title { font-size: 12px; font-weight: 600; }
 html[data-native-chrome="on"] .native-inspector-dock .property-card-header:focus-visible { outline: 2px solid var(--accent-live, var(--insp-accent)); outline-offset: -2px; }
-/* The chevron becomes a solid triangle: pointing down when open, right when closed. */
-.native-inspector-dock .property-card-header > svg { width: 9px; height: 9px; fill: currentColor; stroke: currentColor; stroke-width: 1; stroke-linejoin: round; color: var(--insp-fg); }
+/* The disclosure triangle is drawn here, once, for every section bar: solid, pointing down when open and right when closed. The cards' own chevron is not shown. */
+.native-inspector-dock .property-card-header > svg { display: none; }
+.native-inspector-dock .property-card-header::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 9px;
+  height: 8px;
+  background: var(--insp-fg);
+  opacity: 0.85;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+.native-inspector-dock .property-card-header[aria-expanded="false"]::before { width: 8px; height: 9px; clip-path: polygon(0 0, 100% 50%, 0 100%); }
 /* The hidden-objects row, now inside the Project tab's Visibility section. */
 .native-inspector-dock .property-list .inspector-hidden-banner { margin: 6px 0 2px; padding: 0; border: 0; background: transparent; }
 .native-inspector-dock .inspector-hidden-banner button:disabled { opacity: 0.45; }
