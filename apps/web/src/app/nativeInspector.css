@@ -682,4 +682,33 @@ html[data-native-chrome="on"] .native-inspector-dock .property-card-header:focus
 .native-inspector-dock .inspector-group-label { flex: 0 0 auto; color: var(--insp-muted); font-size: 11px; }
 .native-inspector-dock .inspector-group-name .inspector-name { flex: 1; min-width: 0; }
 .native-inspector-dock .inspector-name-placeholder { color: var(--insp-muted); opacity: 0.6; font-size: 12px; }
-.native-inspector-dock .inspector-section-bare > .inspector-action-button { display: block; width: calc(100% - 20px); margin: 8px 10px; }
+.native-inspector-dock .inspector-section-bare > .inspector-action-button { display: flex; align-items: center; justify-content: center; gap: 6px; box-sizing: border-box; width: calc(100% - 20px); margin: 8px 10px; }
+.native-inspector-dock .inspector-section-bare > .inspector-action-button svg { flex: 0 0 auto; width: 15px; height: 15px; }
+.native-inspector-dock .inspector-section-bare > .inspector-action-button > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/*
+ * Build 0030: disabled controls are neutral. An accent-coloured control that is disabled (a locked object, a tool in use) shows its value in grey, so it cannot be
+ * mistaken for an enabled one; enabled again, the accent comes back. One set of rules for the Inspector: sliders, switches and selected options. The stored value and the
+ * selected state are untouched, only the colours change.
+ */
+.native-inspector-dock { --insp-disabled-fill: #c2c2c8; --insp-disabled-select-bg: #e4e4e8; --insp-disabled-select-fg: #6e6e73; }
+html[data-theme="dark"] .native-inspector-dock { --insp-disabled-fill: #5a5a5f; --insp-disabled-select-bg: #38383b; --insp-disabled-select-fg: #98989e; }
+html[data-native-app="on"] .native-inspector-dock .property-card .range-property input[type="range"]:disabled::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, var(--insp-disabled-fill) 0 var(--slider-pos, 0%), var(--insp-field-line) var(--slider-pos, 0%) 100%) !important;
+}
+:root[data-native-app="on"] .native-inspector-dock .property-card .check-property input[type="checkbox"]:checked:disabled {
+  border-color: var(--insp-disabled-fill);
+  background: var(--insp-disabled-fill);
+}
+html[data-native-chrome="on"] .native-inspector-dock :is(
+  .shape-state-card button.active,
+  .name-tag-sides button.active,
+  .name-tag-sides button[aria-checked="true"],
+  .surface-layers button.active,
+  .gear-type-options.icon-options button.selected,
+  .inspector-action-button.active
+):disabled {
+  color: var(--insp-disabled-select-fg) !important;
+  background: var(--insp-disabled-select-bg) !important;
+  border-color: var(--insp-field-line) !important;
+}

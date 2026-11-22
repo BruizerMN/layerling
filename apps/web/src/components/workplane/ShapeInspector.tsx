@@ -5043,6 +5043,8 @@ export function ShapeInspector({
   }, [editingName]);
 
   const isGroup = Boolean(shape.groupedShapes?.length);
+  // One underlying property (shape.shapeLocked), shown in General and at the top of Properties, Taper and Twist & Lean (docked Inspector): every copy reads it from the shape, so they cannot disagree.
+  const lockPropertiesSwitch = <ToggleProperty label="Lock Properties" value={shapeLocked} disabled={locked} keys="Ctrl+Shift+L" onChange={(next) => onUpdate({ shapeLocked: next })} />;
   const showsState = shape.groupOperation === "bundle" || !isNonSolidShape(shape);
   const nameControl = (
         <div className="inspector-name">
@@ -5395,7 +5397,7 @@ export function ShapeInspector({
       {docked ? (
         <>
           <InspectorDockSection name="object.general" title="General">
-            {!isGroup ? <div className="inspector-name-row">{nameControl}</div> : null}
+            <div className="inspector-name-row">{nameControl}</div>
             {showsState ? (
               <div className="shape-state-card solid-hole-card" role="group" aria-label={t("inspector.shapeMode")}>
                 {solidChoice}
@@ -5405,8 +5407,8 @@ export function ShapeInspector({
             {pieceColor}
             <div className="shape-state-card inspector-switch-card">
               <ToggleProperty label="Hidden" value={Boolean(shape.hidden)} keys="Ctrl+H" onChange={(hidden) => onUpdate({ hidden })} />
-              <ToggleProperty label="Lock Position" value={locked} gapBefore keys="Ctrl+L" onChange={(next) => onUpdate({ locked: next })} />
-              <ToggleProperty label="Lock Shape" value={shapeLocked} disabled={locked} keys="Ctrl+Shift+L" onChange={(next) => onUpdate({ shapeLocked: next })} />
+              <ToggleProperty label="Lock Object" value={locked} gapBefore keys="Ctrl+L" onChange={(next) => onUpdate({ locked: next })} />
+              {lockPropertiesSwitch}
               {showsState ? transparentSwitch : null}
               {showsState ? multicolorSwitch : null}
             </div>
@@ -5415,10 +5417,6 @@ export function ShapeInspector({
             {pieceEllipse}
           </InspectorDockSection>
           <InspectorDockSection name="object.group" title="Group">
-            <div className="inspector-group-name">
-              <span className="inspector-group-label">Group name</span>
-              {isGroup ? nameControl : <span className="inspector-name inspector-name-placeholder" aria-disabled="true">—</span>}
-            </div>
             {pieceOpenGroup}
             {!onOpenGroup ? <GroupEditPlaceholder /> : null}
             {pieceResize}
@@ -5494,6 +5492,7 @@ export function ShapeInspector({
         </button>
         {propertiesOpen ? (
           <div className="property-list" id={`properties-${shape.id}`}>
+            {docked ? lockPropertiesSwitch : null}
             {gearType ? (
               <GearTypeSelector
                 value={gearType}
@@ -5754,6 +5753,7 @@ export function ShapeInspector({
           </button>
           {taperOpen ? (
             <div className="property-list" id={`taper-${shape.id}`}>
+            {docked ? lockPropertiesSwitch : null}
               <ShapePropertyRows formulas={shape.formulas} onFormula={noteFormula} properties={taperProperties} defaults={propertyDefaults?.taper} workspace={workspace} disabled={frozen} onInteractionActiveChange={onInteractionActiveChange} />
             </div>
           ) : null}
@@ -5773,6 +5773,7 @@ export function ShapeInspector({
           </button>
           {twistOpen ? (
             <div className="property-list" id={`twist-${shape.id}`}>
+            {docked ? lockPropertiesSwitch : null}
               <ShapePropertyRows formulas={shape.formulas} onFormula={noteFormula} properties={twistProperties} defaults={propertyDefaults?.twist} workspace={workspace} disabled={frozen} onInteractionActiveChange={onInteractionActiveChange} />
             </div>
           ) : null}
@@ -9611,16 +9612,12 @@ export function SelectionInspector({
             {selColor}
             <div className="shape-state-card inspector-switch-card">
               {onToggleHidden ? <ToggleProperty label="Hidden" value={allHidden} keys="Ctrl+H" onChange={() => onToggleHidden()} /> : null}
-              <ToggleProperty label="Lock Position" value={allLocked} gapBefore keys="Ctrl+L" onChange={() => onToggleLocked()} />
+              <ToggleProperty label="Lock Object" value={allLocked} gapBefore keys="Ctrl+L" onChange={() => onToggleLocked()} />
               {solidKinds.length > 0 ? selTransparent : null}
             </div>
             {selRest}
           </InspectorDockSection>
           <InspectorDockSection name="object.group" title="Group">
-            <div className="inspector-group-name">
-              <span className="inspector-group-label">Group name</span>
-              <span className="inspector-name inspector-name-placeholder" aria-disabled="true">—</span>
-            </div>
             <GroupEditPlaceholder />
             <GroupResizePlaceholder />
           </InspectorDockSection>
