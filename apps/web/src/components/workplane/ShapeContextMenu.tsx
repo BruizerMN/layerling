@@ -14,6 +14,8 @@ export type ShapeContextMenuItem = {
   keepOpen?: boolean;
   /** A colour dot before the label: the body a row of "Select other" stands for (#804). */
   color?: string;
+  /** Native menu only: a check mark before the item (the Visual Group an object is in). */
+  checked?: boolean;
   /** Native menu only: the item opens these as a submenu (the Visual Groups commands). The web menu never gets such an item. */
   submenu?: ShapeContextMenuItem[];
   /** The pointer or the focus is on the item (true) or has left it (false). */

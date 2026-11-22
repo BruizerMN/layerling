@@ -511,6 +511,34 @@ export function groupVisibilityState(registry: VisualGroupsRegistry, groupId: st
   return groupVisibilityStates(registry, shapes).get(groupId) ?? "empty";
 }
 
+export type GroupFocus = {
+  /** The shapes with every object outside the group hidden and every object in it shown; shapes that did not change are the same objects as before. */
+  shapes: WorkplaneShape[];
+  /** The objects that were hidden by this. */
+  hiddenIds: string[];
+  /** The objects that were shown by this. */
+  shownIds: string[];
+};
+
+/**
+ * Option-click on a group's eye: hide EVERY object in the design (the unassigned ones too) except those in the group (at any depth), which are shown. A one-way
+ * command, not a toggle: nothing is remembered. Only the `hidden` flags are written, once, for all of them: the caller commits the result as one step.
+ * Null when the group is unknown or holds no object, or nothing would change.
+ */
+export function focusGroupVisibility(registry: VisualGroupsRegistry, groupId: string, shapes: readonly WorkplaneShape[]): GroupFocus | null {
+  const keep = new Set(descendantObjectIds(registry, groupId, liveObjectIds(shapes)));
+  if (keep.size === 0) return null;
+  const hiddenIds: string[] = [];
+  const shownIds: string[] = [];
+  const next = shapes.map((shape) => {
+    const wantHidden = !keep.has(shape.id);
+    if (Boolean(shape.hidden) === wantHidden) return shape;
+    (wantHidden ? hiddenIds : shownIds).push(shape.id);
+    return { ...shape, hidden: wantHidden };
+  });
+  return hiddenIds.length + shownIds.length === 0 ? null : { shapes: next, hiddenIds, shownIds };
+}
+
 export type GroupVisibilityToggle = {
   /** The shapes with the changed objects' `hidden` flags set; every other shape is the same object as before. */
   shapes: WorkplaneShape[];

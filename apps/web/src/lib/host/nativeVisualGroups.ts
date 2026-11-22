@@ -18,6 +18,8 @@ export type VisualGroupsInvoke =
   | { op: "select"; ids: string[]; mode: "replace" | "toggle" }
   | { op: "assign"; objectIds: string[]; groupId?: string | null; newName?: string; parentId?: string | null }
   | { op: "pickResult"; requestId: string; cancelled: boolean; groupId?: string }
+  | { op: "focusGroup"; groupId: string }
+  | { op: "renameObject"; id: string; name: string }
   | { op: "move"; items: Array<{ kind: "group" | "object"; id: string }>; parentId: string | null; index: number };
 
 let watching = false;
@@ -45,6 +47,8 @@ export function parseVisualGroupsInvoke(op: string, args: Record<string, unknown
       return { op, objectIds: args.objectIds as string[], ...(isText(args.groupId) ? { groupId: args.groupId } : {}), ...(isText(args.newName) ? { newName: args.newName } : {}), ...(typeof args.parentId === "string" ? { parentId: args.parentId } : {}) };
     }
     case "pickResult": return isText(args.requestId) && typeof args.cancelled === "boolean" ? { op, requestId: args.requestId, cancelled: args.cancelled, ...(isText(args.groupId) ? { groupId: args.groupId } : {}) } : null;
+    case "focusGroup": return isText(args.groupId) ? { op, groupId: args.groupId } : null;
+    case "renameObject": return isText(args.id) && typeof args.name === "string" ? { op, id: args.id, name: args.name } : null;
     case "move": {
       if (!Array.isArray(args.items) || args.items.length === 0 || args.items.length > 1000) return null;
       const items: Array<{ kind: "group" | "object"; id: string }> = [];

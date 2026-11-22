@@ -170,7 +170,7 @@ import { historyViewMcpCommand } from "./workplane/historyViewMcp";
 import { attachmentsFingerprint } from "@/lib/projectAttachments";
 import { nativeVisualGroupsAvailable, nativeVisualGroupsWatching, onNativeVisualGroupsInvoke, onNativeVisualGroupsWatch, publishVisualGroupsState, requestVisualGroupChooser, requestVisualGroupPick, type VisualGroupsInvoke } from "@/lib/host/nativeVisualGroups";
 import { existingGroupId, visualGroupsMenuFits, visualGroupsOutline, visualGroupsPaletteState, type ChooserGroup } from "@/lib/visualGroupsSnapshot";
-import { EMPTY_VISUAL_GROUPS, applyMerge, moveItemsToGroup, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, copyPairs, mergePickCandidates, moveObjectsToGroup, placeDerivedObjects, placeReplacementObjects, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
+import { EMPTY_VISUAL_GROUPS, applyMerge, findVisualGroup, focusGroupVisibility, moveItemsToGroup, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, copyPairs, mergePickCandidates, moveObjectsToGroup, placeDerivedObjects, placeReplacementObjects, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
 import { ATTACHMENT_MCP_READ_ACTIONS, attachmentMcpCommand, attachmentMcpList } from "@/lib/projectAttachmentsMcp";
 import { appendEditorHistorySnapshot, boundedEditorHistoryState, continuesKeyRun, type KeyRun, editorHistoryBranch, editorHistoryEntry, editorHistoryForExport, historyStateAt, hydrateEditorHistoryState, notesForHistoryIndex, projectSceneFingerprint, projectShapesFingerprint, workplaneForHistoryIndex, type EditorHistoryEntry, type EditorHistoryState } from "@/lib/editorHistory";
 import { deleteHistoryEntries, formatHistoryBytes, historyFreedBytes, historyIndexAfterDelete } from "@/lib/historyStepSizes";
@@ -10256,6 +10256,16 @@ export function LayerlingEditor({
     const changed = new Set(toggle.changedIds);
     commitShapes(toggle.shapes, toggle.hide ? selectedIdsRef.current.filter((id) => !changed.has(id)) : selectedIdsRef.current);
   }, [commitShapes]);
+  /**
+   * Option-click on a group's eye: everything outside the group is hidden and the group's objects are shown, in ONE commit (one undo step). One-way: no state is kept.
+   * Objects that are hidden leave the selection, as with the other eyes.
+   */
+  const focusVisualGroup = useCallback((groupId: string) => {
+    const focus = focusGroupVisibility(visualGroupsRef.current, groupId, shapesRef.current);
+    if (!focus) return;
+    const hidden = new Set(focus.hiddenIds);
+    commitShapes(focus.shapes, selectedIdsRef.current.filter((id) => !hidden.has(id)));
+  }, [commitShapes]);
   const visualGroupOps = useMemo(() => ({
     create: (options?: { name?: string; parentId?: string | null; index?: number }): string => {
       let id = "";
@@ -10275,7 +10285,8 @@ export function LayerlingEditor({
     moveItems: (items: ReadonlyArray<{ kind: "group" | "object"; id: string }>, parentId: string | null, index: number) =>
       updateVisualGroups((current) => moveItemsToGroup(current, items, parentId, index, liveObjectIds(shapesRef.current))),
     toggleVisibility: toggleVisualGroupVisibility,
-  }), [toggleVisualGroupVisibility, updateVisualGroups]);
+    focus: focusVisualGroup,
+  }), [focusVisualGroup, toggleVisualGroupVisibility, updateVisualGroups]);
   const visualGroupOpsRef = useRef(visualGroupOps);
   visualGroupOpsRef.current = visualGroupOps;
 
@@ -19082,6 +19093,8 @@ export function LayerlingEditor({
       case "toggleObject": if (live.has(command.id)) toggleShapeHiddenById(command.id, true); break;
       case "removeObject": ops.removeObjects([command.id]); break;
       case "move": ops.moveItems(command.items, command.parentId, command.index); break;
+      case "focusGroup": ops.focus(command.groupId); break;
+      case "renameObject": if (live.has(command.id)) renameShapeById(command.id, command.name.trim()); break;
       case "select": selectShape(command.ids.filter((id) => live.has(id)), command.mode); break;
       case "assign": {
         const ids = command.objectIds.filter((id) => live.has(id));
@@ -19904,15 +19917,17 @@ export function LayerlingEditor({
       const moving = assignedIds.length === objectIds.length;
       const outline = visualGroupsOutline(visualGroups);
       const clip = (text: string) => (text.length > 60 ? `${text.slice(0, 59)}\u2026` : text);
-      const assignTo = (groupId: string) => () => visualGroupsInvokeRef.current({ op: "assign", objectIds, groupId });
+      // The group the objects are in (immediately, not an ancestor) is checked; choosing it again takes the objects out of it, choosing another moves them there.
+      const allIn = (groupId: string) => objectIds.length > 0 && objectIds.every((id) => owners.get(id) === groupId);
+      const assignTo = (groupId: string) => () => (allIn(groupId) ? visualGroupOps.removeObjects(objectIds) : visualGroupsInvokeRef.current({ op: "assign", objectIds, groupId }));
       const entry = (group: ChooserGroup): ShapeContextMenuItem => group.groups.length === 0
-        ? { key: `vg/${group.id}`, label: clip(group.name), onSelect: assignTo(group.id) }
+        ? { key: `vg/${group.id}`, label: clip(group.name), checked: allIn(group.id), onSelect: assignTo(group.id) }
         : {
           key: `vg/${group.id}`,
           label: clip(group.name),
           onSelect: () => undefined,
           submenu: [
-            { key: `vgHere/${group.id}`, label: `${moving ? "Move to" : "Add to"} \u201c${clip(group.name)}\u201d`, onSelect: assignTo(group.id) },
+            { key: `vgHere/${group.id}`, label: `${moving ? "Move to" : "Add to"} \u201c${clip(group.name)}\u201d`, checked: allIn(group.id), onSelect: assignTo(group.id) },
             ...group.groups.map((child, index) => ({ ...entry(child), separated: index === 0 })),
           ],
         };
@@ -19928,7 +19943,12 @@ export function LayerlingEditor({
           ],
         }]
         : [{ key: "visualGroupMove", label: moving ? "Move to Visual Group\u2026" : "Add to Visual Group\u2026", onSelect: () => requestVisualGroupChooser({ mode, objectIds, groups: outline }) }];
-      if (assignedIds.length > 0) visualGroupItems.push({ key: "visualGroupRemove", label: "Remove from Visual Group", onSelect: () => visualGroupOps.removeObjects(assignedIds) });
+      if (assignedIds.length > 0) {
+        // Named after the group when the objects are all in one.
+        const ownerIds = new Set(assignedIds.map((id) => owners.get(id)));
+        const ownerName = ownerIds.size === 1 ? findVisualGroup(visualGroups, [...ownerIds][0] as string)?.name : undefined;
+        visualGroupItems.push({ key: "visualGroupRemove", label: ownerName === undefined ? "Remove from Visual Group" : `Remove from \u201c${clip(ownerName)}\u201d`, onSelect: () => visualGroupOps.removeObjects(assignedIds) });
+      }
       items.unshift(...visualGroupItems);
       // a line below the Visual Groups commands
       items[visualGroupItems.length] = { ...items[visualGroupItems.length], separated: true };
@@ -20018,7 +20038,7 @@ export function LayerlingEditor({
             // Visual Groups: a cascading submenu (native menus only), built from the same items.
             if (item.submenu) return item.submenu.length === 0 ? [] : [{ key, title: item.label, separatorBefore: item.separated, items: convert(item.submenu, `${key}/`) }];
             registry.set(key, item);
-            return [{ key, title: item.label, shortcut: item.shortcut, danger: item.danger, separatorBefore: item.separated, color: item.color }];
+            return [{ key, title: item.label, shortcut: item.shortcut, danger: item.danger, separatorBefore: item.separated, color: item.color, ...(item.checked ? { checked: true } : {}) }];
           });
         const items = convert(shapeContextMenuItems(base), "");
         if (items.length === 0) return false;

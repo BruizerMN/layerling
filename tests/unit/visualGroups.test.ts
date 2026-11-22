@@ -16,6 +16,7 @@ import {
   moveObjectsToGroup,
   moveVisualGroup,
   mergePickCandidates,
+  focusGroupVisibility,
   moveItemsToGroup,
   placeDerivedObjects,
   placeReplacementObjects,
@@ -619,5 +620,46 @@ describe("the palette's drop (reorder, nest, move between groups)", () => {
   it("never touches visibility (no shapes are involved) and keeps the objects' own order inside a moved group", () => {
     const r = moveItemsToGroup(sample(), [g("cor")], "lamp", -1, live);
     expect(descendantObjectIds(r, "cor")).toEqual(["c", "d"]);
+  });
+});
+
+describe("Option-click on a group's eye: focus the group", () => {
+  it("hides every object that is not in the group, unassigned ones too, and shows the group's objects at any depth", () => {
+    const input = shapes({ a: true, c: true, e: true }); // a, c (in Pedestal) and e (in Lamp) hidden; f unassigned visible
+    const focus = focusGroupVisibility(sample(), "ped", input)!;
+    const hidden = new Set(focus.shapes.filter((s) => s.hidden).map((s) => s.id));
+    expect([...hidden].sort()).toEqual(["e", "f"]);
+    expect(focus.shownIds.sort()).toEqual(["a", "c"]);
+    expect(focus.hiddenIds.sort()).toEqual(["f"]);
+  });
+
+  it("a nested group focuses on its own objects only", () => {
+    const focus = focusGroupVisibility(sample(), "cor", shapes())!;
+    expect(focus.shapes.filter((s) => !s.hidden).map((s) => s.id)).toEqual(["c", "d"]);
+  });
+
+  it("is one-way: doing it twice changes nothing the second time, and it keeps shapes that did not change", () => {
+    const input = shapes();
+    const first = focusGroupVisibility(sample(), "lamp", input)!;
+    expect(focusGroupVisibility(sample(), "lamp", first.shapes)).toBeNull();
+    const byId = new Map(first.shapes.map((s) => [s.id, s]));
+    expect(byId.get("e")).toBe(input.find((s) => s.id === "e")); // already visible: the same object
+  });
+
+  it("writes only the hidden flag", () => {
+    const focus = focusGroupVisibility(sample(), "lamp", shapes())!;
+    for (const shape of focus.shapes) expect({ ...shape, hidden: undefined }).toEqual({ ...shapes().find((s) => s.id === shape.id)!, hidden: undefined });
+  });
+
+  it("an empty or unknown group changes nothing", () => {
+    const r = createVisualGroup(sample(), { id: "empty", name: "Empty" }).registry;
+    expect(focusGroupVisibility(r, "empty", shapes())).toBeNull();
+    expect(focusGroupVisibility(r, "nope", shapes())).toBeNull();
+  });
+
+  it("stale entries are ignored (objects that do not exist cannot be shown)", () => {
+    const r = moveObjectsToGroup(sample(), ["gone"], "lamp");
+    const focus = focusGroupVisibility(r, "lamp", shapes({ e: true }))!;
+    expect(focus.shapes.filter((s) => !s.hidden).map((s) => s.id)).toEqual(["e"]);
   });
 });

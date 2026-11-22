@@ -80,6 +80,9 @@ describe("commands from the palette", () => {
     expect(parseVisualGroupsInvoke("pickResult", { requestId: "pick1", cancelled: false })).toEqual({ op: "pickResult", requestId: "pick1", cancelled: false });
     expect(parseVisualGroupsInvoke("pickResult", { requestId: "pick1", cancelled: true })).toEqual({ op: "pickResult", requestId: "pick1", cancelled: true });
     expect(parseVisualGroupsInvoke("move", { items: [{ kind: "group", id: "g" }, { kind: "object", id: "o" }], parentId: "p", index: 2 })).toEqual({ op: "move", items: [{ kind: "group", id: "g" }, { kind: "object", id: "o" }], parentId: "p", index: 2 });
+    expect(parseVisualGroupsInvoke("focusGroup", { groupId: "g" })).toEqual({ op: "focusGroup", groupId: "g" });
+    expect(parseVisualGroupsInvoke("renameObject", { id: "o", name: "Table top" })).toEqual({ op: "renameObject", id: "o", name: "Table top" });
+    expect(parseVisualGroupsInvoke("renameObject", { id: "o", name: "" })).toEqual({ op: "renameObject", id: "o", name: "" });
     expect(parseVisualGroupsInvoke("move", { items: [{ kind: "group", id: "g" }], index: -1 })).toEqual({ op: "move", items: [{ kind: "group", id: "g" }], parentId: null, index: -1 });
     expect(parseVisualGroupsInvoke("move", { items: [{ kind: "group", id: "g" }], parentId: null, index: 1.9 })).toEqual({ op: "move", items: [{ kind: "group", id: "g" }], parentId: null, index: 1 });
   });
@@ -88,7 +91,7 @@ describe("commands from the palette", () => {
     for (const [op, args] of [
       ["rename", { groupId: "g" }], ["rename", { name: "x" }], ["delete", {}], ["toggleGroup", { groupId: 3 }], ["toggleObject", { id: "" }],
       ["select", { ids: "a", mode: "replace" }], ["select", { ids: ["a"], mode: "other" }], ["select", { ids: [1], mode: "replace" }],
-      ["assign", { objectIds: [], groupId: "g" }], ["assign", { objectIds: ["a"] }], ["assign", { objectIds: [3], groupId: "g" }], ["explode", {}], ["pickResult", { cancelled: true }], ["pickResult", { requestId: "p" }], ["pickResult", { requestId: "", cancelled: false }], ["move", { items: [], index: 0 }], ["move", { items: [{ kind: "row", id: "g" }], index: 0 }], ["move", { items: [{ kind: "group", id: "" }], index: 0 }], ["move", { items: "g", index: 0 }], ["move", { items: [{ kind: "group", id: "g" }] }], ["move", { items: [{ kind: "group", id: "g" }], parentId: 5, index: 0 }], ["move", { items: [null], index: 0 }],
+      ["assign", { objectIds: [], groupId: "g" }], ["assign", { objectIds: ["a"] }], ["assign", { objectIds: [3], groupId: "g" }], ["explode", {}], ["pickResult", { cancelled: true }], ["pickResult", { requestId: "p" }], ["pickResult", { requestId: "", cancelled: false }], ["focusGroup", {}], ["focusGroup", { groupId: "" }], ["renameObject", { id: "o" }], ["renameObject", { name: "x" }], ["renameObject", { id: "", name: "x" }], ["move", { items: [], index: 0 }], ["move", { items: [{ kind: "row", id: "g" }], index: 0 }], ["move", { items: [{ kind: "group", id: "" }], index: 0 }], ["move", { items: "g", index: 0 }], ["move", { items: [{ kind: "group", id: "g" }] }], ["move", { items: [{ kind: "group", id: "g" }], parentId: 5, index: 0 }], ["move", { items: [null], index: 0 }],
     ] as Array<[string, Record<string, unknown>]>) expect(parseVisualGroupsInvoke(op, args), `${op} ${JSON.stringify(args)}`).toBeNull();
   });
 });
@@ -97,7 +100,7 @@ describe("visualGroups.v1 messages", () => {
   const base = { session: "s-1234567", protocol: 3, id: "e1" };
   it("names the capability and the commands", () => {
     expect(VISUAL_GROUPS_CAPABILITY).toBe("visualGroups.v1");
-    expect([...VISUAL_GROUPS_OPS]).toEqual(["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign", "pickResult", "move"]);
+    expect([...VISUAL_GROUPS_OPS]).toEqual(["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign", "pickResult", "move", "focusGroup", "renameObject"]);
   });
 
   it("parses the host's events", () => {
