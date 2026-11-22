@@ -36,6 +36,7 @@ import { normalizePaintStroke, PAINT_MAX_STROKES } from "@/lib/paint";
 import { MAX_GEAR_TEETH, MIN_GEAR_TEETH } from "@/lib/gearGeometry";
 import { GRIDFINITY_LABEL_FONTS, GRIDFINITY_LABEL_TEXT_KEYS, MAX_GRIDFINITY_LABEL_TEXT_LENGTH, MAX_GRIDFINITY_OUTLINE_POINTS } from "@/lib/gridfinityGeometry";
 import type { PortProfile } from "@/types/layerling";
+import { hasVisualGroups, liveObjectIds, normalizeVisualGroups, serializableVisualGroups, type VisualGroupsRegistry } from "@/lib/visualGroups";
 import { normalizeSnapGrid, normalizeWorkspaceSettings } from "@/lib/workplaneSettings";
 import type { CadDisplayEdge, GridSize, ProjectAsset, ProjectAssetSourceFormat, ProjectAttachment, SketchOperation, SketchRevolveSettings, WorkplaneNote, WorkplaneShape, WorkplaneWorkspaceSettings } from "@/types/layerling";
 
@@ -62,8 +63,13 @@ export const LYL_ATTACHMENTS_FORMAT_VERSION = 3;
 // are all text stays a version 3 file. Which version each type needs is the `formatVersion` column
 // of ATTACHMENT_TYPES in projectAttachments.ts.
 export const LYL_FILE_TYPES_FORMAT_VERSION = 4;
+// Version 5 adds Visual Groups (named, nested collections of objects, for organisation only). It is written only
+// for a design that has at least one, so every other design stays exactly what it was (version 2, or 3/4 with files);
+// a layerling that does not know version 5 refuses such a design instead of opening it and dropping the groups at its
+// next save. The groups are one optional top-level `visualGroups` field, stored once (not per undo state).
+export const LYL_VISUAL_GROUPS_FORMAT_VERSION = 5;
 /** The newest format this layerling reads. */
-export const LYL_NEWEST_READABLE_FORMAT_VERSION = LYL_FILE_TYPES_FORMAT_VERSION;
+export const LYL_NEWEST_READABLE_FORMAT_VERSION = LYL_VISUAL_GROUPS_FORMAT_VERSION;
 export const LYL_OLDEST_READABLE_FORMAT_VERSION = 1;
 export const LYL_CREATED_WITH_VERSION = "1.165.2";
 export const LYL_MEDIA_TYPE = "application/vnd.layerling.project+zip";
@@ -211,7 +217,7 @@ function validateFonts(fonts: unknown) {
 
 export type LylProjectDocumentV1 = {
   schema: typeof LYL_SCHEMA_ID | typeof LEGACY_LYL_SCHEMA_ID;
-  formatVersion: 1 | 2 | 3 | 4;
+  formatVersion: 1 | 2 | 3 | 4 | 5;
   minimumReaderVersion: number;
   createdWithVersion: string;
   metadata: {
@@ -247,6 +253,8 @@ export type LylProjectDocumentV1 = {
    * over them and draw those texts in the default font; 1.145.0 refuses a bin in such a font.
    */
   fonts?: LylFontV1[];
+  /** The design's Visual Groups, a version 5 package only: an ordered tree of group ids, names and the ids of the objects in them. */
+  visualGroups?: VisualGroupsRegistry;
   editor: {
     workspace: WorkplaneWorkspaceSettings;
     snapGrid: GridSize;
@@ -277,6 +285,8 @@ export type LylProjectExportInput = {
   assets: ProjectAsset[];
   /** The files kept with the design (#820). A design with any is written as a version 3 package. */
   attachments?: ProjectAttachment[];
+  /** The design's Visual Groups. A design with at least one group is written as a version 5 package; ids of objects that are not in `shapes` are left out. */
+  visualGroups?: VisualGroupsRegistry;
   workspace: WorkplaneWorkspaceSettings;
   snapGrid: GridSize;
   placementElevation: number;
@@ -307,6 +317,8 @@ export type LylRestoredProject = {
   assets: ProjectAsset[];
   /** The files the design carried, when the file has any. */
   attachments?: ProjectAttachment[];
+  /** The design's Visual Groups, when the file has any. */
+  visualGroups?: VisualGroupsRegistry;
   workspace: WorkplaneWorkspaceSettings;
   snapGrid: GridSize;
   placementElevation: number;
@@ -1189,14 +1201,17 @@ export async function exportLylProject(input: LylProjectExportInput) {
   const cornerRulers = normalizeSavedCornerRulers(input.cornerRulers === undefined ? readCornerRulers(input.projectId) : input.cornerRulers);
   const tapeMeasurements = normalizeSavedTape(input.tapeMeasurements === undefined ? readTape(input.projectId) : input.tapeMeasurements);
   const selectedWorkplaneId = placementWorkplaneIsBase(placementWorkplane) ? "workplane-base" : "workplane-active";
+  // Only a design with a Visual Group is a version 5 package (see LYL_VISUAL_GROUPS_FORMAT_VERSION); the version is the highest any feature needs.
+  const visualGroups = input.visualGroups ? serializableVisualGroups(input.visualGroups, liveObjectIds(input.shapes)) : undefined;
+  const neededVersion = (visualGroups ? Math.max(attachmentsFormatVersion(attachments) ?? 0, LYL_VISUAL_GROUPS_FORMAT_VERSION) : attachmentsFormatVersion(attachments)) as LylProjectDocumentV1["formatVersion"] | undefined;
   const document: Omit<LylProjectDocumentV1, "states"> & { states: typeof STATES_PLACEHOLDER } = {
     schema: LYL_SCHEMA_ID,
     // Only a design that has attachments is a version 3 package, or version 4 when one of them is of a
     // type that came with version 4: a layerling that does not know them refuses it (see
     // LYL_ATTACHMENTS_FORMAT_VERSION and LYL_FILE_TYPES_FORMAT_VERSION) instead of dropping the files
     // at its next save. Every other design is written exactly as before.
-    formatVersion: attachmentsFormatVersion(attachments) ?? LYL_FORMAT_VERSION,
-    minimumReaderVersion: attachmentsFormatVersion(attachments) ?? LYL_MINIMUM_READER_VERSION,
+    formatVersion: neededVersion ?? LYL_FORMAT_VERSION,
+    minimumReaderVersion: neededVersion ?? LYL_MINIMUM_READER_VERSION,
     createdWithVersion: LYL_CREATED_WITH_VERSION,
     metadata: {
       ...(input.projectId ? { projectId: input.projectId } : {}),
@@ -1219,6 +1234,7 @@ export async function exportLylProject(input: LylProjectExportInput) {
     exactCad: indexes.exactCad,
     ...(attachmentRecords.length > 0 ? { attachments: attachmentRecords } : {}),
     ...(designFonts.length ? { fonts: designFonts } : {}),
+    ...(visualGroups ? { visualGroups } : {}),
     editor: {
       workspace: normalizeWorkspaceSettings(input.workspace),
       snapGrid: normalizeSnapGrid(input.snapGrid),
@@ -2467,6 +2483,8 @@ async function restoreV1(document: LylProjectDocumentV1, assetById: Map<string, 
   const restoredSavedViews = normalizeSavedViews(document.editor.savedViews);
   const restoredCornerRulers = normalizeSavedCornerRulers(document.editor.cornerRulers);
   const restoredTape = normalizeSavedTape(document.editor.tapeMeasurements);
+  // Healed, never refused: organisation is not worth a file that will not open. Objects that are gone stay listed until the next save drops them.
+  const restoredVisualGroups = normalizeVisualGroups(document.visualGroups);
   // The files were checked with the document; each is copied out of the archive.
   const attachments = (document.attachments ?? []).map((record): ProjectAttachment => {
     const asset = assetById.get(record.assetId) as LylAssetRecordV1;
@@ -2494,6 +2512,7 @@ async function restoreV1(document: LylProjectDocumentV1, assetById: Map<string, 
     ...(restoredSavedViews ? { savedViews: restoredSavedViews } : {}),
     ...(restoredCornerRulers ? { cornerRulers: restoredCornerRulers } : {}),
     ...(restoredTape ? { tapeMeasurements: restoredTape } : {}),
+    ...(hasVisualGroups(restoredVisualGroups) ? { visualGroups: restoredVisualGroups } : {}),
     ...(document.formatVersion < LYL_FORMAT_VERSION ? { migratedFromVersion: document.formatVersion } : {}),
   } satisfies LylRestoredProject;
 }

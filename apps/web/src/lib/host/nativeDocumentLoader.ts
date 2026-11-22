@@ -4,6 +4,7 @@ import type { DocumentFailureCode, DocumentPhase } from "@/lib/host/hostProtocol
 import { transientProjectId } from "@/lib/host/transientProject";
 import type { EditorHistoryEntry } from "@/lib/editorHistory";
 import type { LylRestoredProject } from "@/lib/lylProject";
+import type { VisualGroupsRegistry } from "@/lib/visualGroups";
 import { horizontalPlacementWorkplane, type PlacementWorkplane } from "@/lib/placementWorkplane";
 import { DEFAULT_SNAP_GRID, DEFAULT_WORKPLANE_WORKSPACE, readWorkspaceDefault } from "@/lib/workplaneSettings";
 import { seedStartCornerRuler, writeCornerRulers } from "@/lib/cornerRulerStore";
@@ -33,6 +34,8 @@ export interface NativeDocumentState {
   historyIndex?: number;
   assets: ProjectAsset[];
   attachments?: ProjectAttachment[];
+  /** The Visual Groups the file carried, when it has any. */
+  visualGroups?: VisualGroupsRegistry;
   workspace: WorkplaneWorkspaceSettings;
   snapGrid: GridSize;
   placementElevation: number;
@@ -180,6 +183,7 @@ async function openFileDocument(
     historyIndex: restored.historyIndex,
     assets: restored.assets,
     attachments: restored.attachments,
+    visualGroups: restored.visualGroups,
     // The file's own application keys are dropped HERE, before the editor ever sees the workspace (settingsScope.ts).
     workspace: effectiveWorkspace(restored.workspace, (deps.appPrefs ?? readAppPrefs)()),
     snapGrid: restored.snapGrid,

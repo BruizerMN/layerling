@@ -168,6 +168,7 @@ import { describeHistoryStep, historyStepsAround } from "@/lib/historyStepDescri
 import { historyStepText } from "@/lib/historyStepText";
 import { historyViewMcpCommand } from "./workplane/historyViewMcp";
 import { attachmentsFingerprint } from "@/lib/projectAttachments";
+import { EMPTY_VISUAL_GROUPS, createVisualGroup, deleteVisualGroup, liveObjectIds, moveObjectsToGroup, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
 import { ATTACHMENT_MCP_READ_ACTIONS, attachmentMcpCommand, attachmentMcpList } from "@/lib/projectAttachmentsMcp";
 import { appendEditorHistorySnapshot, boundedEditorHistoryState, continuesKeyRun, type KeyRun, editorHistoryBranch, editorHistoryEntry, editorHistoryForExport, historyStateAt, hydrateEditorHistoryState, notesForHistoryIndex, projectSceneFingerprint, projectShapesFingerprint, workplaneForHistoryIndex, type EditorHistoryEntry, type EditorHistoryState } from "@/lib/editorHistory";
 import { deleteHistoryEntries, formatHistoryBytes, historyFreedBytes, historyIndexAfterDelete } from "@/lib/historyStepSizes";
@@ -369,6 +370,8 @@ export type HistoryProjectRequest = {
   assets: ProjectAsset[];
   /** The files kept with the design (#820): not part of the history, so the new design gets the current ones. */
   attachments: ProjectAttachment[];
+  /** The Visual Groups: not part of the history either; the new design gets the current ones (objects it does not have are left out when it is saved). */
+  visualGroups?: VisualGroupsRegistry;
   workspace: WorkplaneWorkspaceSettings;
   snapGrid: GridSize;
   placementElevation: number;
@@ -3076,6 +3079,7 @@ function translateSelectedShapes(shapes: WorkplaneShape[], selected: Set<string>
 export function LayerlingEditor({
   initialAssets = [],
   initialAttachments,
+  initialVisualGroups,
   initialShapes = [],
   initialHistory,
   initialHistoryIndex,
@@ -3115,6 +3119,8 @@ export function LayerlingEditor({
   initialAssets?: ProjectAsset[];
   /** The files kept with the design (#820). */
   initialAttachments?: ProjectAttachment[];
+  /** The Visual Groups of the design (organisation only; lib/visualGroups.ts). */
+  initialVisualGroups?: VisualGroupsRegistry;
   initialShapes?: WorkplaneShape[];
   initialHistory?: EditorHistoryEntry[];
   initialHistoryIndex?: number;
@@ -3150,6 +3156,7 @@ export function LayerlingEditor({
     historyIndex: number;
     assets: ProjectAsset[];
     attachments: ProjectAttachment[];
+    visualGroups?: VisualGroupsRegistry;
     projectName: string;
     projectCreatedAt: number;
     workspace: WorkplaneWorkspaceSettings;
@@ -3215,6 +3222,8 @@ export function LayerlingEditor({
   const [noteMode, setNoteMode] = useState(false);
   const [projectAssets, setProjectAssets] = useState<ProjectAsset[]>(() => dedupeProjectAssets(initialAssets));
   const [projectAttachments, setProjectAttachments] = useState<ProjectAttachment[]>(() => initialAttachments ?? NO_ATTACHMENTS);
+  // Visual Groups: document-level, not part of the undo history; reads filter by the objects that exist (lib/visualGroups.ts).
+  const [visualGroups, setVisualGroups] = useState<VisualGroupsRegistry>(() => initialVisualGroups ?? EMPTY_VISUAL_GROUPS);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [clipboard, setClipboard] = useState<WorkplaneShape[]>([]);
   const clipboardCopiedAtRef = useRef(0);
@@ -3602,6 +3611,7 @@ export function LayerlingEditor({
   const notesRef = useRef(notes);
   const projectAssetsRef = useRef(projectAssets);
   const projectAttachmentsRef = useRef(projectAttachments);
+  const visualGroupsRef = useRef(visualGroups);
   const selectedIdsRef = useRef(selectedIds);
   const workspaceSettingsRef = useRef(workspaceSettings);
   /** Moves the bodies on the later build plates when the plates change size; set where the plates are kept (#456). */
@@ -4998,6 +5008,8 @@ export function LayerlingEditor({
     return documentSignature({
       entryFingerprint: entry?.fingerprint ?? "",
       attachments: attachmentsFingerprint(projectAttachmentsRef.current),
+      // What a save would write: the groups as the objects that exist now see them (none: nothing to compute).
+      visualGroups: visualGroupsRef.current.items.length === 0 ? "" : visualGroupsFingerprint(resolveVisualGroups(visualGroupsRef.current, liveObjectIds(shapesRef.current))),
       // Native app: only the document's own settings count (settingsScope.ts); application preferences never make a document modified.
       workspace: documentSettingsView(workspaceSettingsRef.current) as unknown as Record<string, unknown>,
       snapGrid: snapGridRef.current,
@@ -5012,7 +5024,7 @@ export function LayerlingEditor({
     if (!nativeDocument) return;
     nativeTrackerRef.current ??= new DocumentRevisionTracker((state) => onNativeDocumentChangeRef.current?.(state));
     nativeTrackerRef.current.update(nativeSignature());
-  }, [nativeDocument, nativeSignature, nativeStoreVersion, history, historyIndex, projectAttachments, workspaceSettings, snapGrid, placementElevation, placementWorkplane]);
+  }, [nativeDocument, nativeSignature, nativeStoreVersion, history, historyIndex, projectAttachments, visualGroups, workspaceSettings, snapGrid, placementElevation, placementWorkplane]);
   useEffect(() => {
     if (!nativeDocument) return;
     // Saved views, corner rulers and tape measurements are document state kept in the in-memory store; the camera is not.
@@ -5061,6 +5073,7 @@ export function LayerlingEditor({
           historyIndex: 0,
           assets: projectAssetsRef.current,
           attachments: projectAttachmentsRef.current,
+          visualGroups: visualGroupsRef.current,
           workspace: workspaceSettingsRef.current,
           snapGrid: snapGridRef.current,
           placementElevation: placementElevationRef.current,
@@ -5125,6 +5138,7 @@ export function LayerlingEditor({
         historyIndex: historyIndexRef.current,
         assets: projectAssetsRef.current,
         attachments: projectAttachmentsRef.current,
+        visualGroups: visualGroupsRef.current,
         projectName: projectInfoRef.current.projectName,
         projectCreatedAt: projectInfoRef.current.projectCreatedAt,
         workspace: workspaceSettingsRef.current,
@@ -5209,6 +5223,23 @@ export function LayerlingEditor({
     (next: ProjectAttachment[]) => {
       projectAttachmentsRef.current = next;
       setProjectAttachments(next);
+      syncProjectShapes(shapesRef.current, true);
+    },
+    [syncProjectShapes],
+  );
+
+  /**
+   * Changes the Visual Groups and has them saved, as the files above: not part of the undo history (so geometric undo and redo
+   * can never leave them inconsistent: reads filter by the objects that exist), but the document is modified and they are saved.
+   * Inert while a history state is shown.
+   */
+  const updateVisualGroups = useCallback(
+    (change: (current: VisualGroupsRegistry) => VisualGroupsRegistry) => {
+      if (historyViewStateRef.current) return;
+      const next = change(visualGroupsRef.current);
+      if (next === visualGroupsRef.current) return;
+      visualGroupsRef.current = next;
+      setVisualGroups(next);
       syncProjectShapes(shapesRef.current, true);
     },
     [syncProjectShapes],
@@ -6854,6 +6885,9 @@ export function LayerlingEditor({
       const nextAttachments = initialAttachments ?? NO_ATTACHMENTS;
       projectAttachmentsRef.current = nextAttachments;
       setProjectAttachments(nextAttachments);
+      const nextVisualGroups = initialVisualGroups ?? EMPTY_VISUAL_GROUPS;
+      visualGroupsRef.current = nextVisualGroups;
+      setVisualGroups(nextVisualGroups);
       const nextPlacementElevation = Number.isFinite(initialPlacementElevation) ? initialPlacementElevation : 0;
       setPlacementElevation(nextPlacementElevation);
       setPlacementWorkplane(normalizePlacementWorkplane(initialPlacementWorkplane, nextPlacementElevation));
@@ -6905,7 +6939,7 @@ export function LayerlingEditor({
       // Said a moment later (below): a language that settles after a reload clears every standing message.
       if (incoming.some((shape) => shape.hidden)) hiddenNoticePendingRef.current = true;
     }
-  }, [initialAssets, initialAttachments, initialHistory, initialHistoryIndex, initialPlacementElevation, initialPlacementWorkplane, initialShapes, projectId, projectRevision]);
+  }, [initialAssets, initialAttachments, initialVisualGroups, initialHistory, initialHistoryIndex, initialPlacementElevation, initialPlacementWorkplane, initialShapes, projectId, projectRevision]);
 
   // A design opened with hidden shapes says so once, with a button to show them (#489). Only once the
   // language and the shapes have settled, or the message would be wiped as out of date.
@@ -7645,6 +7679,7 @@ export function LayerlingEditor({
         historyIndex: branch.index,
         assets: projectAssetsRef.current,
         attachments: projectAttachmentsRef.current,
+        visualGroups: visualGroupsRef.current,
         workspace: workspaceSettingsRef.current,
         snapGrid,
         placementElevation: view.placementElevation,
@@ -10122,6 +10157,37 @@ export function LayerlingEditor({
       nextHidden ? t("status.shapeHidden", { name: shapeLabel }) : t("status.shapeShown", { name: shapeLabel }),
     );
   }, [commitShapes, selectedIds, shapes]);
+
+  // ---- Visual Groups: the operations a palette or a menu calls (organisation only; lib/visualGroups.ts) ----
+  /**
+   * A group's eye: every object in it, at any depth, is hidden if all are visible, else shown. Only the existing `hidden` flag is
+   * written, for all of them in ONE commit (one undo step). Objects that are hidden leave the selection, as with the object list's eye.
+   */
+  const toggleVisualGroupVisibility = useCallback((groupId: string) => {
+    const toggle = toggleGroupVisibility(visualGroupsRef.current, groupId, shapesRef.current);
+    if (!toggle) return;
+    const changed = new Set(toggle.changedIds);
+    commitShapes(toggle.shapes, toggle.hide ? selectedIdsRef.current.filter((id) => !changed.has(id)) : selectedIdsRef.current);
+  }, [commitShapes]);
+  const visualGroupOps = useMemo(() => ({
+    create: (options?: { name?: string; parentId?: string | null; index?: number }): string => {
+      let id = "";
+      updateVisualGroups((current) => {
+        const made = createVisualGroup(current, options);
+        id = made.id;
+        return made.registry;
+      });
+      return id;
+    },
+    rename: (groupId: string, name: string) => updateVisualGroups((current) => renameVisualGroup(current, groupId, name)),
+    delete: (groupId: string) => updateVisualGroups((current) => deleteVisualGroup(current, groupId)),
+    moveGroup: (groupId: string, parentId: string | null, index?: number) => updateVisualGroups((current) => moveVisualGroup(current, groupId, parentId, index)),
+    moveObjects: (objectIds: readonly string[], groupId: string, index?: number) => updateVisualGroups((current) => moveObjectsToGroup(current, objectIds, groupId, index)),
+    removeObjects: (objectIds: readonly string[]) => updateVisualGroups((current) => removeObjectsFromGroups(current, objectIds)),
+    toggleVisibility: toggleVisualGroupVisibility,
+  }), [toggleVisualGroupVisibility, updateVisualGroups]);
+  const visualGroupOpsRef = useRef(visualGroupOps);
+  visualGroupOpsRef.current = visualGroupOps;
 
   /** The object list's handle (#1233): a shape put in front of another one, or last, in the design's own order. */
   const moveShapeInList = useCallback((id: string, beforeId: string | null) => {
@@ -17326,6 +17392,7 @@ export function LayerlingEditor({
           historyIndex: exportedHistory.index,
           assets: projectAssetsRef.current,
           attachments: projectAttachmentsRef.current,
+          visualGroups: visualGroupsRef.current,
           workspace: workspaceSettingsRef.current,
           snapGrid,
           placementElevation: view ? view.placementElevation : placementElevation,
@@ -18208,6 +18275,7 @@ export function LayerlingEditor({
             historyIndex: index,
             assets: projectAssetsRef.current,
             attachments: projectAttachmentsRef.current,
+            visualGroups: visualGroupsRef.current,
             workspace: workspaceSettingsRef.current,
             snapGrid,
             placementElevation: view ? view.placementElevation : placementElevation,
@@ -18324,6 +18392,7 @@ export function LayerlingEditor({
       historyIndex: exportedHistory.index,
       assets: projectAssetsRef.current,
       attachments: projectAttachmentsRef.current,
+      visualGroups: visualGroupsRef.current,
       workspace: workspaceSettingsRef.current,
       snapGrid,
       placementElevation,
@@ -18547,6 +18616,7 @@ export function LayerlingEditor({
         historyIndex: exportedHistory.index,
         assets: projectAssetsRef.current,
         attachments: projectAttachmentsRef.current,
+        visualGroups: visualGroupsRef.current,
         workspace: workspaceSettingsRef.current,
         snapGrid,
         placementElevation,

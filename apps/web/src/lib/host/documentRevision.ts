@@ -33,6 +33,8 @@ export interface SignatureParts {
   /** Fingerprint of the current history entry: scene, notes and workplane. */
   entryFingerprint: string;
   attachments: string;
+  /** The Visual Groups as a save would write them (empty text: none). Optional so callers that know nothing of them still compile. */
+  visualGroups?: string;
   workspace: Record<string, unknown>;
   snapGrid: unknown;
   placementElevation: number;
@@ -47,6 +49,7 @@ export function documentSignature(parts: SignatureParts): string {
   return [
     parts.entryFingerprint,
     parts.attachments,
+    parts.visualGroups ?? "",
     documentSettingsSignature(parts.workspace),
     JSON.stringify(parts.snapGrid),
     String(parts.placementElevation),

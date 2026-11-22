@@ -84,6 +84,7 @@ import { readTape, writeTape } from "@/lib/tapeStore";
 import { useFileAccept } from "@/lib/fileAccept";
 import { useDebugStateEnabled } from "@/lib/debugState";
 import { dropBackupTarget, linkedLylFile, lylFileAccessSupported, onLylFilesLaunched, pickBackupTarget, pickFilesToImport, rememberLylFile, writeBackupTarget, type LylFileHandle } from "@/lib/lylFileAccess";
+import type { VisualGroupsRegistry } from "@/lib/visualGroups";
 import { exportLylProject, importLylProject, inspectLylProjectPackage, LYL_CREATED_WITH_VERSION, LYL_MEDIA_TYPE, withLylProjectName, withLylThumbnail } from "@/lib/lylProject";
 import { relieveOverFineCadMeshes, type RemeshCadBrep } from "@/lib/cadMeshRelief";
 import { backupDesignAlreadyThere, backupEntryPaths, backupFileName, backupFolderPaths, backupNamePrefix, backupThumbnailPath, unpackBackupFolders, isBackupFileName, createBackupWriter, unpackBackup, unpackBackupSettingsText, SETTINGS_BACKUP_FILE, zipHoldsDesigns } from "@/lib/projectBackup";
@@ -201,6 +202,8 @@ type ProjectShapeCacheEntry = {
   assets: ProjectAsset[];
   /** The files kept with the design (#820). They travel in the stored package, like the assets. */
   attachments: ProjectAttachment[];
+  /** The Visual Groups (organisation only); they travel in the stored package. */
+  visualGroups?: VisualGroupsRegistry;
 };
 
 type ProjectShapeRecord = {
@@ -215,6 +218,7 @@ type ProjectShapeRecord = {
   assets?: ProjectAsset[];
   /** Read from the stored package when a project is loaded; never written to the record itself. */
   attachments?: ProjectAttachment[];
+  visualGroups?: VisualGroupsRegistry;
   meshResourceIds?: string[];
   assetResourceIds?: string[];
   updatedAt: number;
@@ -343,6 +347,7 @@ function projectShapeCacheEntry(
   historyIndex?: number,
   assets: ProjectAsset[] = [],
   attachments: ProjectAttachment[] = [],
+  visualGroups?: VisualGroupsRegistry,
 ): ProjectShapeCacheEntry {
   const hydrated = hydrateEditorHistoryState(shapes, history, historyIndex, "unlimited", notesForHistoryIndex(history, historyIndex));
   return {
@@ -352,6 +357,7 @@ function projectShapeCacheEntry(
     historyIndex: hydrated.index,
     assets: dedupeProjectAssets(assets),
     attachments,
+    ...(visualGroups ? { visualGroups } : {}),
   };
 }
 
@@ -362,9 +368,10 @@ function projectShapeCacheEntryFromEditor(
   historyIndex: number,
   assets: ProjectAsset[],
   attachments: ProjectAttachment[],
+  visualGroups?: VisualGroupsRegistry,
 ): ProjectShapeCacheEntry {
   if (history.length === 0) {
-    return projectShapeCacheEntry(revision, shapes, history, historyIndex, assets, attachments);
+    return projectShapeCacheEntry(revision, shapes, history, historyIndex, assets, attachments, visualGroups);
   }
   return {
     revision,
@@ -373,6 +380,7 @@ function projectShapeCacheEntryFromEditor(
     historyIndex: Math.min(Math.max(0, historyIndex), history.length - 1),
     assets: dedupeProjectAssets(assets),
     attachments,
+    ...(visualGroups ? { visualGroups } : {}),
   };
 }
 
@@ -464,6 +472,7 @@ async function loadProjectShapes(projectId: string, options: { currentStateOnly?
       historyIndex: restored.historyIndex,
       assets: restored.assets,
       attachments: restored.attachments,
+      visualGroups: restored.visualGroups,
       // Bodies meshed lighter than they were stored (Discussion #1042): the design is saved so again.
       relievedMeshes: relieved,
     };
@@ -526,7 +535,7 @@ async function loadProjectShapes(projectId: string, options: { currentStateOnly?
 /** A design's state packed as a .lyl, as the browser keeps it. */
 function packProjectEntry(
   projectId: string,
-  entry: Pick<ProjectShapeCacheEntry, "revision" | "shapes" | "assets" | "attachments">,
+  entry: Pick<ProjectShapeCacheEntry, "revision" | "shapes" | "assets" | "attachments" | "visualGroups">,
   context: ProjectShapeSaveContext,
   history: ProjectShapeCacheEntry["history"],
   historyIndex: number,
@@ -542,6 +551,7 @@ function packProjectEntry(
     historyIndex,
     assets: entry.assets,
     attachments: entry.attachments,
+    visualGroups: entry.visualGroups,
     workspace: context.workspace,
     snapGrid: context.snapGrid,
     placementElevation: context.placementElevation,
@@ -562,7 +572,7 @@ async function projectPackageBytes(project: DashboardProject): Promise<{ bytes: 
   if (stored) return { bytes: await withLylProjectName(stored, project.name), missing: false };
   // A record written before designs were kept as packages has its shapes beside it; packing nothing lost them.
   const record = await loadProjectShapes(project.id);
-  const entry = projectShapeCacheEntry(project.updatedAt, record?.shapes ?? [], record?.history, record?.historyIndex, record?.assets, record?.attachments);
+  const entry = projectShapeCacheEntry(project.updatedAt, record?.shapes ?? [], record?.history, record?.historyIndex, record?.assets, record?.attachments, record?.visualGroups);
   const bytes = await packProjectEntry(project.id, entry, projectShapeSaveContext(project), entry.history, entry.historyIndex);
   return { bytes, missing: !record };
 }
@@ -1444,7 +1454,7 @@ function BrowserHome() {
         if (canceled) return;
         const loadedRevision = record?.revision ?? 0;
         const revision = Math.max(activeProject.revision ?? 0, loadedRevision, 1);
-        const loadedEntry = projectShapeCacheEntry(Math.max(loadedRevision, 1), record?.shapes ?? [], record?.history, record?.historyIndex, record?.assets, record?.attachments);
+        const loadedEntry = projectShapeCacheEntry(Math.max(loadedRevision, 1), record?.shapes ?? [], record?.history, record?.historyIndex, record?.assets, record?.attachments, record?.visualGroups);
         const entry = loadedEntry.revision === revision ? loadedEntry : { ...loadedEntry, revision };
         setProjectShapesById((current) => {
           // IndexedDB reads are asynchronous. A local edit/import can update the live
@@ -1672,6 +1682,7 @@ function BrowserHome() {
     historyIndex: number;
     assets: ProjectAsset[];
     attachments: ProjectAttachment[];
+    visualGroups?: VisualGroupsRegistry;
     projectName: string;
     projectCreatedAt: number;
     workspace: WorkplaneWorkspaceSettings;
@@ -1690,7 +1701,7 @@ function BrowserHome() {
     );
     nextProjectRevisionRef.current = revision;
     newestRequestedRevision.set(snapshot.projectId, revision);
-    const entry = projectShapeCacheEntryFromEditor(revision, snapshot.shapes, snapshot.history, snapshot.historyIndex, snapshot.assets, snapshot.attachments);
+    const entry = projectShapeCacheEntryFromEditor(revision, snapshot.shapes, snapshot.history, snapshot.historyIndex, snapshot.assets, snapshot.attachments, snapshot.visualGroups);
     setProjectShapesById((current) => {
       const existing = current[snapshot.projectId];
       if (existing && existing.revision > revision) {
@@ -1879,7 +1890,7 @@ function BrowserHome() {
         sketchPlacementWorkplane: restored.sketchPlacementWorkplane,
         sharedProject: sharedProject ? { fileName: sharedProject.fileName, revision: sharedProject.revision, path: sharedProject.path ?? "" } : undefined,
       };
-      const entry = projectShapeCacheEntry(now, restored.shapes, restored.history, restored.historyIndex, restored.assets, restored.attachments);
+      const entry = projectShapeCacheEntry(now, restored.shapes, restored.history, restored.historyIndex, restored.assets, restored.attachments, restored.visualGroups);
       await saveProjectShapes(project.id, entry, projectShapeSaveContext(project));
       step = 4;
       // A file opened as a new design goes where new designs go; a server design is there already.
@@ -2125,7 +2136,7 @@ function BrowserHome() {
         folderId: null,
         sharedProject: undefined,
       };
-      const entry = projectShapeCacheEntry(now, restored.shapes, restored.history, restored.historyIndex, restored.assets, restored.attachments);
+      const entry = projectShapeCacheEntry(now, restored.shapes, restored.history, restored.historyIndex, restored.assets, restored.attachments, restored.visualGroups);
       await saveProjectShapes(project.id, entry, projectShapeSaveContext(project));
       if (!existing) {
         if (restored.view) writeDesignView(project.id, restored.view);
@@ -2764,7 +2775,7 @@ function BrowserHome() {
           placementWorkplane: restored.placementWorkplane,
           sketchPlacementWorkplane: restored.sketchPlacementWorkplane,
         };
-        const entry = projectShapeCacheEntry(now, restored.shapes, restored.history, restored.historyIndex, restored.assets, restored.attachments);
+        const entry = projectShapeCacheEntry(now, restored.shapes, restored.history, restored.historyIndex, restored.assets, restored.attachments, restored.visualGroups);
         await saveProjectShapes(local.id, entry, projectShapeSaveContext(local));
         let project = local;
         const thumbnail = entries[index].thumbnail;
@@ -3024,7 +3035,7 @@ function BrowserHome() {
       const history = stored.history ?? [];
       const current = history[Math.min(Math.max(0, stored.historyIndex ?? history.length - 1), history.length - 1)];
       const revision = Math.max(Date.now(), (project.revision ?? 0) + 1);
-      const entry = projectShapeCacheEntry(revision, current?.shapes ?? stored.shapes ?? [], current ? [current] : undefined, 0, stored.assets ?? [], stored.attachments);
+      const entry = projectShapeCacheEntry(revision, current?.shapes ?? stored.shapes ?? [], current ? [current] : undefined, 0, stored.assets ?? [], stored.attachments, stored.visualGroups);
       await saveProjectShapes(projectId, entry, projectShapeSaveContext(project));
       // The cut entry is newer than any stored revision, so the editor takes it instead of reading the package again.
       setProjectShapesById((existing) => ({ ...existing, [projectId]: entry }));
@@ -3057,7 +3068,7 @@ function BrowserHome() {
         thumbnailUrl: null,
         thumbnailVersion: undefined,
       };
-      const entry = projectShapeCacheEntry(now, stored.shapes ?? [], stored.history, stored.historyIndex, stored.assets ?? [], stored.attachments);
+      const entry = projectShapeCacheEntry(now, stored.shapes ?? [], stored.history, stored.historyIndex, stored.assets ?? [], stored.attachments, stored.visualGroups);
       await saveProjectShapes(copy.id, entry, projectShapeSaveContext(copy));
       // The bodies keep their ids in the copy, so the measurements of the tape measure fit it as they did the original (#881).
       writeTape(copy.id, readTape(source.id));
@@ -3113,7 +3124,7 @@ function BrowserHome() {
       placementWorkplane: request.placementWorkplane,
       sketchPlacementWorkplane: request.placementWorkplane,
     };
-    const entry = projectShapeCacheEntryFromEditor(now, request.shapes, request.history, request.historyIndex, request.assets, request.attachments);
+    const entry = projectShapeCacheEntryFromEditor(now, request.shapes, request.history, request.historyIndex, request.assets, request.attachments, request.visualGroups);
     await saveProjectShapes(copy.id, entry, projectShapeSaveContext(copy));
     // With new designs on the server, the state goes there too, beside a server original or into the open folder.
     const { project: placed, problem } = await placeNewDesign(copy, source?.sharedProject?.path ?? sharedPathRef.current);
@@ -3361,6 +3372,7 @@ function BrowserHome() {
             <LayerlingEditor
               initialAssets={activeProjectShapeEntry?.assets ?? []}
               initialAttachments={activeProjectShapeEntry?.attachments}
+              initialVisualGroups={activeProjectShapeEntry?.visualGroups}
               initialShapes={activeProjectShapeEntry?.shapes ?? []}
               initialHistory={activeProjectShapeEntry?.history}
               initialHistoryIndex={activeProjectShapeEntry?.historyIndex}

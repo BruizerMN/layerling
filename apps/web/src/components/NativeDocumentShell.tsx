@@ -268,6 +268,7 @@ export function NativeDocumentShell() {
           onNativeDocumentReady={reportOpened}
           initialAssets={document.assets}
           initialAttachments={document.attachments}
+          initialVisualGroups={document.visualGroups}
           initialShapes={document.shapes}
           initialHistory={document.history}
           initialHistoryIndex={document.historyIndex}
