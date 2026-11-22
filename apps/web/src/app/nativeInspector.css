@@ -761,3 +761,31 @@ html[data-native-chrome="on"] .native-inspector-dock :is(
 /* Build 0032: a Name label to the left of the name field, on the same 78 px label column as the property rows; the field takes the width of a slider and its value box. */
 .native-inspector-dock .inspector-name-row .inspector-name { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 0 6px; align-items: center; }
 .native-inspector-dock .inspector-name-label { min-width: 0; overflow: hidden; color: var(--insp-muted); font-size: 11px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+
+/*
+ * Build 0032: the docked Inspector's interactive controls follow the macOS accent colour, not Layerling's orange: the reset arrow beside a changed number
+ * (property-reset), the Name tag start button, the stepper hover, the "more" link. Disabled ones stay neutral grey.
+ */
+html[data-native-app="on"] .native-inspector-dock .property-reset { color: var(--insp-accent); }
+html[data-native-app="on"] .native-inspector-dock .property-reset:hover,
+html[data-native-app="on"] .native-inspector-dock .property-reset:focus-visible { background: var(--insp-accent-soft); }
+html[data-native-app="on"] .native-inspector-dock .property-reset:disabled { color: var(--insp-disabled-select-fg); background: transparent; }
+html[data-native-app="on"] .native-inspector-dock .shape-inspector .name-tag-start .name-tag-start-button {
+  color: var(--accent-live-fg);
+  background: var(--insp-accent);
+  border-color: var(--insp-accent);
+}
+html[data-native-app="on"] .native-inspector-dock .shape-inspector .name-tag-start .name-tag-start-button:hover:not(:disabled) {
+  color: var(--accent-live-fg);
+  background: var(--insp-accent);
+  border-color: var(--insp-accent);
+  filter: brightness(0.92);
+}
+html[data-native-app="on"] .native-inspector-dock .shape-inspector .name-tag-start .name-tag-start-button:disabled {
+  color: var(--insp-disabled-select-fg);
+  background: var(--insp-disabled-select-bg);
+  border-color: var(--insp-field-line);
+  filter: none;
+}
+html[data-native-app="on"] .native-inspector-dock .name-tag-stepper button:hover:not(:disabled) { color: var(--insp-accent); border-color: var(--insp-accent); }
+html[data-native-app="on"] .native-inspector-dock .name-tag-more { color: var(--insp-accent); }
