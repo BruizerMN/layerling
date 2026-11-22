@@ -16,7 +16,8 @@ export type VisualGroupsInvoke =
   | { op: "toggleObject"; id: string }
   | { op: "removeObject"; id: string }
   | { op: "select"; ids: string[]; mode: "replace" | "toggle" }
-  | { op: "assign"; objectIds: string[]; groupId?: string | null; newName?: string; parentId?: string | null };
+  | { op: "assign"; objectIds: string[]; groupId?: string | null; newName?: string; parentId?: string | null }
+  | { op: "pickResult"; requestId: string; cancelled: boolean; groupId?: string };
 
 let watching = false;
 let lastState = "";
@@ -42,6 +43,7 @@ export function parseVisualGroupsInvoke(op: string, args: Record<string, unknown
       if (!isText(args.groupId) && !isText(args.newName)) return null;
       return { op, objectIds: args.objectIds as string[], ...(isText(args.groupId) ? { groupId: args.groupId } : {}), ...(isText(args.newName) ? { newName: args.newName } : {}), ...(typeof args.parentId === "string" ? { parentId: args.parentId } : {}) };
     }
+    case "pickResult": return isText(args.requestId) && typeof args.cancelled === "boolean" ? { op, requestId: args.requestId, cancelled: args.cancelled, ...(isText(args.groupId) ? { groupId: args.groupId } : {}) } : null;
     default: return null;
   }
 }
@@ -60,7 +62,8 @@ function attach(bridge: HostBridge | null) {
         if (event.type === "visualGroups.watch" && event.payload.documentId === nativeDocumentId()) setWatching(event.payload.watching);
         else if (event.type === "visualGroups.invoke" && event.payload.documentId === nativeDocumentId()) {
           const command = parseVisualGroupsInvoke(event.payload.op, event.payload.args);
-          if (command) invokeListeners.forEach((listener) => listener(command));
+          if (command?.op === "pickResult") settlePick(command.requestId, command.cancelled ? { cancelled: true } : { cancelled: false, groupId: command.groupId ?? null });
+          else if (command) invokeListeners.forEach((listener) => listener(command));
         }
       })
     : null;
@@ -112,4 +115,36 @@ export function requestVisualGroupChooser(request: { mode: "add" | "move"; objec
   const documentId = nativeDocumentId();
   if (!documentId || !bridge?.supportsVisualGroups()) return;
   void bridge.sendUi("visualGroups.choose", { documentId, ...request });
+}
+
+// ---- the question a merge asks when its objects are in different Visual Groups ------------------------------------------------
+
+export type VisualGroupPickAnswer = { cancelled: true } | { cancelled: false; groupId: string | null };
+const pendingPicks = new Map<string, (answer: VisualGroupPickAnswer) => void>();
+let pickCounter = 0;
+
+function settlePick(requestId: string, answer: VisualGroupPickAnswer) {
+  const resolve = pendingPicks.get(requestId);
+  if (!resolve) return;
+  pendingPicks.delete(requestId);
+  resolve(answer);
+}
+
+/**
+ * Asks the host's sheet which of these groups the merged object goes into (`groupId: null`: none). Cancel stops the merge. Without a host that
+ * offers the palette nothing can be asked: the answer is then "none", which is also what the callers do when they do not ask.
+ */
+export function requestVisualGroupPick(request: { operation: string; objectCount: number; candidates: Array<{ id: string; name: string; count: number }> }): Promise<VisualGroupPickAnswer> {
+  const bridge = getHostBridge();
+  const documentId = nativeDocumentId();
+  if (!documentId || !bridge?.supportsVisualGroups()) return Promise.resolve({ cancelled: false, groupId: null });
+  ensureStarted();
+  const requestId = `pick${++pickCounter}`;
+  return new Promise<VisualGroupPickAnswer>((resolve) => {
+    pendingPicks.set(requestId, resolve);
+    void bridge.sendUi("visualGroups.pick", { documentId, requestId, ...request }).then((reply) => {
+      // The host refused the question: do not leave the merge waiting.
+      if (!reply.ok) settlePick(requestId, { cancelled: false, groupId: null });
+    });
+  });
 }

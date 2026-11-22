@@ -76,13 +76,16 @@ describe("commands from the palette", () => {
     expect(parseVisualGroupsInvoke("select", { ids: ["a", "b"], mode: "toggle" })).toEqual({ op: "select", ids: ["a", "b"], mode: "toggle" });
     expect(parseVisualGroupsInvoke("assign", { objectIds: ["a"], groupId: "g" })).toEqual({ op: "assign", objectIds: ["a"], groupId: "g" });
     expect(parseVisualGroupsInvoke("assign", { objectIds: ["a"], newName: "New", parentId: "p" })).toEqual({ op: "assign", objectIds: ["a"], newName: "New", parentId: "p" });
+    expect(parseVisualGroupsInvoke("pickResult", { requestId: "pick1", cancelled: false, groupId: "g" })).toEqual({ op: "pickResult", requestId: "pick1", cancelled: false, groupId: "g" });
+    expect(parseVisualGroupsInvoke("pickResult", { requestId: "pick1", cancelled: false })).toEqual({ op: "pickResult", requestId: "pick1", cancelled: false });
+    expect(parseVisualGroupsInvoke("pickResult", { requestId: "pick1", cancelled: true })).toEqual({ op: "pickResult", requestId: "pick1", cancelled: true });
   });
 
   it("drops anything else", () => {
     for (const [op, args] of [
       ["rename", { groupId: "g" }], ["rename", { name: "x" }], ["delete", {}], ["toggleGroup", { groupId: 3 }], ["toggleObject", { id: "" }],
       ["select", { ids: "a", mode: "replace" }], ["select", { ids: ["a"], mode: "other" }], ["select", { ids: [1], mode: "replace" }],
-      ["assign", { objectIds: [], groupId: "g" }], ["assign", { objectIds: ["a"] }], ["assign", { objectIds: [3], groupId: "g" }], ["explode", {}],
+      ["assign", { objectIds: [], groupId: "g" }], ["assign", { objectIds: ["a"] }], ["assign", { objectIds: [3], groupId: "g" }], ["explode", {}], ["pickResult", { cancelled: true }], ["pickResult", { requestId: "p" }], ["pickResult", { requestId: "", cancelled: false }],
     ] as Array<[string, Record<string, unknown>]>) expect(parseVisualGroupsInvoke(op, args), `${op} ${JSON.stringify(args)}`).toBeNull();
   });
 });
@@ -91,7 +94,7 @@ describe("visualGroups.v1 messages", () => {
   const base = { session: "s-1234567", protocol: 3, id: "e1" };
   it("names the capability and the commands", () => {
     expect(VISUAL_GROUPS_CAPABILITY).toBe("visualGroups.v1");
-    expect([...VISUAL_GROUPS_OPS]).toEqual(["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign"]);
+    expect([...VISUAL_GROUPS_OPS]).toEqual(["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign", "pickResult"]);
   });
 
   it("parses the host's events", () => {

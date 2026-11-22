@@ -155,7 +155,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 export type DocumentMessageType = "document.request" | "document.progress" | "document.opened" | "document.failed";
-export type UiMessageType = "ui.state" | "ui.action" | "settings.state" | "menu.show" | "ribbon.state" | "visualGroups.state" | "visualGroups.choose";
+export type UiMessageType = "ui.state" | "ui.action" | "settings.state" | "menu.show" | "ribbon.state" | "visualGroups.state" | "visualGroups.choose" | "visualGroups.pick";
 export type SaveMessageType = "document.changed" | "document.save.progress" | "document.save.commit" | "document.save.failed";
 
 export function createHostBridge(env: HostEnvironment | null, options: HostBridgeOptions): HostBridge {
@@ -302,7 +302,7 @@ export function createHostBridge(env: HostEnvironment | null, options: HostBridg
       return outcome.kind === "ok" ? { ok: true as const, payload: outcome.payload } : { ok: false as const, failure: outcome.failure };
     },
     async sendUi(type, payload) {
-      if (!uiGranted() || (type === "menu.show" && !menuGranted()) || (type === "ribbon.state" && !ribbonGranted()) || ((type === "visualGroups.state" || type === "visualGroups.choose") && !visualGroupsGranted())) return { ok: false as const, failure: { code: "unsupported-capability" as const, message: "the host did not grant ui support" } };
+      if (!uiGranted() || (type === "menu.show" && !menuGranted()) || (type === "ribbon.state" && !ribbonGranted()) || ((type === "visualGroups.state" || type === "visualGroups.choose" || type === "visualGroups.pick") && !visualGroupsGranted())) return { ok: false as const, failure: { code: "unsupported-capability" as const, message: "the host did not grant ui support" } };
       const request = { id: nextId(), session, type, protocol: negotiated, payload } as HostRequest;
       const outcome = await exchange(request, `${type}.ok`);
       return outcome.kind === "ok" ? { ok: true as const, payload: outcome.payload } : { ok: false as const, failure: outcome.failure };

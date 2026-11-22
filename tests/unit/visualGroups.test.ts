@@ -15,6 +15,9 @@ import {
   mergeDestination,
   moveObjectsToGroup,
   moveVisualGroup,
+  mergePickCandidates,
+  placementOf,
+  revertMembership,
   normalizeVisualGroups,
   removeObjectsFromGroups,
   renameVisualGroup,
@@ -391,5 +394,62 @@ describe("the document's modified signature", () => {
     const r = sample();
     const print = (live: string[]) => visualGroupsFingerprint(resolveVisualGroups(r, new Set(live)));
     expect(print(["a", "b", "c", "d", "e"])).not.toBe(print(["a", "b", "d", "e"]));
+  });
+});
+
+describe("the merge question's candidates", () => {
+  it("lists the groups the objects are in, first given first, with their counts", () => {
+    const r = sample();
+    expect(mergePickCandidates(r, ["e", "a", "b", "c", "f"])).toEqual([
+      { id: "lamp", name: "Lamp", count: 1 },
+      { id: "ped", name: "Pedestal", count: 2 },
+      { id: "cor", name: "Cornice", count: 1 },
+    ]);
+    expect(mergePickCandidates(r, ["f", "zz"])).toEqual([]);
+  });
+});
+
+describe("membership changes that keep the object's id (undo and redo of a geometric step)", () => {
+  const move = (r: VisualGroupsRegistry, id: string, groupId: string | null, index?: number) =>
+    groupId ? moveObjectsToGroup(r, [id], groupId, index) : removeObjectsFromGroups(r, [id]);
+
+  it("reports where an object is filed", () => {
+    const r = sample();
+    expect(placementOf(r, "b")).toEqual({ groupId: "ped", index: 1 });
+    expect(placementOf(r, "c")).toEqual({ groupId: "cor", index: 0 });
+    expect(placementOf(r, "f")).toBeNull();
+  });
+
+  it("undo puts the object back, redo moves it again", () => {
+    const start = sample();
+    const before = placementOf(start, "a");
+    const moved = move(start, "a", "lamp");
+    const change = { id: "a", before, after: placementOf(moved, "a") };
+    const undone = revertMembership(moved, change, "undo");
+    expect(placementOf(undone, "a")).toEqual(before);
+    const redone = revertMembership(undone, change, "redo");
+    expect(placementOf(redone, "a")?.groupId).toBe("lamp");
+  });
+
+  it("an object that was in no group goes back to none", () => {
+    const moved = move(sample(), "f", "lamp");
+    const change = { id: "f", before: null, after: placementOf(moved, "f") };
+    expect(placementOf(revertMembership(moved, change, "undo"), "f")).toBeNull();
+    expect(placementOf(revertMembership(revertMembership(moved, change, "undo"), change, "redo"), "f")?.groupId).toBe("lamp");
+  });
+
+  it("leaves it alone when the person filed the object elsewhere since", () => {
+    const moved = move(sample(), "f", "lamp");
+    const change = { id: "f", before: null, after: placementOf(moved, "f") };
+    const later = move(moved, "f", "cor");
+    expect(revertMembership(later, change, "undo")).toBe(later);
+  });
+
+  it("a group that is gone is no place: the object is then in none", () => {
+    const start = sample();
+    const change = { id: "a", before: placementOf(start, "a"), after: { groupId: "lamp", index: 1 } };
+    const moved = move(start, "a", "lamp");
+    const withoutPed = deleteVisualGroup(moved, "ped");
+    expect(placementOf(revertMembership(withoutPed, change, "undo"), "a")).toBeNull();
   });
 });

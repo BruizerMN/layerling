@@ -452,3 +452,73 @@ export function toggleGroupVisibility(registry: VisualGroupsRegistry, groupId: s
   });
   return changedIds.length === 0 ? null : { shapes: next, hide, changedIds };
 }
+
+// ---- candidates for the merge question, and undoing a membership change that a merge makes in place -----------------------
+
+export interface MergePickCandidate {
+  id: string;
+  name: string;
+  /** How many of the merged objects are directly in this group. */
+  count: number;
+}
+
+/** The groups the merged objects are in (they differ), in the order the objects were given, with how many objects each holds: what the question lists. */
+export function mergePickCandidates(registry: VisualGroupsRegistry, sourceIds: readonly string[]): MergePickCandidate[] {
+  const owners = membershipMap(registry, new Set(sourceIds));
+  const found = new Map<string, MergePickCandidate>();
+  for (const id of sourceIds) {
+    const owner = owners.get(id);
+    if (!owner) continue;
+    const entry = found.get(owner) ?? { id: owner, name: findVisualGroup(registry, owner)?.name ?? "", count: 0 };
+    entry.count += 1;
+    found.set(owner, entry);
+  }
+  return [...found.values()];
+}
+
+/** Where an object is filed: its group and its place among that group's items (stale entries count, so the place is raw). */
+export interface Placement {
+  groupId: string;
+  index: number;
+}
+
+export function placementOf(registry: VisualGroupsRegistry, objectId: string): Placement | null {
+  const search = (group: VisualGroup): Placement | null => {
+    for (let index = 0; index < group.items.length; index += 1) {
+      const item = group.items[index];
+      if (isVisualGroup(item)) {
+        const inner = search(item);
+        if (inner) return inner;
+      } else if (item.object === objectId) return { groupId: group.id, index };
+    }
+    return null;
+  };
+  for (const group of registry.items) {
+    const found = search(group);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * A change to the group of an object that keeps its id (a geometric group that something was added to: it is modified in place, so the stale-entry
+ * mechanism does not cover it). It is kept with the geometric history step, so Undo and Redo can take it back and bring it again.
+ */
+export interface MembershipChange {
+  id: string;
+  before: Placement | null;
+  after: Placement | null;
+}
+
+/**
+ * Undo (`direction` "undo") or redo of one change. If the person has filed the object somewhere else since, their later choice stays; a group that is
+ * gone is no place, so the object is then in none.
+ */
+export function revertMembership(registry: VisualGroupsRegistry, change: MembershipChange, direction: "undo" | "redo"): VisualGroupsRegistry {
+  const from = direction === "undo" ? change.after : change.before;
+  const to = direction === "undo" ? change.before : change.after;
+  const now = placementOf(registry, change.id);
+  if ((now?.groupId ?? null) !== (from?.groupId ?? null)) return registry;
+  if (!to || !findVisualGroup(registry, to.groupId)) return removeObjectsFromGroups(registry, [change.id]);
+  return moveObjectsToGroup(registry, [change.id], to.groupId, to.index);
+}

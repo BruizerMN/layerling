@@ -36,7 +36,7 @@ export const RIBBON_CAPABILITY = "ribbon.v1";
  * out what the palette asks for (`visualGroups.invoke`). The editor stays the only source of truth.
  */
 export const VISUAL_GROUPS_CAPABILITY = "visualGroups.v1";
-export const VISUAL_GROUPS_OPS = ["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign"] as const;
+export const VISUAL_GROUPS_OPS = ["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign", "pickResult"] as const;
 /** One entry of a native menu. `items` makes it a submenu. */
 export interface NativeMenuItem {
   key: string;
@@ -224,6 +224,14 @@ export interface VisualGroupsChooseRequest {
   protocol: number;
   payload: { documentId: string; mode: "add" | "move"; objectIds: string[]; groups: unknown[]; newGroupOnly?: boolean };
 }
+/** `visualGroups.v1`: objects from different Visual Groups are being merged: the host asks which group the new object goes into. The answer is the command `pickResult` with this `requestId`. */
+export interface VisualGroupsPickRequest {
+  id: string;
+  session: string;
+  type: "visualGroups.pick";
+  protocol: number;
+  payload: { documentId: string; requestId: string; operation: string; objectCount: number; candidates: Array<{ id: string; name: string; count: number }> };
+}
 /** Build 0007 (`ui.menu.v1`): show a native menu at a point of the page. Answered at once; the choice comes back as the event `menu.result`. */
 export interface MenuShowRequest {
   id: string;
@@ -292,6 +300,7 @@ export type HostRequest =
   | RibbonStateRequest
   | VisualGroupsStateRequest
   | VisualGroupsChooseRequest
+  | VisualGroupsPickRequest
   | HelloRequest
   | ReadyRequest
   | PingRequest

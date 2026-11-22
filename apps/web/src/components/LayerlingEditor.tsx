@@ -168,9 +168,9 @@ import { describeHistoryStep, historyStepsAround } from "@/lib/historyStepDescri
 import { historyStepText } from "@/lib/historyStepText";
 import { historyViewMcpCommand } from "./workplane/historyViewMcp";
 import { attachmentsFingerprint } from "@/lib/projectAttachments";
-import { nativeVisualGroupsAvailable, nativeVisualGroupsWatching, onNativeVisualGroupsInvoke, onNativeVisualGroupsWatch, publishVisualGroupsState, requestVisualGroupChooser, type VisualGroupsInvoke } from "@/lib/host/nativeVisualGroups";
+import { nativeVisualGroupsAvailable, nativeVisualGroupsWatching, onNativeVisualGroupsInvoke, onNativeVisualGroupsWatch, publishVisualGroupsState, requestVisualGroupChooser, requestVisualGroupPick, type VisualGroupsInvoke } from "@/lib/host/nativeVisualGroups";
 import { existingGroupId, visualGroupsMenuFits, visualGroupsOutline, visualGroupsPaletteState, type ChooserGroup } from "@/lib/visualGroupsSnapshot";
-import { EMPTY_VISUAL_GROUPS, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, moveObjectsToGroup, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
+import { EMPTY_VISUAL_GROUPS, applyMerge, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, mergePickCandidates, moveObjectsToGroup, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
 import { ATTACHMENT_MCP_READ_ACTIONS, attachmentMcpCommand, attachmentMcpList } from "@/lib/projectAttachmentsMcp";
 import { appendEditorHistorySnapshot, boundedEditorHistoryState, continuesKeyRun, type KeyRun, editorHistoryBranch, editorHistoryEntry, editorHistoryForExport, historyStateAt, hydrateEditorHistoryState, notesForHistoryIndex, projectSceneFingerprint, projectShapesFingerprint, workplaneForHistoryIndex, type EditorHistoryEntry, type EditorHistoryState } from "@/lib/editorHistory";
 import { deleteHistoryEntries, formatHistoryBytes, historyFreedBytes, historyIndexAfterDelete } from "@/lib/historyStepSizes";
@@ -5247,6 +5247,46 @@ export function LayerlingEditor({
     [syncProjectShapes],
   );
 
+  // ---- Visual Groups and geometric operations that combine objects (lib/visualGroups.ts has the rules) ----
+  /** Membership changes that a geometric step makes to an object that KEEPS its id (see MembershipChange), by the history entry of that step. */
+  const membershipHistoryRef = useRef(new WeakMap<EditorHistoryEntry, MembershipChange[]>());
+  /** Ids in the order the person selected them where that is known (a click sequence), else as given: only the default of the question, never a rule. */
+  const inSelectionOrder = useCallback(
+    (ids: readonly string[]) => [...selectedIdsRef.current.filter((id) => ids.includes(id)), ...ids.filter((id) => !selectedIdsRef.current.includes(id))],
+    [],
+  );
+  /**
+   * Where the object a merge makes goes: the same group if the objects share one, the one group if only some are in a group, none if none is; objects in
+   * DIFFERENT groups are asked about (native sheet, Cancel stops the merge). Where nobody can be asked (the AI/MCP bridge, a browser) the result stays
+   * unassigned: the order of the objects is not the person's order.
+   */
+  const chooseMergeGroup = useCallback(async (sourceIds: readonly string[], interactive: boolean, operation: string): Promise<{ proceed: boolean; groupId: string | null }> => {
+    const registry = visualGroupsRef.current;
+    if (registry.items.length === 0) return { proceed: true, groupId: null };
+    const live = liveObjectIds(shapesRef.current);
+    const sources = sourceIds.filter((id) => live.has(id));
+    const destination = mergeDestination(registry, sources);
+    if (destination.kind === "none") return { proceed: true, groupId: null };
+    if (destination.kind === "group") return { proceed: true, groupId: destination.groupId };
+    if (!interactive || !nativeVisualGroupsAvailable()) return { proceed: true, groupId: null };
+    const answer = await requestVisualGroupPick({ operation, objectCount: sources.length, candidates: mergePickCandidates(registry, sources) });
+    if (answer.cancelled) return { proceed: false, groupId: null };
+    // A group that was deleted while the sheet was open is no place.
+    return { proceed: true, groupId: existingGroupId(visualGroupsRef.current, answer.groupId) };
+  }, []);
+  /** The merged object joins its group (the sources stay as stale entries: Undo finds them where they were). */
+  const placeMergeResult = useCallback((sourceIds: readonly string[], resultId: string, groupId: string | null) => {
+    if (groupId) updateVisualGroups((current) => applyMerge(current, sourceIds, resultId, groupId));
+  }, [updateVisualGroups]);
+  const placeMergeResultRef = useRef(placeMergeResult);
+  placeMergeResultRef.current = placeMergeResult;
+  /** Undo/redo of a geometric step also takes back / brings again the membership change it made in place. */
+  const restoreMembership = useCallback((entry: EditorHistoryEntry | undefined, direction: "undo" | "redo") => {
+    const changes = entry ? membershipHistoryRef.current.get(entry) : undefined;
+    if (!changes) return;
+    updateVisualGroups((current) => (direction === "undo" ? [...changes].reverse() : changes).reduce((registry, change) => revertMembership(registry, change, direction), current));
+  }, [updateVisualGroups]);
+
   /*
    * Leaving the window - closing it, switching to another app, the Mac going
    * to sleep - is the last moment a waiting save can still start. A hidden
@@ -7377,6 +7417,10 @@ export function LayerlingEditor({
     }
     // The same Group as the button: the originals and the copies become one object, ungrouped again under Combine.
     const pieces = [...selectedShapes, ...copies];
+    // Visual Groups: the copies are in no group, so the group of the originals (asked if they are in different ones) goes to the new object.
+    const mergeSources = inSelectionOrder(selectedShapes.map((shape) => shape.id));
+    const place = await chooseMergeGroup(mergeSources, true, "Array");
+    if (!place.proceed) return;
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     const result = await buildGroupedShapeOffThread(pieces, workspaceSettingsRef.current.booleanTriangleLimit, geometryAbortRef.current?.signal);
@@ -7402,7 +7446,8 @@ export function LayerlingEditor({
       editableGroup.id,
       result.openGapEdges ? t("status.cutLeftOpen", { count: result.openGapEdges }) : result.mergeWarning ?? t("status.groupedMany", { count: pieces.length }),
     );
-  }, [activeRotationPivot, arrayTool, commitShapes, selectedIds, selectedShapes, shapes]);
+    placeMergeResult(mergeSources, editableGroup.id, place.groupId);
+  }, [activeRotationPivot, arrayTool, commitShapes, selectedIds, selectedShapes, shapes, inSelectionOrder, chooseMergeGroup, placeMergeResult]);
 
   // A new gap moves the originals; a run of changes is one step of the history, like a run of arrow keys.
   const setArrayFitGap = useCallback((gap: number) => {
@@ -7524,6 +7569,7 @@ export function LayerlingEditor({
     }
     const nextIndex = currentIndex - 1;
     const entry = currentHistory[nextIndex];
+    restoreMembership(currentHistory[currentIndex], "undo");
     const undoneStep = modifierCancelled ? null : describeHistoryStep(entry, currentHistory[currentIndex], openGroupCount);
     const nextShapes = (entry?.shapes ?? []).map(canonicalizeShape);
     const nextSelection = (entry?.selectedIds ?? []).filter((id) => nextShapes.some((shape) => shape.id === id));
@@ -7554,7 +7600,7 @@ export function LayerlingEditor({
       ? t("status.edgeCancelledUndo")
       : workplaneChanged ? t(placementWorkplaneIsBase(nextWorkplane) ? "status.undoWorkplaneBase" : "status.undoWorkplaneFace")
         : undoneStep ? t("status.undoneStep", { step: historyStepText(undoneStep, workspaceSettingsRef.current.accuracy) }) : t("status.undo"));
-  }, [invalidateCadModifierSession, openGroupCount, setOpenGroupLevels, syncProjectShapes]);
+  }, [invalidateCadModifierSession, openGroupCount, restoreMembership, setOpenGroupLevels, syncProjectShapes]);
 
   const redo = useCallback(() => {
     if (projectInteractionActiveRef.current) {
@@ -7570,6 +7616,7 @@ export function LayerlingEditor({
     const modifierCancelled = invalidateCadModifierSession();
     const nextIndex = currentIndex + 1;
     const entry = currentHistory[nextIndex];
+    restoreMembership(entry, "redo");
     const redoneStep = modifierCancelled ? null : describeHistoryStep(currentHistory[currentIndex], entry, openGroupCount);
     const nextShapes = (entry?.shapes ?? []).map(canonicalizeShape);
     const nextSelection = (entry?.selectedIds ?? []).filter((id) => nextShapes.some((shape) => shape.id === id));
@@ -7600,7 +7647,7 @@ export function LayerlingEditor({
       ? t("status.edgeCancelledRedo")
       : workplaneChanged ? t(placementWorkplaneIsBase(nextWorkplane) ? "status.redoWorkplaneBase" : "status.redoWorkplaneFace")
         : redoneStep ? t("status.redoneStep", { step: historyStepText(redoneStep, workspaceSettingsRef.current.accuracy) }) : t("status.redo"));
-  }, [invalidateCadModifierSession, openGroupCount, setOpenGroupLevels, syncProjectShapes]);
+  }, [invalidateCadModifierSession, openGroupCount, restoreMembership, setOpenGroupLevels, syncProjectShapes]);
 
   /**
    * Der Verlaufsblick oeffnet beim aktuellen Stand; von dort fuehrt der Schieber
@@ -11895,6 +11942,10 @@ export function LayerlingEditor({
     }
 
     // A pivot set for these bodies goes to the group, where it stays and shows its coordinates (#990).
+    // Visual Groups: where the new object goes (asked first if the objects are in different groups: Cancel stops the merge).
+    const mergeSources = inSelectionOrder(selectedShapes.map((shape) => shape.id));
+    const place = await chooseMergeGroup(mergeSources, true, "Group");
+    if (!place.proceed) return;
     const selectionPivot = activeRotationPivot;
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
@@ -11920,10 +11971,11 @@ export function LayerlingEditor({
       editableGroup.id,
       result.openGapEdges ? t("status.cutLeftOpen", { count: result.openGapEdges }) : result.mergeWarning ?? withClosedHolesNote(t("status.groupedMany", { count: selectedShapes.length }), result.closedHoles),
     );
-  }, [selectionLocked, refuseLockedSelection, commitShapes, selectedIds, selectedShapes, activeRotationPivot]);
+    placeMergeResult(mergeSources, editableGroup.id, place.groupId);
+  }, [selectionLocked, refuseLockedSelection, commitShapes, selectedIds, selectedShapes, activeRotationPivot, inSelectionOrder, chooseMergeGroup, placeMergeResult]);
 
   /** the usual bundle (Ctrl+B): the parts move, turn and scale together and stay what they are. */
-  const bundleSelected = useCallback(() => {
+  const bundleSelected = useCallback(async () => {
     if (selectionLocked) {
       setNotice(t("status.groupLocked"));
       return;
@@ -11937,6 +11989,15 @@ export function LayerlingEditor({
       setNotice(t("status.rulerNotSolid"));
       return;
     }
+    // Visual Groups: where the bundle goes (asked first if the objects are in different groups). While the question is open the scene is checked again.
+    const mergeSources = inSelectionOrder(selectedShapes.map((shape) => shape.id));
+    const askedAbout = visualGroupsRef.current.items.length > 0 ? projectShapesFingerprint(shapesRef.current) : null;
+    const place = await chooseMergeGroup(mergeSources, true, "Bundle");
+    if (!place.proceed) return;
+    if (askedAbout !== null && projectShapesFingerprint(shapesRef.current) !== askedAbout) {
+      setNotice(t("status.groupChanged"));
+      return;
+    }
     const group = groupedShape(selectedShapes);
     if (!group) {
       setNotice(t("status.selectTwoToBundle"));
@@ -11945,7 +12006,8 @@ export function LayerlingEditor({
     const selected = new Set(selectedIds);
     const bundle = withSelectionPivot(canonicalizeShape({ ...group, name: "Bundle", groupOperation: "bundle" }), activeRotationPivot);
     commitShapes([...shapesRef.current.filter((shape) => !selected.has(shape.id)), bundle], bundle.id, t("status.bundledMany", { count: selectedShapes.length }));
-  }, [selectionLocked, refuseLockedSelection, commitShapes, selectedIds, selectedShapes, activeRotationPivot]);
+    placeMergeResult(mergeSources, bundle.id, place.groupId);
+  }, [selectionLocked, refuseLockedSelection, commitShapes, selectedIds, selectedShapes, activeRotationPivot, inSelectionOrder, chooseMergeGroup, placeMergeResult]);
 
   /**
    * A socket with screw holes (D-Sub 9) chosen for an opening: the opening takes it, and it and its
@@ -12237,6 +12299,10 @@ export function LayerlingEditor({
       return;
     }
 
+    // Visual Groups: where the intersection goes (asked first if the objects are in different groups).
+    const mergeSources = inSelectionOrder(groupable.map((shape) => shape.id));
+    const place = await chooseMergeGroup(mergeSources, true, "Intersection");
+    if (!place.proceed) return;
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     const result = await buildIntersectionShapeFromSelection(groupable, workspaceSettingsRef.current.booleanTriangleLimit);
@@ -12266,7 +12332,8 @@ export function LayerlingEditor({
     }
     exitIntersectPreview();
     commitShapes([...remainingShapes, intersection], intersection.id, t("status.intersectedMany", { count: groupable.length }));
-  }, [refuseLockedSelection, commitShapes, exitIntersectPreview, selectedShapes]);
+    placeMergeResult(mergeSources, intersection.id, place.groupId);
+  }, [refuseLockedSelection, commitShapes, exitIntersectPreview, selectedShapes, inSelectionOrder, chooseMergeGroup, placeMergeResult]);
 
   /**
    * The Intersection button: the first click shows what the selected shapes share, and keeps showing it while they are moved
@@ -12299,6 +12366,10 @@ export function LayerlingEditor({
       setNotice(t("status.hullNeedsShapes"));
       return;
     }
+    // Visual Groups: where the hull goes (asked first if the objects are in different groups).
+    const mergeSources = inSelectionOrder(groupable.map((shape) => shape.id));
+    const place = await chooseMergeGroup(mergeSources, true, "Hull");
+    if (!place.proceed) return;
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     setNotice(t("status.hulling"));
@@ -12314,7 +12385,8 @@ export function LayerlingEditor({
     const operandIds = new Set(groupable.map((shape) => shape.id));
     const hull = canonicalizeShape({ ...result.group, groupOperation: "hull" });
     commitShapes([...shapesRef.current.filter((shape) => !operandIds.has(shape.id)), hull], hull.id, t("status.hulledMany", { count: groupable.length }));
-  }, [refuseLockedSelection, commitShapes, selectedShapes]);
+    placeMergeResult(mergeSources, hull.id, place.groupId);
+  }, [refuseLockedSelection, commitShapes, selectedShapes, inSelectionOrder, chooseMergeGroup, placeMergeResult]);
 
   /** Loft between two sketches: two sketch or SVG bodies become one body from the outline of one to the other, kept as a group. */
   const loftSketches = useCallback(async (only?: readonly WorkplaneShape[]) => {
@@ -12324,6 +12396,10 @@ export function LayerlingEditor({
     };
     const targets = (only ?? selectedShapes).filter((shape) => !isNonSolidShape(shape));
     if (targets.some((shape) => bodyLocked(shape))) return fail(t("status.objectLocked"));
+    // Visual Groups: where the loft goes. A caller that names its objects (the AI bridge) cannot be asked.
+    const mergeSources = inSelectionOrder(targets.map((shape) => shape.id));
+    const place = await chooseMergeGroup(mergeSources, only === undefined, "Loft");
+    if (!place.proceed) return { ok: false as const, message: "Cancelled." };
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     setNotice(t("status.lofting"), true);
@@ -12335,8 +12411,9 @@ export function LayerlingEditor({
     const consumed = new Set(targets.map((shape) => shape.id));
     const loft = withSelectionPivot(result.group, activeRotationPivot);
     commitShapes([...shapesRef.current.filter((shape) => !consumed.has(shape.id)), loft], loft.id, t("status.lofted"));
+    placeMergeResult(mergeSources, loft.id, place.groupId);
     return { ok: true as const, id: loft.id };
-  }, [commitShapes, selectedShapes, activeRotationPivot]);
+  }, [commitShapes, selectedShapes, activeRotationPivot, inSelectionOrder, chooseMergeGroup, placeMergeResult]);
 
   /**
    * A Gridfinity baseplate fitted into what another shape stands on (#1061): the outlines the workplane cuts through it,
@@ -12736,6 +12813,11 @@ export function LayerlingEditor({
     // A part of locked shape may join a group, as it may be grouped; a locked one stays where it is.
     if (added.some((shape) => shape.locked)) return refuseOpenGroupStep(t("status.objectLocked"));
     if (added.some((shape) => isNonSolidShape(shape))) return refuseOpenGroupStep(t("status.rulerNotSolid"));
+    // Visual Groups (the merge rules over the group and what is added). The group keeps its id, so its own Visual Group may change here; asked first if the
+    // objects are in different groups (Cancel stops the step).
+    const mergeSources = [group.id, ...inSelectionOrder(added.map((shape) => shape.id))];
+    const place = await chooseMergeGroup(mergeSources, true, "Add to group");
+    if (!place.proceed) return { ok: false, message: "Cancelled." };
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     openGroupBusyRef.current = true;
@@ -12751,6 +12833,7 @@ export function LayerlingEditor({
         ? t("status.addedToGroup", { name: displayShapeName(added[0]), group: displayShapeName(regrouped) })
         : t("status.addedManyToGroup", { count: added.length, group: displayShapeName(regrouped) }));
       // The group stays where it stood in the list.
+      const entryBefore = historyRef.current[historyIndexRef.current];
       const held = commitGroupPartsStep(
         shapesRef.current.filter((shape) => !wanted.has(shape.id)).map((shape) => (shape.id === group.id ? regrouped : shape)),
         regrouped.id,
@@ -12758,12 +12841,25 @@ export function LayerlingEditor({
         amendNewest,
       );
       if (held) return refuseOpenGroupStep(held);
+      // The group's own membership follows the merge rules. It is a change to an object that keeps its id, so it is kept with this history step:
+      // Undo takes it back, Redo brings it again (membershipHistoryRef; like the open-group levels of a step).
+      const wasAt = placementOf(visualGroupsRef.current, group.id);
+      if (place.groupId !== (wasAt?.groupId ?? null)) {
+        updateVisualGroups((current) => (place.groupId ? applyMerge(current, mergeSources, group.id, place.groupId) : removeObjectsFromGroups(current, [group.id])));
+        const isAt = placementOf(visualGroupsRef.current, group.id);
+        const entryNow = historyRef.current[historyIndexRef.current];
+        if (entryNow && entryNow !== entryBefore) {
+          // An amended step carries the changes the step it replaced had made.
+          const carried = amendNewest ? membershipHistoryRef.current.get(entryBefore) ?? [] : [];
+          membershipHistoryRef.current.set(entryNow, [...carried, { id: group.id, before: wasAt, after: isAt }]);
+        }
+      }
       return { ok: true, message, groupId: regrouped.id };
     } finally {
       openGroupBusyRef.current = false;
       setOpenGroupBusy(false);
     }
-  }, [commitGroupPartsStep, groupPartsStepRefused, rebuildGroupFromParts, refuseOpenGroupStep]);
+  }, [commitGroupPartsStep, groupPartsStepRefused, rebuildGroupFromParts, refuseOpenGroupStep, inSelectionOrder, chooseMergeGroup, updateVisualGroups]);
 
   /**
    * One part dragged out of an expanded group in the object list (Discussion #1338) lies loose again where it was,
@@ -15386,6 +15482,9 @@ export function LayerlingEditor({
         if (groupable.length < 2) throw new Error("Select at least two objects to group");
         if (groupable.some((shape) => shape.locked)) throw new Error("Unlock every selected object before grouping");
         if (groupable.some((shape) => isNonSolidShape(shape))) throw new Error("A ruler isn't a solid and can't be grouped");
+        // Visual Groups: nobody to ask here, so objects in different groups give an unassigned result.
+        const mergeSources = groupable.map((shape) => shape.id);
+        const place = await chooseMergeGroup(mergeSources, false, "Group");
         const sourceFingerprint = projectShapesFingerprint(currentShapes());
         const sourceProjectId = projectInfoRef.current.projectId;
         const result = await buildGroupedShapeOffThread(groupable, workspaceSettingsRef.current.booleanTriangleLimit, geometryAbortRef.current?.signal);
@@ -15401,6 +15500,7 @@ export function LayerlingEditor({
         }
         const editableGroup = canonicalizeShape({ ...result.group, groupOperation: "group" });
         commitShapes([...currentShapes().filter((shape) => !ids.has(shape.id)), editableGroup], editableGroup.id, result.mergeWarning ?? withClosedHolesNote(t("status.mcpGrouped", { count: groupable.length }), result.closedHoles));
+        placeMergeResultRef.current(mergeSources, editableGroup.id, place.groupId);
         const closedHoles = result.closedHoles ? { closedHoles: result.closedHoles } : {};
         return result.mergeWarning
           ? { object: mcpShapeSummary(editableGroup), warning: result.mergeWarning, ...closedHoles }
@@ -15413,10 +15513,13 @@ export function LayerlingEditor({
         if (parts.length < 2) throw new Error("Pass at least two objects to bundle");
         if (parts.some((shape) => shape.locked)) throw new Error("Unlock every object before bundling");
         if (parts.some((shape) => isNonSolidShape(shape))) throw new Error("A ruler isn't a solid and can't be bundled");
+        const mergeSources = parts.map((shape) => shape.id);
+        const place = await chooseMergeGroup(mergeSources, false, "Bundle");
         const group = groupedShape(parts);
         if (!group) throw new Error("Could not bundle these objects");
         const bundle = canonicalizeShape({ ...group, name: "Bundle", groupOperation: "bundle" });
         commitShapes([...currentShapes().filter((shape) => !ids.has(shape.id)), bundle], bundle.id, t("status.mcpBundled", { count: parts.length }));
+        placeMergeResultRef.current(mergeSources, bundle.id, place.groupId);
         return { object: mcpShapeSummary(bundle) };
       }
 
@@ -15780,6 +15883,8 @@ export function LayerlingEditor({
         if (groupable.some((shape) => shape.locked)) throw new Error("Unlock every selected object before intersecting");
         if (groupable.some((shape) => isNonSolidShape(shape))) throw new Error("A ruler isn't a solid and can't be intersected");
         if (!canIntersectShapes(groupable)) throw new Error("Pass two solids, or a solid and a hole, to intersect");
+        const mergeSources = groupable.map((shape) => shape.id);
+        const place = await chooseMergeGroup(mergeSources, false, "Intersection");
         const sourceFingerprint = projectShapesFingerprint(currentShapes());
         const sourceProjectId = projectInfoRef.current.projectId;
         const result = await buildIntersectionShapeFromSelection(groupable, workspaceSettingsRef.current.booleanTriangleLimit);
@@ -15794,6 +15899,7 @@ export function LayerlingEditor({
         }
         const intersection = canonicalizeShape({ ...result.group!, groupOperation: "intersection" });
         commitShapes([...remainingShapes, intersection], intersection.id, t("status.intersectedMany", { count: groupable.length }));
+        placeMergeResultRef.current(mergeSources, intersection.id, place.groupId);
         return { object: mcpShapeSummary(intersection) };
       }
 
@@ -15811,6 +15917,8 @@ export function LayerlingEditor({
         if (groupable.some((shape) => shape.locked)) throw new Error("Unlock every selected object before making a hull");
         if (groupable.some((shape) => isNonSolidShape(shape))) throw new Error("A ruler isn't a solid and can't be part of a hull");
         if (!canHullShapes(groupable)) throw new Error("Pass two objects or more to make a hull");
+        const mergeSources = groupable.map((shape) => shape.id);
+        const place = await chooseMergeGroup(mergeSources, false, "Hull");
         const sourceFingerprint = projectShapesFingerprint(currentShapes());
         const sourceProjectId = projectInfoRef.current.projectId;
         const result = await buildHullShapeFromSelection(groupable, workspaceSettingsRef.current.booleanTriangleLimit, { keepHoles });
@@ -15820,6 +15928,7 @@ export function LayerlingEditor({
         if (!result.group) throw new Error(result.failureNotice);
         const hull = canonicalizeShape({ ...result.group, groupOperation: "hull" });
         commitShapes([...currentShapes().filter((shape) => !ids.has(shape.id)), hull], hull.id, t("status.hulledMany", { count: groupable.length }));
+        placeMergeResultRef.current(mergeSources, hull.id, place.groupId);
         return { object: mcpShapeSummary(hull) };
       }
 
