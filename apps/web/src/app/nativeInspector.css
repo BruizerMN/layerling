@@ -665,3 +665,21 @@ html[data-native-chrome="on"] .native-inspector-dock .property-card-header:focus
 .native-inspector-dock .shape-state-card .check-property { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; margin: 2px 0 0; padding: 0 2px; text-align: left; }
 .native-inspector-dock .shape-state-card .check-property input { flex: 0 0 auto; margin: 0; }
 .native-inspector-dock .shape-state-card .check-property > span { flex: 1 1 auto; text-align: left; }
+
+/*
+ * Build 0029: General and Group.
+ * General: name, Solid / Hole (twice as tall, the most used controls), then the switches Hidden / Lock Position / Lock Shape / Transparent / Multicolor
+ * in one column (labels left, switches right) with a little room between the groups. Group: name, Edit group, When resized, always present (greyed out
+ * when the object is not a group).
+ */
+.native-inspector-dock .inspector-name-row { display: flex; align-items: center; min-height: 30px; padding: 6px 10px 2px; }
+.native-inspector-dock .inspector-name-row .inspector-name { flex: 1; }
+.native-inspector-dock .shape-state-card.solid-hole-card { border-bottom: 0; padding-bottom: 2px; }
+.native-inspector-dock .shape-state-card.solid-hole-card button { height: 48px; min-height: 48px; }
+.native-inspector-dock .shape-state-card.inspector-switch-card { grid-template-columns: 1fr; row-gap: 0; padding-top: 4px; }
+.native-inspector-dock .shape-state-card .check-property.gap-before { margin-top: 12px; }
+.native-inspector-dock .inspector-group-name { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 6px 10px 2px; }
+.native-inspector-dock .inspector-group-label { flex: 0 0 auto; color: var(--insp-muted); font-size: 11px; }
+.native-inspector-dock .inspector-group-name .inspector-name { flex: 1; min-width: 0; }
+.native-inspector-dock .inspector-name-placeholder { color: var(--insp-muted); opacity: 0.6; font-size: 12px; }
+.native-inspector-dock .inspector-section-bare > .inspector-action-button { display: block; width: calc(100% - 20px); margin: 8px 10px; }

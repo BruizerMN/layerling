@@ -29,13 +29,12 @@ export function InspectorSection({ name, title, bare = false, children }: { name
 }
 
 /**
- * The Object Inspector's first section, "General": the controls that used to sit above Properties (name and actions, Solid/Hole, colour, group
- * controls...). In the docked Inspector they are inside the section; the floating Inspector of a browser shows them as before.
+ * A section of the Object Inspector in the docked (native) Inspector: General, Group. Like every section it starts open and keeps the user's choice for
+ * the session; its content brings its own padding.
  */
-export function InspectorGeneral({ docked, children }: { docked: boolean; children: ReactNode }) {
-  if (!docked) return <>{children}</>;
+export function InspectorDockSection({ name, title, children }: { name: string; title: string; children: ReactNode }) {
   return (
-    <InspectorSection name="object.general" title="General" bare>
+    <InspectorSection name={name} title={title} bare>
       {children}
     </InspectorSection>
   );

@@ -6,7 +6,7 @@ import { GuideHelpLink } from "@/components/GuideHelpLink";
 import { SnapGridMenuItems } from "@/components/workplane/SnapGridMenu";
 import { guideChapterForShape, guideSectionForShape } from "@/lib/guideLinks";
 import { useInspectorCard, useInspectorSection } from "@/lib/inspectorCards";
-import { InspectorGeneral } from "@/components/workplane/InspectorSection";
+import { InspectorDockSection } from "@/components/workplane/InspectorSection";
 import { AlignCenter, Cone, ChevronDown, ChevronUp, Cylinder, Eraser, Eye, EyeOff, FolderOpen, Grid3x3, ImageUp, Lasso, Layers, Link2, Lock, Minus, Move3d, MousePointerClick, Pencil, Plus, RefreshCw, RotateCcw, Rotate3d, Ruler, Shield, ShieldCheck, Shrink, SlidersHorizontal, Spline, Split, Tags, Trash2, TrendingDown, Unlock, Waves } from "lucide-react";
 import { holdsShapeLock } from "@/lib/shapeLock";
 import { createPortal } from "react-dom";
@@ -5042,25 +5042,9 @@ export function ShapeInspector({
     if (editingName) nameInputRef.current?.select();
   }, [editingName]);
 
-  return (
-    <SliderSnapContext.Provider value={snapGridStep(snap)}>
-    <aside
-      ref={inspectorRef}
-      className={`shape-inspector ${isSketchRevolve ? "sketch-revolve-inspector" : ""} ${shape.kind === "gear" ? "gear-inspector" : ""} ${minimized ? "minimized" : ""} ${docked ? "docked" : ""} ${movable.moved && !docked ? "floating" : ""} ${movable.dragging ? "moving" : ""}`}
-      style={docked ? undefined : movable.style}
-      aria-label={t("inspector.settingsFor", { name: displayShapeName(shape) })}
-      onPointerDown={(event) => event.stopPropagation()}
-    >
-      <InspectorGeneral docked={docked}>
-      <div className={docked ? "shape-inspector-header" : "shape-inspector-header movable"} title={docked ? undefined : t("inspector.moveHint")} {...(docked ? {} : movable.handleProps)}>
-        {docked ? null : <button
-          className="inspector-header-icon"
-          aria-label={minimized ? t("inspector.expand") : t("inspector.minimize")}
-          aria-expanded={!minimized}
-          onClick={() => setMinimized((current) => !current)}
-        >
-          {minimized ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-        </button>}
+  const isGroup = Boolean(shape.groupedShapes?.length);
+  const showsState = shape.groupOperation === "bundle" || !isNonSolidShape(shape);
+  const nameControl = (
         <div className="inspector-name">
           {nameDraft !== null ? (
             <input
@@ -5090,24 +5074,68 @@ export function ShapeInspector({
             </>
           )}
         </div>
-        <div className="inspector-header-actions">
-          <GuideHelpLink chapter={guideChapterForShape(shape)} section={guideSectionForShape(shape)} className="inspector-help-link" />
-          <button className={locked ? "inspector-header-icon active" : "inspector-header-icon"} aria-label={locked ? t("outliner.unlock") : t("outliner.lock")} aria-keyshortcuts="Control+L" title={t("camera.shortcut", { label: locked ? t("outliner.unlock") : t("outliner.lock"), keys: "Ctrl+L" })} onClick={() => onUpdate({ locked: !locked })}>
-            {locked ? <Lock size={16} /> : <Unlock size={16} />}
-          </button>
-          {locked ? null : (
-            <button className={shapeLocked ? "inspector-header-icon active" : "inspector-header-icon"} aria-label={shapeLocked ? t("contextMenu.unlockShape") : t("contextMenu.lockShape")} aria-keyshortcuts="Control+Shift+L" title={t("camera.shortcut", { label: shapeLocked ? t("contextMenu.unlockShape") : t("contextMenu.lockShapeHint"), keys: "Ctrl+Shift+L" })} data-testid="inspector-shape-lock" onClick={() => onUpdate({ shapeLocked: !shapeLocked })}>
-              {shapeLocked ? <ShieldCheck size={16} /> : <Shield size={16} />}
-            </button>
-          )}
-          <button className={shape.hidden ? "inspector-header-icon active" : "inspector-header-icon"} aria-label={shape.hidden ? t("outliner.show") : t("outliner.hide")} aria-keyshortcuts="Control+H" title={t("camera.shortcut", { label: shape.hidden ? t("outliner.show") : t("outliner.hide"), keys: "Ctrl+H" })} onClick={() => onUpdate({ hidden: !shape.hidden })}>
-            {shape.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
-          </button>
-        </div>
-      </div>
-
-      {!minimized ? (
-        <>
+  );
+  const solidChoice = (
+    <>
+        <button
+          className={!shape.hole ? "active solid-choice" : "solid-choice"}
+          onClick={() => {
+            const wasHole = Boolean(shape.hole);
+            // Sending the colour too would paint it onto every part of a group or bundle and lose their own colours.
+            onUpdate(shape.groupedShapes?.length ? { hole: false } : { hole: false, color: solidColor });
+            setColorOpen((open) => (wasHole ? false : !open));
+          }}
+          disabled={frozen}
+          aria-pressed={!shape.hole}
+          aria-expanded={colorOpen}
+        >
+          <span className="large-solid-swatch" style={{ "--swatch": solidColor } as CSSProperties} />
+          <span>{t("inspector.solid")} <span className="key-hint">(S)</span></span>
+        </button>
+    </>
+  );
+  const holeChoice = (
+    <>
+        <button
+          className={shape.hole ? "active hole-choice" : "hole-choice"}
+          onClick={() => {
+            onUpdate({ hole: true });
+            setColorOpen(false);
+          }}
+          disabled={frozen}
+          aria-pressed={shape.hole}
+        >
+          <span className="large-hole-swatch" />
+          <span>{t("inspector.hole")} <span className="key-hint">(H)</span></span>
+        </button>
+    </>
+  );
+  const transparentSwitch = (
+    <>
+        {/* Stays in place for a hole, only greyed out, so the card does not jump. */}
+        <ToggleProperty
+          gapBefore={docked}
+          label={`${t("inspector.transparent")} (T)`}
+          value={Boolean(shape.transparent) && !shape.hole}
+          disabled={locked || Boolean(shape.hole)}
+          onChange={(transparent) => onUpdate({ transparent: transparent || undefined })}
+        />
+    </>
+  );
+  const multicolorSwitch = (
+    <>
+        {canToggleGroupColors(shape) ? (
+          <ToggleProperty
+            label={`${t("inspector.multicolor")} (Shift+M)`}
+            value={groupShowsPartColors(shape)}
+            disabled={frozen}
+            onChange={(multicolor) => onUpdate({ multicolor })}
+          />
+        ) : null}
+    </>
+  );
+  const pieceCards = (
+    <>
       {/* A name tag (#215): its card first and open; for a plain text the way there first. */}
       {nameTagStack && onLayerText && onTextTags ? (
         <NameTagCard
@@ -5132,53 +5160,10 @@ export function ShapeInspector({
       ) : iconTag ? (
         <MakeIconLayersButton disabled={frozen} onLayer={iconTag.onLayer} />
       ) : null}
-      {shape.groupOperation === "bundle" || !isNonSolidShape(shape) ? (
-      <div className="shape-state-card" role="group" aria-label={t("inspector.shapeMode")}>
-        <button
-          className={!shape.hole ? "active solid-choice" : "solid-choice"}
-          onClick={() => {
-            const wasHole = Boolean(shape.hole);
-            // Sending the colour too would paint it onto every part of a group or bundle and lose their own colours.
-            onUpdate(shape.groupedShapes?.length ? { hole: false } : { hole: false, color: solidColor });
-            setColorOpen((open) => (wasHole ? false : !open));
-          }}
-          disabled={frozen}
-          aria-pressed={!shape.hole}
-          aria-expanded={colorOpen}
-        >
-          <span className="large-solid-swatch" style={{ "--swatch": solidColor } as CSSProperties} />
-          <span>{t("inspector.solid")} <span className="key-hint">(S)</span></span>
-        </button>
-        <button
-          className={shape.hole ? "active hole-choice" : "hole-choice"}
-          onClick={() => {
-            onUpdate({ hole: true });
-            setColorOpen(false);
-          }}
-          disabled={frozen}
-          aria-pressed={shape.hole}
-        >
-          <span className="large-hole-swatch" />
-          <span>{t("inspector.hole")} <span className="key-hint">(H)</span></span>
-        </button>
-        {/* Stays in place for a hole, only greyed out, so the card does not jump. */}
-        <ToggleProperty
-          label={`${t("inspector.transparent")} (T)`}
-          value={Boolean(shape.transparent) && !shape.hole}
-          disabled={locked || Boolean(shape.hole)}
-          onChange={(transparent) => onUpdate({ transparent: transparent || undefined })}
-        />
-        {canToggleGroupColors(shape) ? (
-          <ToggleProperty
-            label={`${t("inspector.multicolor")} (Shift+M)`}
-            value={groupShowsPartColors(shape)}
-            disabled={frozen}
-            onChange={(multicolor) => onUpdate({ multicolor })}
-          />
-        ) : null}
-      </div>
-      ) : null}
-
+    </>
+  );
+  const pieceColor = (
+    <>
       {colorOpen ? (
         <div className="color-card" aria-label={t("inspector.shapeColor")} data-help-section-all="colorCard">
           <div className="color-card-header">
@@ -5239,6 +5224,10 @@ export function ShapeInspector({
         </div>
       ) : null}
 
+    </>
+  );
+  const pieceVase = (
+    <>
       {shape.kind === "vase" ? (
         <button className="edit-sketch-button" type="button" disabled={frozen} aria-pressed={vaseDrawOpen} onClick={() => setVaseDrawOpen((open) => !open)}>
           <Pencil size={17} strokeWidth={2.5} />
@@ -5249,18 +5238,30 @@ export function ShapeInspector({
         <VaseDrawingWindow shape={shape} disabled={frozen} onUpdate={onUpdate} onInteractionActiveChange={onInteractionActiveChange} onClose={() => setVaseDrawOpen(false)} />
       ) : null}
 
+    </>
+  );
+  const pieceSketch = (
+    <>
       {shape.sketchProfile && onEditSketch ? (
         <button className="edit-sketch-button" type="button" disabled={frozen} onClick={onEditSketch}>
           {t("inspector.editSketch")}
         </button>
       ) : null}
 
+    </>
+  );
+  const pieceOpenGroup = (
+    <>
       {onOpenGroup ? (
         <button className="inspector-action-button" type="button" disabled={frozen} onClick={onOpenGroup}>
           {t(shape.groupOperation === "bundle" ? "group.editBundle" : "group.edit")} (E)
         </button>
       ) : null}
 
+    </>
+  );
+  const pieceHull = (
+    <>
       {/* A hull keeps its parts' holes open or fills them (Discussion #1440); switching builds it again. */}
       {shape.groupOperation === "hull" && !shape.hole && onHullKeepHolesChange ? (
         <div className="property-card" data-help-section-all="intersection">
@@ -5279,11 +5280,19 @@ export function ShapeInspector({
         </div>
       ) : null}
 
+    </>
+  );
+  const pieceHoles = (
+    <>
       {/* The group's round holes: one diameter for all of them, or each its own (groupHoles.ts). */}
       {onGroupHoleDiameters ? (
         <GroupHolesCard shape={shape} workspace={workspace} disabled={frozen} onChange={onGroupHoleDiameters} onInteractionActiveChange={onInteractionActiveChange} />
       ) : null}
 
+    </>
+  );
+  const pieceResize = (
+    <>
       {/* What the group does with its parts when it is resized (Discussion #526): two long choices, side by side. */}
       {offersGroupResize(shape) ? (
         <div className="property-card" data-help-section-all="groupResize">
@@ -5314,6 +5323,10 @@ export function ShapeInspector({
         </div>
       ) : null}
 
+    </>
+  );
+  const pieceSeparate = (
+    <>
       {canSeparateParts && onSeparateParts ? (
         <button className="inspector-action-button" type="button" disabled={frozen} onClick={onSeparateParts}>
           <Split size={17} strokeWidth={2.5} />
@@ -5321,10 +5334,18 @@ export function ShapeInspector({
         </button>
       ) : null}
 
+    </>
+  );
+  const pieceBundle = (
+    <>
       {shape.groupOperation === "bundle" ? (
         <p className="inspector-bundle-note">{t(nameTagStack || iconTag?.isTag ? "nameTag.bundleNote" : "inspector.bundleNote")}</p>
       ) : null}
 
+    </>
+  );
+  const pieceText = (
+    <>
       {onTextTags && shape.kind === "text" ? (
         <NameListCard key={`names-${shape.id}`} shapeId={shape.id} disabled={frozen} onTextTags={onTextTags} onInteractionActiveChange={onInteractionActiveChange} />
       ) : null}
@@ -5333,6 +5354,10 @@ export function ShapeInspector({
         <TextBlockCard key={`lines-${shape.id}`} shapeId={shape.id} text={shape.text ?? ""} workspace={workspace} disabled={frozen} onTextBlock={onTextBlock} onInteractionActiveChange={onInteractionActiveChange} />
       ) : null}
 
+    </>
+  );
+  const pieceEllipse = (
+    <>
       {cylinderToEllipsePatch(shape) ? (
         <button
           className="inspector-action-button"
@@ -5347,9 +5372,111 @@ export function ShapeInspector({
           <span>{t("inspector.makeEllipse")}</span>
         </button>
       ) : null}
+    </>
+  );
+  const pieceState = showsState ? (
+      <div className="shape-state-card" role="group" aria-label={t("inspector.shapeMode")}>
+        {solidChoice}
+        {holeChoice}
+        {transparentSwitch}
+        {multicolorSwitch}
+      </div>
+  ) : null;
+
+  return (
+    <SliderSnapContext.Provider value={snapGridStep(snap)}>
+    <aside
+      ref={inspectorRef}
+      className={`shape-inspector ${isSketchRevolve ? "sketch-revolve-inspector" : ""} ${shape.kind === "gear" ? "gear-inspector" : ""} ${minimized ? "minimized" : ""} ${docked ? "docked" : ""} ${movable.moved && !docked ? "floating" : ""} ${movable.dragging ? "moving" : ""}`}
+      style={docked ? undefined : movable.style}
+      aria-label={t("inspector.settingsFor", { name: displayShapeName(shape) })}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      {docked ? (
+        <>
+          <InspectorDockSection name="object.general" title="General">
+            {!isGroup ? <div className="inspector-name-row">{nameControl}</div> : null}
+            {showsState ? (
+              <div className="shape-state-card solid-hole-card" role="group" aria-label={t("inspector.shapeMode")}>
+                {solidChoice}
+                {holeChoice}
+              </div>
+            ) : null}
+            {pieceColor}
+            <div className="shape-state-card inspector-switch-card">
+              <ToggleProperty label="Hidden" value={Boolean(shape.hidden)} keys="Ctrl+H" onChange={(hidden) => onUpdate({ hidden })} />
+              <ToggleProperty label="Lock Position" value={locked} gapBefore keys="Ctrl+L" onChange={(next) => onUpdate({ locked: next })} />
+              <ToggleProperty label="Lock Shape" value={shapeLocked} disabled={locked} keys="Ctrl+Shift+L" onChange={(next) => onUpdate({ shapeLocked: next })} />
+              {showsState ? transparentSwitch : null}
+              {showsState ? multicolorSwitch : null}
+            </div>
+            {pieceVase}
+            {pieceSketch}
+            {pieceEllipse}
+          </InspectorDockSection>
+          <InspectorDockSection name="object.group" title="Group">
+            <div className="inspector-group-name">
+              <span className="inspector-group-label">Group name</span>
+              {isGroup ? nameControl : <span className="inspector-name inspector-name-placeholder" aria-disabled="true">—</span>}
+            </div>
+            {pieceOpenGroup}
+            {!onOpenGroup ? <GroupEditPlaceholder /> : null}
+            {pieceResize}
+            {!offersGroupResize(shape) ? <GroupResizePlaceholder /> : null}
+            {pieceHull}
+            {pieceHoles}
+            {pieceSeparate}
+            {pieceBundle}
+          </InspectorDockSection>
+          {pieceCards}
+          {pieceText}
+        </>
+      ) : (
+        <>
+      <div className={docked ? "shape-inspector-header" : "shape-inspector-header movable"} title={docked ? undefined : t("inspector.moveHint")} {...(docked ? {} : movable.handleProps)}>
+        {docked ? null : <button
+          className="inspector-header-icon"
+          aria-label={minimized ? t("inspector.expand") : t("inspector.minimize")}
+          aria-expanded={!minimized}
+          onClick={() => setMinimized((current) => !current)}
+        >
+          {minimized ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+        </button>}
+        {nameControl}
+        <div className="inspector-header-actions">
+          <GuideHelpLink chapter={guideChapterForShape(shape)} section={guideSectionForShape(shape)} className="inspector-help-link" />
+          <button className={locked ? "inspector-header-icon active" : "inspector-header-icon"} aria-label={locked ? t("outliner.unlock") : t("outliner.lock")} aria-keyshortcuts="Control+L" title={t("camera.shortcut", { label: locked ? t("outliner.unlock") : t("outliner.lock"), keys: "Ctrl+L" })} onClick={() => onUpdate({ locked: !locked })}>
+            {locked ? <Lock size={16} /> : <Unlock size={16} />}
+          </button>
+          {locked ? null : (
+            <button className={shapeLocked ? "inspector-header-icon active" : "inspector-header-icon"} aria-label={shapeLocked ? t("contextMenu.unlockShape") : t("contextMenu.lockShape")} aria-keyshortcuts="Control+Shift+L" title={t("camera.shortcut", { label: shapeLocked ? t("contextMenu.unlockShape") : t("contextMenu.lockShapeHint"), keys: "Ctrl+Shift+L" })} data-testid="inspector-shape-lock" onClick={() => onUpdate({ shapeLocked: !shapeLocked })}>
+              {shapeLocked ? <ShieldCheck size={16} /> : <Shield size={16} />}
+            </button>
+          )}
+          <button className={shape.hidden ? "inspector-header-icon active" : "inspector-header-icon"} aria-label={shape.hidden ? t("outliner.show") : t("outliner.hide")} aria-keyshortcuts="Control+H" title={t("camera.shortcut", { label: shape.hidden ? t("outliner.show") : t("outliner.hide"), keys: "Ctrl+H" })} onClick={() => onUpdate({ hidden: !shape.hidden })}>
+            {shape.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
+      </div>
+      {!minimized ? (
+        <>
+          {pieceCards}
+          {pieceState}
+          {pieceColor}
+          {pieceVase}
+          {pieceSketch}
+          {pieceOpenGroup}
+          {pieceHull}
+          {pieceHoles}
+          {pieceResize}
+          {pieceSeparate}
+          {pieceBundle}
+          {pieceText}
+          {pieceEllipse}
         </>
       ) : null}
-      </InspectorGeneral>
+        </>
+      )}
       {!minimized ? (
         <>
 
@@ -9001,12 +9128,38 @@ function ColorProperty({ label, value, hint, disabled, onChange, onReset, onInte
   );
 }
 
-function ToggleProperty({ label, value, area, sub, disabled, onChange, onReset }: Omit<TogglePropertyConfig, "id" | "type"> & { disabled?: boolean; onReset?: () => void }) {
+function ToggleProperty({ label, value, area, sub, disabled, onChange, onReset, gapBefore, keys }: Omit<TogglePropertyConfig, "id" | "type"> & { disabled?: boolean; onReset?: () => void; /** A little room above the row: the native Inspector's General section groups its switches (Build 0029). */ gapBefore?: boolean; /** The key that does the same, for the tooltip and assistive technology. */ keys?: string }) {
   return (
-    <label className={`${area ? `check-property check-property-${area}` : "check-property"}${sub ? " check-property-sub" : ""}`}>
-      <input type="checkbox" role="switch" checked={value} disabled={disabled} onChange={(event) => onChange(event.currentTarget.checked)} />
+    <label className={`${area ? `check-property check-property-${area}` : "check-property"}${sub ? " check-property-sub" : ""}${gapBefore ? " gap-before" : ""}`} title={keys ? `${label} (${keys})` : undefined}>
+      <input type="checkbox" role="switch" checked={value} disabled={disabled} aria-keyshortcuts={keys ? keys.replace("Ctrl", "Control") : undefined} onChange={(event) => onChange(event.currentTarget.checked)} />
       <span>{label}{onReset ? <PropertyResetButton onClick={onReset} /> : null}</span>
     </label>
+  );
+}
+
+/** The group controls on an object that is not a group: in place, greyed out (Build 0029), so the Group section never comes and goes with the selection. */
+function GroupEditPlaceholder() {
+  return (
+    <button className="inspector-action-button" type="button" disabled data-group-placeholder="edit">
+      {t("group.edit")} (E)
+    </button>
+  );
+}
+
+function GroupResizePlaceholder() {
+  return (
+    <div className="property-card" data-help-section-all="groupResize" data-group-placeholder="resize">
+      <div className="property-list cylinder-wrap-body">
+        <div className="name-tag-sides group-resize-choice" role="radiogroup" aria-label={t("inspector.groupResize")} aria-disabled="true">
+          <span>{t("inspector.groupResize")}</span>
+          {(["stretch", "keepParts"] as const).map((mode) => (
+            <button key={mode} type="button" role="radio" aria-checked={false} disabled>
+              {t(mode === "keepParts" ? "inspector.groupResizeKeepParts" : "inspector.groupResizeStretch")}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -9295,6 +9448,143 @@ export function SelectionInspector({
     rememberColor(color);
     setColorOpen(false);
   };
+  const selSolid = (
+    <>
+          <button
+            className={noHoles ? "active solid-choice" : "solid-choice"}
+            onClick={() => {
+              if (noHoles) setColorOpen((open) => !open);
+              else onSetHole(false);
+            }}
+            disabled={anyLocked}
+            aria-pressed={noHoles}
+            aria-expanded={colorOpen}
+          >
+            <span className="large-solid-swatch" style={{ "--swatch": swatch } as CSSProperties} />
+            <span>{t("inspector.solid")} <span className="key-hint">(S)</span></span>
+          </button>
+    </>
+  );
+  const selHole = (
+    <>
+          <button
+            className={allHoles ? "active hole-choice" : "hole-choice"}
+            onClick={() => {
+              onSetHole(true);
+              setColorOpen(false);
+            }}
+            disabled={anyLocked}
+            aria-pressed={allHoles}
+          >
+            <span className="large-hole-swatch" />
+            <span>{t("inspector.hole")} <span className="key-hint">(H)</span></span>
+          </button>
+    </>
+  );
+  const selMixed = (
+    <>
+          {!noHoles && !allHoles ? <p className="selection-mixed-note">{t("inspector.selectionMixed")}</p> : null}
+    </>
+  );
+  const selTransparent = (
+    <>
+          {onUpdateShapes && solids.length > 0 ? (
+            <ToggleProperty
+              gapBefore={docked}
+              label={`${t("inspector.transparent")} (T)`}
+              value={solids.every((shape) => Boolean(shape.transparent))}
+              disabled={anyLocked}
+              onChange={(transparent) => onUpdateShapes(
+                solids.map((shape) => ({ id: shape.id, patch: { transparent: transparent || undefined } })),
+                transparent ? t("status.selectionTransparent") : t("status.selectionOpaque"),
+              )}
+            />
+          ) : null}
+    </>
+  );
+  const selColor = (
+    <>
+      {colorOpen ? (
+        <div className="color-card" aria-label={t("inspector.shapeColor")} data-help-section-all="colorCard">
+          <div className="color-card-header">
+            <span>{t("inspector.color")}</span>
+            <HexColorField
+              color={sharedColor ?? undefined}
+              placeholder={t("inspector.selectionMixedColors")}
+              disabled={anyLocked}
+              onCommit={(color) => {
+                onSetColor(color);
+                rememberColor(color);
+              }}
+              onInteractionActiveChange={onInteractionActiveChange}
+            />
+          </div>
+          <div className="color-grid">
+            {SOLID_COLORS.map((color) => (
+              <button
+                key={color}
+                className={sharedColor?.toLowerCase() === color.toLowerCase() ? "selected" : ""}
+                type="button"
+                style={{ "--shape-swatch": color } as CSSProperties}
+                title={color.toUpperCase()}
+                aria-label={t("aria.setColor", { color })}
+                disabled={anyLocked}
+                onClick={() => pick(color)}
+              />
+            ))}
+            <label className={anyLocked ? "custom-color disabled" : "custom-color"} title={t("inspector.customColor")}>
+              <CustomColorInput color={swatch} disabled={anyLocked} onCommit={pick} onInteractionActiveChange={onInteractionActiveChange} />
+              <span>{t("inspector.custom")}</span>
+            </label>
+          </div>
+          <ColorKeepRows
+            recent={recentColors}
+            kept={keptColors}
+            current={sharedColor}
+            palette={SOLID_COLORS}
+            disabled={anyLocked}
+            isSelected={(color) => sharedColor?.toLowerCase() === color}
+            onPick={pick}
+            onToggleKeep={toggleKeptColor}
+          />
+        </div>
+      ) : null}
+    </>
+  );
+  const selRest = (
+    <>
+      {gearPair ? (
+        <p className="selection-gear-pair" role="status">
+          {gearPair.distance === null
+            ? t("inspector.gearPairMismatch", { a: plainNumber(gearPair.modules[0]), b: plainNumber(gearPair.modules[1]) })
+            : t(gearPair.internal ? "inspector.gearPairInternal" : "inspector.gearPair", { distance: plainNumber(gearPair.distance), current: plainNumber(gearPair.current) })}
+          {fitModule ? <> {t("inspector.gearPairFit", { module: plainNumber(fitModule) })}</> : null}
+        </p>
+      ) : null}
+      {fitModule && onUpdateShapes ? (
+        <button type="button" className="inspector-action-button selection-gear-fit" disabled={anyLocked} title={t("inspector.gearPairFitHint")} onClick={fitGearPair}>
+          {t("inspector.gearPairFitApply")}
+        </button>
+      ) : null}
+      {gearPairOff && onUpdateShapes ? ([0, 1] as const).map((index) => (
+        <button key={shapes[index].id} type="button" className="inspector-action-button selection-gear-fit" disabled={anyLocked} title={t("inspector.gearPairKeepHint")} onClick={() => keepGear(index)}>
+          {t("inspector.gearPairKeep", { name: displayShapeName(shapes[index]) })}
+        </button>
+      )) : null}
+      {outlineSource && onFitGridfinityOutline ? (
+        <button type="button" className="inspector-action-button" disabled={anyLocked} title={t("inspector.gridfinityOutlineFitHint")} onClick={() => void onFitGridfinityOutline(outlinePlates[0].id, outlineSource.id)}>
+          {t("inspector.gridfinityOutlineFit")}
+        </button>
+      ) : null}
+      <p className="selection-inspector-hint">{t("inspector.selectionHint")}</p>
+      {!movable.moved && !docked ? (
+        <div className="inspector-snap-dock">
+          <SnapGridControl units={workspace.units} onUnitsChange={onUnitsChange} customGrids={workspace.customSnapGrids} snap={snap} snapOpen={snapOpen} onSnapChange={onSnapChange} onSnapOpenChange={onSnapOpenChange} objectSnap={workspace.objectSnap} onObjectSnapChange={onObjectSnapChange} />
+        </div>
+      ) : null}
+    </>
+  );
+
   return (
     <aside
       ref={movable.panelRef}
@@ -9303,7 +9593,40 @@ export function SelectionInspector({
       aria-label={t("inspector.selectionTitle", { count: shapes.length })}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <InspectorGeneral docked={docked}>
+      {docked ? (
+        <>
+          <InspectorDockSection name="object.general" title="General">
+            <div className="inspector-name-row">
+              <div className="inspector-name">
+                <strong>{t("inspector.selectionTitle", { count: shapes.length })}</strong>
+              </div>
+            </div>
+            {solidKinds.length > 0 ? (
+              <div className="shape-state-card solid-hole-card" role="group" aria-label={t("inspector.shapeMode")}>
+                {selSolid}
+                {selHole}
+                {selMixed}
+              </div>
+            ) : null}
+            {selColor}
+            <div className="shape-state-card inspector-switch-card">
+              {onToggleHidden ? <ToggleProperty label="Hidden" value={allHidden} keys="Ctrl+H" onChange={() => onToggleHidden()} /> : null}
+              <ToggleProperty label="Lock Position" value={allLocked} gapBefore keys="Ctrl+L" onChange={() => onToggleLocked()} />
+              {solidKinds.length > 0 ? selTransparent : null}
+            </div>
+            {selRest}
+          </InspectorDockSection>
+          <InspectorDockSection name="object.group" title="Group">
+            <div className="inspector-group-name">
+              <span className="inspector-group-label">Group name</span>
+              <span className="inspector-name inspector-name-placeholder" aria-disabled="true">—</span>
+            </div>
+            <GroupEditPlaceholder />
+            <GroupResizePlaceholder />
+          </InspectorDockSection>
+        </>
+      ) : (
+        <>
       <div className={docked ? "shape-inspector-header" : "shape-inspector-header movable"} title={docked ? undefined : t("inspector.moveHint")} {...(docked ? {} : movable.handleProps)}>
         <div className="inspector-name">
           <strong>{t("inspector.selectionTitle", { count: shapes.length })}</strong>
@@ -9322,43 +9645,10 @@ export function SelectionInspector({
       </div>
       {solidKinds.length > 0 ? (
         <div className="shape-state-card" role="group" aria-label={t("inspector.shapeMode")}>
-          <button
-            className={noHoles ? "active solid-choice" : "solid-choice"}
-            onClick={() => {
-              if (noHoles) setColorOpen((open) => !open);
-              else onSetHole(false);
-            }}
-            disabled={anyLocked}
-            aria-pressed={noHoles}
-            aria-expanded={colorOpen}
-          >
-            <span className="large-solid-swatch" style={{ "--swatch": swatch } as CSSProperties} />
-            <span>{t("inspector.solid")} <span className="key-hint">(S)</span></span>
-          </button>
-          <button
-            className={allHoles ? "active hole-choice" : "hole-choice"}
-            onClick={() => {
-              onSetHole(true);
-              setColorOpen(false);
-            }}
-            disabled={anyLocked}
-            aria-pressed={allHoles}
-          >
-            <span className="large-hole-swatch" />
-            <span>{t("inspector.hole")} <span className="key-hint">(H)</span></span>
-          </button>
-          {!noHoles && !allHoles ? <p className="selection-mixed-note">{t("inspector.selectionMixed")}</p> : null}
-          {onUpdateShapes && solids.length > 0 ? (
-            <ToggleProperty
-              label={`${t("inspector.transparent")} (T)`}
-              value={solids.every((shape) => Boolean(shape.transparent))}
-              disabled={anyLocked}
-              onChange={(transparent) => onUpdateShapes(
-                solids.map((shape) => ({ id: shape.id, patch: { transparent: transparent || undefined } })),
-                transparent ? t("status.selectionTransparent") : t("status.selectionOpaque"),
-              )}
-            />
-          ) : null}
+          {selSolid}
+          {selHole}
+          {selMixed}
+          {selTransparent}
         </div>
       ) : null}
       {colorOpen ? (
@@ -9435,7 +9725,8 @@ export function SelectionInspector({
           <SnapGridControl units={workspace.units} onUnitsChange={onUnitsChange} customGrids={workspace.customSnapGrids} snap={snap} snapOpen={snapOpen} onSnapChange={onSnapChange} onSnapOpenChange={onSnapOpenChange} objectSnap={workspace.objectSnap} onObjectSnapChange={onObjectSnapChange} />
         </div>
       ) : null}
-      </InspectorGeneral>
+        </>
+      )}
     </aside>
   );
 }
