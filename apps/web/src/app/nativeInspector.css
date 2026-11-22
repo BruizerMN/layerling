@@ -654,7 +654,7 @@ html[data-native-chrome="on"] .native-inspector-dock .property-card-header:focus
 .native-inspector-panel { flex: 1 0 auto; display: flex; flex-direction: column; }
 .native-inspector-panel[hidden] { display: none; }
 .native-inspector-panel > .shape-inspector { flex: 0 0 auto; }
-.native-inspector-panel > .shape-inspector.inspector-empty { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 16px; }
+.native-inspector-panel > .shape-inspector.inspector-empty { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 16px !important; }
 .native-inspector-dock .inspector-empty-message { display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--insp-muted); text-align: center; }
 .native-inspector-dock .inspector-empty-message svg { width: 56px; height: 56px; color: var(--insp-muted); }
 .native-inspector-dock .inspector-empty-note { margin: 0; color: var(--insp-muted); font-size: 13px; text-align: center; }
