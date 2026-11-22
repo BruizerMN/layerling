@@ -5046,7 +5046,45 @@ export function ShapeInspector({
   // One underlying property (shape.shapeLocked), shown in General and at the top of Properties, Taper and Twist & Lean (docked Inspector): every copy reads it from the shape, so they cannot disagree.
   const lockPropertiesSwitch = <ToggleProperty label="Lock Properties" value={shapeLocked} disabled={locked} keys="Ctrl+Shift+L" onChange={(next) => onUpdate({ shapeLocked: next })} />;
   const showsState = shape.groupOperation === "bundle" || !isNonSolidShape(shape);
-  const nameControl = (
+  // Docked: the name is always an editable field (Build 0031), committed on Enter or when it loses focus, Escape puts the old name back.
+  const cancelNameRef = useRef(false);
+  const dockedNameControl = (
+    <div className="inspector-name">
+      <input
+        type="text"
+        className="inspector-name-input inspector-name-field"
+        value={nameDraft ?? displayShapeName(shape)}
+        disabled={frozen}
+        title={frozen ? t("status.shapeLockRefused") : undefined}
+        aria-label={t("outliner.rename")}
+        spellCheck={false}
+        onFocus={(event) => {
+          setNameDraft(displayShapeName(shape));
+          event.currentTarget.select();
+        }}
+        onChange={(event) => setNameDraft(event.target.value)}
+        onBlur={() => {
+          if (cancelNameRef.current) {
+            cancelNameRef.current = false;
+            setNameDraft(null);
+            return;
+          }
+          commitName();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            cancelNameRef.current = true;
+            event.currentTarget.blur();
+          }
+        }}
+      />
+    </div>
+  );
+  const nameControl = docked ? dockedNameControl : (
         <div className="inspector-name">
           {nameDraft !== null ? (
             <input
@@ -5331,6 +5369,12 @@ export function ShapeInspector({
     <>
       {canSeparateParts && onSeparateParts ? (
         <button className="inspector-action-button" type="button" disabled={frozen} onClick={onSeparateParts}>
+          <Split size={17} strokeWidth={2.5} />
+          <span>{t("inspector.separateParts")}</span>
+        </button>
+      ) : docked ? (
+        // Docked: the button keeps its place and is greyed out, so the section does not change height with the selection (Build 0031).
+        <button className="inspector-action-button" type="button" disabled data-separate-parts-placeholder>
           <Split size={17} strokeWidth={2.5} />
           <span>{t("inspector.separateParts")}</span>
         </button>

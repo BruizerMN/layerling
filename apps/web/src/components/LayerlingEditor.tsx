@@ -204,6 +204,7 @@ import { HiddenObjectsContext, countHiddenObjects } from "@/lib/hiddenObjects";
 import { nativeMenusAvailable, showNativeMenu } from "@/lib/host/nativeMenu";
 import type { NativeMenuItem } from "@/lib/host/hostProtocol";
 import { NativeInspectorDock } from "@/components/NativeInspectorDock";
+import { setInspectorTab } from "@/lib/inspectorTabs";
 import { plateSizePatch } from "@/lib/plateSize";
 import { readAppPrefs, subscribeAppPrefs, writeAppPrefs } from "@/lib/appPrefs";
 import { publishSettingsState, setNativeUiDocument, subscribeNativeUiEvents } from "@/lib/host/nativeUi";
@@ -18802,6 +18803,13 @@ export function LayerlingEditor({
     });
   }, []);
 
+  // A selection made by the user on the workplane brings the Inspector's Object tab to the front (Build 0031). Selection changed any other way (the object list,
+  // commands, undo) does not touch the tab, and neither does a click that selects nothing.
+  const selectShapeOnWorkplane = useCallback((id: string | string[] | null, mode: "replace" | "toggle" = "replace") => {
+    selectShape(id, mode);
+    if (Array.isArray(id) ? id.length > 0 : id) setInspectorTab("object");
+  }, [selectShape]);
+
   const nudgeSelected = useCallback(
     (deltaX: number, deltaZ: number, rise = 0, live = false) => {
       if (!hasSelection) {
@@ -20135,7 +20143,7 @@ export function LayerlingEditor({
           onMirrorPreview={previewMirrorSelection}
           onMirrorPreviewClear={clearMirrorPreview}
           onMirrorSelection={mirrorSelectionAcross}
-          onSelectShape={selectShape}
+          onSelectShape={selectShapeOnWorkplane}
           onShapeContextMenu={historyViewState ? undefined : openShapeContextMenu}
           highlightIds={clearanceHighlightIds ?? menuHighlightIds}
           clearanceMark={clearanceMark}
