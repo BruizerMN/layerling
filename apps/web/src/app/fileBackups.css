@@ -130,7 +130,7 @@
 .browser-backup-note.overdue {
   color: #4a2a00;
   background: #ffe2b8;
-  border-color: #d9730d;
+  border-color: var(--accent-live, #d9730d);
   border-width: 3px;
 }
 
@@ -152,10 +152,10 @@
   gap: 6px;
   min-height: 34px;
   padding: 0 12px;
-  color: #ffffff;
+  color: var(--accent-live-fg, #ffffff);
   font: inherit;
   font-size: 14px;
-  background: #d9730d;
+  background: var(--accent-live, #d9730d);
   border: 0;
   border-radius: 8px;
   cursor: pointer;
@@ -173,7 +173,7 @@
 html[data-theme="dark"] .browser-backup-note.overdue {
   color: #ffd9a8;
   background: #3d2a12;
-  border-color: #f0923a;
+  border-color: var(--accent-live, #f0923a);
 }
 
 html[data-theme="dark"] .browser-backup-note.urgent {
@@ -329,7 +329,7 @@ html[data-theme="dark"] .browser-backup-note.urgent > svg {
   width: 16px;
   height: 16px;
   margin: 2px 0 0;
-  accent-color: #d07415;
+  accent-color: var(--accent-live, #d07415);
 }
 
 html[data-theme="dark"] .backup-settings-take {

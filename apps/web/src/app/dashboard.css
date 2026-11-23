@@ -28,7 +28,7 @@
 
 .dashboard-welcome-hide:hover,
 .dashboard-welcome-hide:focus-visible {
-  color: #ad6206;
+  color: var(--accent-live, #ad6206);
   background: #fbf1e3;
 }
 
@@ -65,8 +65,8 @@
   width: 8px;
   height: 8px;
   margin-left: 4px;
-  border-right: 2px solid #ad6206;
-  border-bottom: 2px solid #ad6206;
+  border-right: 2px solid var(--accent-live, #ad6206);
+  border-bottom: 2px solid var(--accent-live, #ad6206);
   transform: rotate(-45deg);
   transition: transform 120ms ease;
   content: "";
@@ -77,7 +77,7 @@
 }
 
 .dashboard-welcome-summary:hover .dashboard-welcome-summary-title {
-  color: #ad6206;
+  color: var(--accent-live, #ad6206);
 }
 
 .dashboard-welcome-summary-title {
@@ -131,7 +131,7 @@
   grid-row: span 2;
   width: 26px;
   height: 26px;
-  color: #9a5a06;
+  color: var(--accent-live, #9a5a06);
   font-size: 13px;
   font-weight: 600;
   line-height: 26px;
@@ -152,12 +152,12 @@
   padding: 13px 16px;
   color: #6c5640;
   background: #fdf4e3;
-  border-left: 3px solid #e8a865;
+  border-left: 3px solid var(--accent-live, #e8a865);
   border-radius: 0 7px 7px 0;
 }
 
 .dashboard-welcome-switch strong {
-  color: #9a5a06;
+  color: var(--accent-live, #9a5a06);
 }
 
 /* Everything beyond the first steps: a plain list, so it does not compete
@@ -220,7 +220,7 @@
   gap: 8px;
   margin-top: 4px;
   padding: 9px 16px;
-  border: 1.5px solid #ad5900;
+  border: 1.5px solid var(--accent-live, #ad5900);
   border-radius: 8px;
   background: #fff6ea;
   color: #8f4700;
@@ -231,8 +231,8 @@
 
 .dashboard-welcome-guide-link:hover,
 .dashboard-welcome-guide-link:focus-visible {
-  background: #ad5900;
-  color: #fff;
+  background: var(--accent-live, #ad5900);
+  color: var(--accent-live-fg, #ffffff);
 }
 
 html[data-theme="dark"] .dashboard-welcome {
@@ -258,7 +258,7 @@ html[data-theme="dark"] .dashboard-welcome-summary-hint {
 }
 
 html[data-theme="dark"] .dashboard-welcome-summary:hover .dashboard-welcome-summary-title {
-  color: #f3a452;
+  color: var(--accent-live, #f3a452);
 }
 
 html[data-theme="dark"] .dashboard-welcome p,
@@ -267,7 +267,7 @@ html[data-theme="dark"] .dashboard-welcome li {
 }
 
 html[data-theme="dark"] .dashboard-welcome li::before {
-  color: #f3a452;
+  color: var(--accent-live, #f3a452);
   background: #3a2c16;
   border-color: #6b5326;
 }
@@ -275,15 +275,15 @@ html[data-theme="dark"] .dashboard-welcome li::before {
 html[data-theme="dark"] .dashboard-welcome-switch {
   color: #cdb99f;
   background: #332619;
-  border-left-color: #b9762c;
+  border-left-color: var(--accent-live, #b9762c);
 }
 
 html[data-theme="dark"] .dashboard-welcome-switch strong {
-  color: #f3a452;
+  color: var(--accent-live, #f3a452);
 }
 
 html[data-theme="dark"] .dashboard-welcome-videos a {
-  color: #f3a452;
+  color: var(--accent-live, #f3a452);
 }
 
 html[data-theme="dark"] .dashboard-welcome-video-meta,
@@ -292,14 +292,14 @@ html[data-theme="dark"] .dashboard-welcome-help {
 }
 
 html[data-theme="dark"] .dashboard-welcome-guide-link {
-  border-color: #f3a452;
-  background: rgba(243, 164, 82, 0.12);
-  color: #f3a452;
+  border-color: var(--accent-live, #f3a452);
+  background: color-mix(in srgb, var(--accent-live, rgb(243, 164, 82)) 12%, transparent);
+  color: var(--accent-live, #f3a452);
 }
 
 html[data-theme="dark"] .dashboard-welcome-guide-link:hover,
 html[data-theme="dark"] .dashboard-welcome-guide-link:focus-visible {
-  background: #f3a452;
+  background: var(--accent-live, #f3a452);
   color: #241a10;
 }
 
@@ -340,7 +340,7 @@ html[data-theme="dark"] .dashboard-welcome-guide-link:focus-visible {
 
 .design-tab.active {
   color: #553c21;
-  border-bottom-color: #dd7906;
+  border-bottom-color: var(--accent-live, #dd7906);
 }
 
 /* "Designs" over the tabs, drawn like the start page's other headings. */
@@ -371,7 +371,7 @@ html[data-theme="dark"] .dashboard-welcome-guide-link:focus-visible {
 
 /* A design of this browser dragged over the server's tab. */
 .design-tab.drop-target {
-  color: #9f5508;
+  color: var(--accent-live, #9f5508);
   background: #fdf3e2;
   box-shadow: inset 0 0 0 2px #e8c79a;
 }
@@ -416,7 +416,7 @@ html[data-theme="dark"] .dashboard-welcome-guide-link:focus-visible {
   font-weight: 700;
   line-height: 1.5;
   background: #fff1dc;
-  border: 2px solid #e08a2c;
+  border: 2px solid var(--accent-live, #e08a2c);
   border-radius: 10px;
 }
 
@@ -427,7 +427,7 @@ html[data-theme="dark"] .dashboard-welcome-guide-link:focus-visible {
 
 .browser-backup-note > svg {
   flex: none;
-  color: #d9730d;
+  color: var(--accent-live, #d9730d);
 }
 
 .browser-backup-help {
@@ -455,7 +455,7 @@ html[data-theme="dark"] .dashboard-welcome-hide {
 
 html[data-theme="dark"] .dashboard-welcome-hide:hover,
 html[data-theme="dark"] .dashboard-welcome-hide:focus-visible {
-  color: #f3a452;
+  color: var(--accent-live, #f3a452);
   background: #3a2c16;
 }
 
@@ -474,7 +474,7 @@ html[data-theme="dark"] .design-tabs-heading {
 }
 
 html[data-theme="dark"] .design-tab.active {
-  border-bottom-color: #f3a452;
+  border-bottom-color: var(--accent-live, #f3a452);
 }
 
 html[data-theme="dark"] .dashboard-action-thumb {
@@ -484,17 +484,17 @@ html[data-theme="dark"] .dashboard-action-thumb {
 html[data-theme="dark"] .design-tab.drop-target {
   color: #fbeed9;
   background: #3a2c16;
-  box-shadow: inset 0 0 0 2px #d9863a;
+  box-shadow: inset 0 0 0 2px var(--accent-live, #d9863a);
 }
 
 html[data-theme="dark"] .browser-backup-note {
   color: #f6e3c9;
   background: #3a2812;
-  border-color: #d9863a;
+  border-color: var(--accent-live, #d9863a);
 }
 
 html[data-theme="dark"] .browser-backup-note > svg {
-  color: #f3a452;
+  color: var(--accent-live, #f3a452);
 }
 
 /* Every design is in the last backup: no warning left, a calm grey line that only says so. */
@@ -547,7 +547,7 @@ html[data-theme="dark"] .browser-backup-note.backed-up > svg {
   gap: 5px;
   justify-self: start;
   margin-top: 2px;
-  color: #bf6508;
+  color: var(--accent-live, #bf6508);
   font-size: 13px;
   font-weight: 600;
 }
@@ -567,5 +567,5 @@ html[data-theme="dark"] .whats-new-version .whats-new-points li {
 }
 
 html[data-theme="dark"] .whats-new-guide-link {
-  color: #f3a452;
+  color: var(--accent-live, #f3a452);
 }

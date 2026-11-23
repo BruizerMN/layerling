@@ -36,7 +36,7 @@
 }
 
 .shape-library-search input:focus-visible {
-  outline: 2px solid #dd7906;
+  outline: 2px solid var(--accent-live, #dd7906);
   outline-offset: 0;
 }
 

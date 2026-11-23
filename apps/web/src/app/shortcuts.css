@@ -60,7 +60,7 @@
 }
 
 .shortcuts-search-input:focus {
-  border-color: #d46b08;
+  border-color: var(--accent-live, #d46b08);
 }
 
 .shortcuts-search-clear {
@@ -194,7 +194,7 @@ html[data-theme="dark"] .shortcuts-search-input {
 }
 
 html[data-theme="dark"] .shortcuts-search-input:focus {
-  border-color: #f6ad55;
+  border-color: var(--accent-live, #f6ad55);
 }
 
 html[data-theme="dark"] .shortcuts-search-clear:hover {
@@ -276,7 +276,7 @@ html[data-theme="dark"] .shortcuts-or {
 
 .shortcuts-custom-change:hover,
 .shortcuts-custom-change:focus-visible {
-  border-color: #d46b08;
+  border-color: var(--accent-live, #d46b08);
 }
 
 .shortcuts-custom-remove {
@@ -318,7 +318,7 @@ html[data-theme="dark"] .shortcuts-or {
 .shortcuts-custom-add:hover,
 .shortcuts-custom-reset:hover,
 .shortcuts-custom-cancel:hover {
-  border-color: #d46b08;
+  border-color: var(--accent-live, #d46b08);
 }
 
 .shortcuts-custom-add:disabled {
@@ -399,7 +399,7 @@ html[data-theme="dark"] .shortcuts-or {
   padding: 9px 12px;
   color: #5f4529;
   background: #fff4e5;
-  border: 1px dashed #d46b08;
+  border: 1px dashed var(--accent-live, #d46b08);
   border-radius: 6px;
   outline: none;
   font-size: 12.5px;
@@ -468,7 +468,7 @@ html[data-theme="dark"] .shortcuts-custom-results kbd {
 html[data-theme="dark"] .shortcuts-custom-record {
   color: #f1eadd;
   background: #33241a;
-  border-color: #f6ad55;
+  border-color: var(--accent-live, #f6ad55);
 }
 
 html[data-theme="dark"] .shortcuts-custom-message {

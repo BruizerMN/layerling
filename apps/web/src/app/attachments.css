@@ -18,7 +18,7 @@
   right: 3px;
   width: 10px;
   height: 10px;
-  background: #d9730d;
+  background: var(--accent-live, #d9730d);
   border: 2px solid #fffaf2;
   border-radius: 999px;
   box-shadow: 0 1px 3px rgba(60, 40, 10, 0.35);
@@ -284,7 +284,7 @@ html[data-theme="dark"] .attachment-clash {
 .markdown-view li.markdown-task > input {
   margin: 0 6px 0 -20px;
   vertical-align: -1px;
-  accent-color: #d46b08;
+  accent-color: var(--accent-live, #d46b08);
 }
 
 .markdown-view blockquote {
@@ -403,7 +403,7 @@ html[data-theme="dark"] .markdown-view th {
 }
 
 html[data-theme="dark"] .markdown-view a {
-  color: #f3a452;
+  color: var(--accent-live, #f3a452);
 }
 
 html[data-theme="dark"] .markdown-image {

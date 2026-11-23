@@ -144,9 +144,9 @@
 }
 
 .my-shapes-name-form button[type="submit"] {
-  color: #fff;
-  background: #a8662a;
-  border-color: #a8662a;
+  color: var(--accent-live-fg, #ffffff);
+  background: var(--accent-live, #a8662a);
+  border-color: var(--accent-live, #a8662a);
 }
 
 .my-shapes-name-form button[type="submit"]:hover:not(:disabled) {
@@ -458,9 +458,9 @@ html[data-theme="dark"] .my-shape-tile-action:hover {
 }
 
 html[data-theme="dark"] .my-shapes-name-form button[type="submit"] {
-  color: #fff;
-  background: #a8662a;
-  border-color: #a8662a;
+  color: var(--accent-live-fg, #ffffff);
+  background: var(--accent-live, #a8662a);
+  border-color: var(--accent-live, #a8662a);
 }
 
 html[data-theme="dark"] .my-shapes-name-form input,
