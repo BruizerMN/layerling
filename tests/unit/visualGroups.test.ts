@@ -28,7 +28,10 @@ import {
   renameVisualGroup,
   resolveVisualGroups,
   serializableVisualGroups,
+  setGroupLocked,
+  setObjectsLocked,
   toggleGroupVisibility,
+  toggleObjectLocked,
   visualGroupsFingerprint,
   type VisualGroupsRegistry,
 } from "@/lib/visualGroups";
@@ -661,5 +664,70 @@ describe("Option-click on a group's eye: focus the group", () => {
     const r = moveObjectsToGroup(sample(), ["gone"], "lamp");
     const focus = focusGroupVisibility(r, "lamp", shapes({ e: true }))!;
     expect(focus.shapes.filter((s) => !s.hidden).map((s) => s.id)).toEqual(["e"]);
+  });
+});
+
+describe("bulk lock (Build 0056): Lock Object for the objects of a group, one-shot", () => {
+  const locked = (ids: string[]) => shapes().map((s) => (ids.includes(s.id) ? { ...s, locked: true } : s));
+
+  it("Lock All writes shape.locked for every object in the group at any depth, and nothing else", () => {
+    const input = shapes();
+    const change = setGroupLocked(sample(), "ped", input, true)!;
+    expect(change.changedIds).toEqual(["a", "b", "c", "d"]);
+    expect(change.shapes.filter((s) => s.locked).map((s) => s.id)).toEqual(["a", "b", "c", "d"]);
+    const byId = new Map(change.shapes.map((s) => [s.id, s]));
+    for (const id of ["e", "f"]) expect(byId.get(id)).toBe(input.find((s) => s.id === id)); // other shapes are the same objects
+    expect(change.shapes.every((s) => s.shapeLocked === undefined)).toBe(true); // Lock Properties is not touched
+  });
+
+  it("a nested group locks only its own objects", () => {
+    expect(setGroupLocked(sample(), "cor", shapes(), true)!.changedIds).toEqual(["c", "d"]);
+  });
+
+  it("Unlock All clears the flag for the same objects", () => {
+    const change = setGroupLocked(sample(), "ped", locked(["a", "b", "c", "d", "e"]), false)!;
+    expect(change.changedIds).toEqual(["a", "b", "c", "d"]);
+    expect(change.shapes.filter((s) => s.locked).map((s) => s.id)).toEqual(["e"]);
+  });
+
+  it("both are available whatever the members' current locks are (mixed, all locked, none)", () => {
+    expect(setGroupLocked(sample(), "ped", locked(["a"]), true)!.changedIds).toEqual(["b", "c", "d"]);
+    expect(setGroupLocked(sample(), "ped", locked(["a"]), false)!.changedIds).toEqual(["a"]);
+    expect(setGroupLocked(sample(), "ped", locked(["a", "b", "c", "d"]), false)!.changedIds).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("is null when nothing would change, the group is empty, or it is unknown", () => {
+    expect(setGroupLocked(sample(), "ped", locked(["a", "b", "c", "d"]), true)).toBeNull();
+    expect(setGroupLocked(sample(), "ped", shapes(), false)).toBeNull();
+    let r = createVisualGroup(sample(), { id: "empty", name: "Empty" }).registry;
+    expect(setGroupLocked(r, "empty", shapes(), true)).toBeNull();
+    expect(setGroupLocked(r, "nope", shapes(), true)).toBeNull();
+    r = removeObjectsFromGroups(r, ["a"]);
+    expect(setGroupLocked(r, "ped", shapes(), true)!.changedIds).toEqual(["b", "c", "d"]);
+  });
+
+  it("objects that do not exist are not counted, and hidden objects are locked like any other", () => {
+    const some = shapes({ a: true }).filter((s) => s.id !== "b");
+    expect(setGroupLocked(sample(), "ped", some, true)!.changedIds).toEqual(["a", "c", "d"]);
+  });
+
+  it("keeps no state: an object added later keeps the lock it has, and the registry is untouched", () => {
+    const registry = sample();
+    setGroupLocked(registry, "ped", shapes(), true);
+    const after = moveObjectsToGroup(registry, ["f"], "ped");
+    const change = setGroupLocked(after, "ped", locked(["a", "b", "c", "d"]), true)!;
+    expect(change.changedIds).toEqual(["f"]); // f was not locked just because the group's objects were
+    expect(Object.keys(findVisualGroup(registry, "ped")!)).toEqual(["id", "name", "items"]);
+  });
+
+  it("the object row's button flips that object's own lock", () => {
+    expect(toggleObjectLocked(shapes(), "a")!.shapes.find((s) => s.id === "a")!.locked).toBe(true);
+    expect(toggleObjectLocked(locked(["a"]), "a")!.shapes.find((s) => s.id === "a")!.locked).toBe(false);
+    expect(toggleObjectLocked(shapes(), "nope")).toBeNull();
+    expect(toggleObjectLocked(locked(["a"]), "a")!.changedIds).toEqual(["a"]);
+  });
+
+  it("setObjectsLocked ignores ids that are not shapes", () => {
+    expect(setObjectsLocked(shapes(), new Set(["zzz"]), true)).toBeNull();
   });
 });

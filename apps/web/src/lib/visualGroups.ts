@@ -567,6 +567,42 @@ export function toggleGroupVisibility(registry: VisualGroupsRegistry, groupId: s
   return changedIds.length === 0 ? null : { shapes: next, hide, changedIds };
 }
 
+// ---- bulk lock (Build 0056) -------------------------------------------------------------------------------------------
+
+export type ObjectLockChange = {
+  /** The shapes with the changed objects' `locked` flags set; every other shape is the same object as before. */
+  shapes: WorkplaneShape[];
+  /** The objects whose flag changed. */
+  changedIds: string[];
+};
+
+/**
+ * Puts Lock Object (`shape.locked`, the existing flag; not Lock Properties) on or off for these objects. A one-shot command: nothing is remembered, no group
+ * holds a lock, and objects added to a group later keep whatever lock they have. Only the flag is written, once, for all of them: the caller commits the
+ * result as one step. Objects that do not exist are ignored. Null when nothing would change.
+ */
+export function setObjectsLocked(shapes: readonly WorkplaneShape[], ids: ReadonlySet<string>, locked: boolean): ObjectLockChange | null {
+  const changedIds: string[] = [];
+  const next = shapes.map((shape) => {
+    if (!ids.has(shape.id) || Boolean(shape.locked) === locked) return shape;
+    changedIds.push(shape.id);
+    return { ...shape, locked };
+  });
+  return changedIds.length === 0 ? null : { shapes: next, changedIds };
+}
+
+/** Lock All / Unlock All on a group: every object in it at any depth, whatever its current lock. Null when the group is unknown, holds no object, or nothing would change. */
+export function setGroupLocked(registry: VisualGroupsRegistry, groupId: string, shapes: readonly WorkplaneShape[], locked: boolean): ObjectLockChange | null {
+  const ids = new Set(descendantObjectIds(registry, groupId, liveObjectIds(shapes)));
+  return ids.size === 0 ? null : setObjectsLocked(shapes, ids, locked);
+}
+
+/** The object row's lock button: this object's `locked` flag flips. Null when it does not exist. */
+export function toggleObjectLocked(shapes: readonly WorkplaneShape[], id: string): ObjectLockChange | null {
+  const target = shapes.find((shape) => shape.id === id);
+  return target ? setObjectsLocked(shapes, new Set([id]), !target.locked) : null;
+}
+
 // ---- candidates for the merge question, and undoing a membership change that a merge makes in place -----------------------
 
 export interface MergePickCandidate {

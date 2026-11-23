@@ -170,7 +170,7 @@ import { historyViewMcpCommand } from "./workplane/historyViewMcp";
 import { attachmentsFingerprint } from "@/lib/projectAttachments";
 import { nativeVisualGroupsAvailable, nativeVisualGroupsWatching, onNativeVisualGroupsInvoke, onNativeVisualGroupsWatch, publishVisualGroupsState, requestVisualGroupChooser, requestVisualGroupPick, type VisualGroupsInvoke } from "@/lib/host/nativeVisualGroups";
 import { existingGroupId, visualGroupsMenuFits, visualGroupsOutline, visualGroupsPaletteState, type ChooserGroup } from "@/lib/visualGroupsSnapshot";
-import { EMPTY_VISUAL_GROUPS, applyMerge, findVisualGroup, focusGroupVisibility, moveItemsToGroup, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, copyPairs, mergePickCandidates, moveObjectsToGroup, placeDerivedObjects, placeReplacementObjects, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
+import { EMPTY_VISUAL_GROUPS, applyMerge, setGroupLocked, toggleObjectLocked, findVisualGroup, focusGroupVisibility, moveItemsToGroup, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, copyPairs, mergePickCandidates, moveObjectsToGroup, placeDerivedObjects, placeReplacementObjects, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
 import { ATTACHMENT_MCP_READ_ACTIONS, attachmentMcpCommand, attachmentMcpList } from "@/lib/projectAttachmentsMcp";
 import { appendEditorHistorySnapshot, boundedEditorHistoryState, continuesKeyRun, type KeyRun, editorHistoryBranch, editorHistoryEntry, editorHistoryForExport, historyStateAt, hydrateEditorHistoryState, notesForHistoryIndex, projectSceneFingerprint, projectShapesFingerprint, workplaneForHistoryIndex, type EditorHistoryEntry, type EditorHistoryState } from "@/lib/editorHistory";
 import { deleteHistoryEntries, formatHistoryBytes, historyFreedBytes, historyIndexAfterDelete } from "@/lib/historyStepSizes";
@@ -10267,6 +10267,19 @@ export function LayerlingEditor({
     const hidden = new Set(focus.hiddenIds);
     commitShapes(focus.shapes, selectedIdsRef.current.filter((id) => !hidden.has(id)));
   }, [commitShapes]);
+  /**
+   * Lock All / Unlock All on a group, and the object row's lock button (Build 0056): Lock Object (shape.locked, the existing flag) for every object in the group at any
+   * depth, or for one object, in ONE commit (one undo step). One-shot: no group keeps a lock and nothing is remembered. The selection is left as it is (a locked object
+   * stays selectable). Silent, like the palette's eye.
+   */
+  const lockVisualGroup = useCallback((groupId: string, locked: boolean) => {
+    const change = setGroupLocked(visualGroupsRef.current, groupId, shapesRef.current, locked);
+    if (change) commitShapes(change.shapes, selectedIdsRef.current);
+  }, [commitShapes]);
+  const toggleVisualObjectLock = useCallback((id: string) => {
+    const change = toggleObjectLocked(shapesRef.current, id);
+    if (change) commitShapes(change.shapes, selectedIdsRef.current);
+  }, [commitShapes]);
   const visualGroupOps = useMemo(() => ({
     create: (options?: { name?: string; parentId?: string | null; index?: number }): string => {
       let id = "";
@@ -10287,7 +10300,9 @@ export function LayerlingEditor({
       updateVisualGroups((current) => moveItemsToGroup(current, items, parentId, index, liveObjectIds(shapesRef.current))),
     toggleVisibility: toggleVisualGroupVisibility,
     focus: focusVisualGroup,
-  }), [focusVisualGroup, toggleVisualGroupVisibility, updateVisualGroups]);
+    lockGroup: lockVisualGroup,
+    toggleObjectLock: toggleVisualObjectLock,
+  }), [focusVisualGroup, lockVisualGroup, toggleVisualGroupVisibility, toggleVisualObjectLock, updateVisualGroups]);
   const visualGroupOpsRef = useRef(visualGroupOps);
   visualGroupOpsRef.current = visualGroupOps;
 
@@ -19095,6 +19110,8 @@ export function LayerlingEditor({
       case "removeObject": ops.removeObjects([command.id]); break;
       case "move": ops.moveItems(command.items, command.parentId, command.index); break;
       case "focusGroup": ops.focus(command.groupId); break;
+      case "lockGroup": ops.lockGroup(command.groupId, command.locked); break;
+      case "toggleObjectLock": if (live.has(command.id)) ops.toggleObjectLock(command.id); break;
       case "renameObject": if (live.has(command.id)) renameShapeById(command.id, command.name.trim()); break;
       case "select": selectShape(command.ids.filter((id) => live.has(id)), command.mode); break;
       case "assign": {

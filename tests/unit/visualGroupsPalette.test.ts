@@ -23,6 +23,15 @@ function sample(): VisualGroupsRegistry {
 const SHAPES = [shape("a"), shape("b", true), shape("c"), shape("loose")];
 
 describe("the palette's snapshot", () => {
+  it("carries each object's own Lock Object flag, and no lock state for groups (Build 0056)", () => {
+    const shapes = [shape("a"), { ...shape("b"), locked: true }, shape("c"), shape("loose")];
+    const state = visualGroupsPaletteState(sample(), shapes, [], nameOf, false);
+    const ped = state.groups[0];
+    expect(ped.items[0]).toMatchObject({ id: "a", locked: false });
+    expect(ped.items[1]).toMatchObject({ id: "b", locked: true });
+    expect(Object.keys(ped)).toEqual(["type", "id", "name", "visibility", "items"]);
+  });
+
   it("is empty without groups, whatever is selected", () => {
     expect(visualGroupsPaletteState(EMPTY_VISUAL_GROUPS, SHAPES, ["a"], nameOf, false)).toEqual({ readOnly: false, groups: [], selected: [] });
   });
@@ -33,9 +42,9 @@ describe("the palette's snapshot", () => {
       {
         type: "group", id: "ped", name: "Pedestal", visibility: "mixed",
         items: [
-          { type: "object", id: "a", name: "<a>", kind: "box", hidden: false },
-          { type: "object", id: "b", name: "<b>", kind: "box", hidden: true },
-          { type: "group", id: "cor", name: "Cornice", visibility: "visible", items: [{ type: "object", id: "c", name: "<c>", kind: "box", hidden: false }] },
+          { type: "object", id: "a", name: "<a>", kind: "box", hidden: false, locked: false },
+          { type: "object", id: "b", name: "<b>", kind: "box", hidden: true, locked: false },
+          { type: "group", id: "cor", name: "Cornice", visibility: "visible", items: [{ type: "object", id: "c", name: "<c>", kind: "box", hidden: false, locked: false }] },
         ],
       },
     ]);
@@ -85,6 +94,13 @@ describe("commands from the palette", () => {
     expect(parseVisualGroupsInvoke("focusGroup", { groupId: "g" })).toEqual({ op: "focusGroup", groupId: "g" });
     expect(parseVisualGroupsInvoke("renameObject", { id: "o", name: "Table top" })).toEqual({ op: "renameObject", id: "o", name: "Table top" });
     expect(parseVisualGroupsInvoke("renameObject", { id: "o", name: "" })).toEqual({ op: "renameObject", id: "o", name: "" });
+    // Build 0056: Lock All / Unlock All on a group, and the object row's lock button.
+    expect(parseVisualGroupsInvoke("lockGroup", { groupId: "g", locked: true })).toEqual({ op: "lockGroup", groupId: "g", locked: true });
+    expect(parseVisualGroupsInvoke("lockGroup", { groupId: "g", locked: false })).toEqual({ op: "lockGroup", groupId: "g", locked: false });
+    expect(parseVisualGroupsInvoke("toggleObjectLock", { id: "o" })).toEqual({ op: "toggleObjectLock", id: "o" });
+    for (const bad of [["lockGroup", { groupId: "g" }], ["lockGroup", { groupId: "g", locked: "yes" }], ["lockGroup", { locked: true }], ["lockGroup", { groupId: "", locked: true }], ["toggleObjectLock", {}], ["toggleObjectLock", { id: "" }]] as const) {
+      expect(parseVisualGroupsInvoke(bad[0], bad[1] as Record<string, unknown>)).toBeNull();
+    }
     expect(parseVisualGroupsInvoke("move", { items: [{ kind: "group", id: "g" }], index: -1 })).toEqual({ op: "move", items: [{ kind: "group", id: "g" }], parentId: null, index: -1 });
     expect(parseVisualGroupsInvoke("move", { items: [{ kind: "group", id: "g" }], parentId: null, index: 1.9 })).toEqual({ op: "move", items: [{ kind: "group", id: "g" }], parentId: null, index: 1 });
   });
@@ -102,7 +118,7 @@ describe("visualGroups.v1 messages", () => {
   const base = { session: "s-1234567", protocol: 3, id: "e1" };
   it("names the capability and the commands", () => {
     expect(VISUAL_GROUPS_CAPABILITY).toBe("visualGroups.v1");
-    expect([...VISUAL_GROUPS_OPS]).toEqual(["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign", "pickResult", "move", "focusGroup", "renameObject"]);
+    expect([...VISUAL_GROUPS_OPS]).toEqual(["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign", "pickResult", "move", "focusGroup", "renameObject", "lockGroup", "toggleObjectLock"]);
   });
 
   it("parses the host's events", () => {
@@ -160,7 +176,7 @@ describe("an opened geometric group keeps its row in the palette, marked as bein
     const state = visualGroupsPaletteState(r, shapesOpen, ["a", "b1"], nameOf, false, [openB]);
     const ped = state.groups[0];
     expect(ped.items.map((item) => item.id)).toEqual(["a", "b", "cor"]);
-    expect(ped.items[1]).toEqual({ type: "object", id: "b", name: "<Cabinet>", kind: "box", hidden: true, editing: true });
+    expect(ped.items[1]).toEqual({ type: "object", id: "b", name: "<Cabinet>", kind: "box", hidden: true, locked: false, editing: true });
     expect("editing" in (ped.items[0] as object)).toBe(false);
   });
 

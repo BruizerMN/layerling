@@ -12,6 +12,8 @@ export interface PaletteObject {
   name: string;
   kind: string;
   hidden: boolean;
+  /** The object's own Lock Object flag (shape.locked). Groups carry no lock state. */
+  locked: boolean;
   /** A geometric group that is open for editing: its row stays where it is, marked; the editor says so, the palette keeps no state of its own. */
   editing?: true;
 }
@@ -62,7 +64,7 @@ export function visualGroupsPaletteState(
       if (isVisualGroup(item)) return build(item);
       const shape = byId.get(item.object) as WorkplaneShape;
       member.add(shape.id);
-      return { type: "object" as const, id: shape.id, name: nameOf(shape), kind: shape.kind, hidden: Boolean(shape.hidden), ...(editingGroups.has(shape.id) ? { editing: true as const } : {}) };
+      return { type: "object" as const, id: shape.id, name: nameOf(shape), kind: shape.kind, hidden: Boolean(shape.hidden), locked: Boolean(shape.locked), ...(editingGroups.has(shape.id) ? { editing: true as const } : {}) };
     }),
   });
   const groups = resolved.items.map(build);
