@@ -3,6 +3,7 @@
 import { sectionPointFromFrame, sectionPointToFrame, type SectionPlaneSettings } from "@/lib/sectionView";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { attachTrackpadTwist } from "@/lib/trackpadTwist";
 import { cameraButtonsFor, leftButtonCameraAction } from "@/lib/cameraMouseButtons";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { type AppThemePalette, type ResolvedAppTheme } from "@/lib/appTheme";
@@ -365,6 +366,8 @@ export function createThreeScene(host: HTMLDivElement): ThreeState {
   };
   controls.addEventListener("start", cancelCameraTurn);
   SAFARI_GESTURES.forEach((name) => renderer.domElement.addEventListener(name, preventSafariGesture));
+  // Build 0051: a two-finger twist turns the camera (additive: the pinch handler above is untouched). A running view cube turn gives way when the view starts turning.
+  const detachTrackpadTwist = attachTrackpadTwist(renderer.domElement, controls, cancelCameraTurn);
   renderer.domElement.addEventListener("pointerdown", configureLayerlingMouseButtons, { capture: true });
   renderer.domElement.addEventListener("pointerup", resetLayerlingMouseButtons);
   renderer.domElement.addEventListener("pointercancel", resetLayerlingMouseButtons);
@@ -392,6 +395,7 @@ export function createThreeScene(host: HTMLDivElement): ThreeState {
     renderer.domElement.removeEventListener("wheel", requestRender);
     renderer.domElement.removeEventListener("pointerdown", requestRender);
     SAFARI_GESTURES.forEach((name) => renderer.domElement.removeEventListener(name, preventSafariGesture));
+    detachTrackpadTwist();
   };
   rebuildWorkplane(state, DEFAULT_WORKSPACE);
   return state;
