@@ -30,6 +30,7 @@ import {
   serializableVisualGroups,
   setGroupLocked,
   setObjectsLocked,
+  showOnlyGroupedObjects,
   toggleGroupVisibility,
   toggleObjectLocked,
   visualGroupsFingerprint,
@@ -729,5 +730,50 @@ describe("bulk lock (Build 0056): Lock Object for the objects of a group, one-sh
 
   it("setObjectsLocked ignores ids that are not shapes", () => {
     expect(setObjectsLocked(shapes(), new Set(["zzz"]), true)).toBeNull();
+  });
+});
+
+describe("Visual Groups Only (Build 0057): hide all, then show every grouped object, one-shot", () => {
+  it("shows every object in any group at any depth and hides the rest, whatever the objects were before", () => {
+    // sample(): a, b in Pedestal, c, d in Cornice (inside Pedestal), e in Lamp; f unassigned.
+    const change = showOnlyGroupedObjects(sample(), shapes({ a: true, c: true, f: false }))!;
+    expect(change.shapes.filter((s) => !s.hidden).map((s) => s.id)).toEqual(["a", "b", "c", "d", "e"]);
+    expect(change.shapes.filter((s) => s.hidden).map((s) => s.id)).toEqual(["f"]);
+    expect(change.shownIds).toEqual(["a", "c"]);
+    expect(change.hiddenIds).toEqual(["f"]);
+  });
+
+  it("without any group every object is hidden", () => {
+    const change = showOnlyGroupedObjects(EMPTY_VISUAL_GROUPS, shapes())!;
+    expect(change.shapes.every((s) => s.hidden)).toBe(true);
+    expect(change.hiddenIds).toEqual(["a", "b", "c", "d", "e", "f"]);
+  });
+
+  it("a group with no objects shows nothing, and unknown ids in the registry do not matter", () => {
+    const r = createVisualGroup(EMPTY_VISUAL_GROUPS, { id: "empty", name: "Empty" }).registry;
+    expect(showOnlyGroupedObjects(r, shapes())!.hiddenIds).toHaveLength(6);
+    const withGone = moveObjectsToGroup(r, ["ghost", "a"], "empty");
+    const change = showOnlyGroupedObjects(withGone, shapes())!;
+    expect(change.shapes.filter((s) => !s.hidden).map((s) => s.id)).toEqual(["a"]);
+  });
+
+  it("repeating it changes nothing (null: no history step), and only changed shapes are new objects", () => {
+    const first = showOnlyGroupedObjects(sample(), shapes())!;
+    expect(showOnlyGroupedObjects(sample(), first.shapes)).toBeNull();
+    expect(showOnlyGroupedObjects(sample(), shapes({ f: true }))).toBeNull(); // already exactly this arrangement
+    const input = shapes({ a: true, f: true });
+    const byId = new Map(showOnlyGroupedObjects(sample(), input)!.shapes.map((s) => [s.id, s]));
+    expect(byId.get("a")).not.toBe(input.find((s) => s.id === "a")); // a is shown now
+    for (const id of ["b", "c", "d", "e", "f"]) expect(byId.get(id)).toBe(input.find((s) => s.id === id)); // already as wanted
+  });
+
+  it("writes only the hidden flag: locks are no obstacle and the registry is untouched", () => {
+    const registry = sample();
+    const before = JSON.stringify(registry);
+    const locked = shapes().map((s) => ({ ...s, locked: true }));
+    const change = showOnlyGroupedObjects(registry, locked)!;
+    expect(change.hiddenIds).toEqual(["f"]);
+    expect(change.shapes.every((s) => s.locked === true)).toBe(true);
+    expect(JSON.stringify(registry)).toBe(before);
   });
 });

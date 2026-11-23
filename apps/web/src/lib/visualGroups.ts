@@ -603,6 +603,36 @@ export function toggleObjectLocked(shapes: readonly WorkplaneShape[], id: string
   return target ? setObjectsLocked(shapes, new Set([id]), !target.locked) : null;
 }
 
+// ---- Visual Groups Only (Build 0057) ----------------------------------------------------------------------------------
+
+export type ShowOnlyGroupedChange = {
+  /** The shapes with every object in a Visual Group shown and every other object hidden; shapes that did not change are the same objects as before. */
+  shapes: WorkplaneShape[];
+  /** The objects that were hidden by this. */
+  hiddenIds: string[];
+  /** The objects that were shown by this. */
+  shownIds: string[];
+};
+
+/**
+ * The one-shot macro behind the toolbar's Visual Groups Only: hide every object, then show every object that belongs to any Visual Group (at any depth). The
+ * objects' previous visibility is irrelevant. A plain bulk write of the existing `hidden` flag, once, for all of them: the caller commits the result as one step.
+ * It is an action, not a mode: nothing is remembered or enforced afterwards, and the registry is not touched. Without any group every object is hidden. Locks do
+ * not matter (Lock Object does not stop hiding). Null when no flag would change (nothing to do).
+ */
+export function showOnlyGroupedObjects(registry: VisualGroupsRegistry, shapes: readonly WorkplaneShape[]): ShowOnlyGroupedChange | null {
+  const members = membershipMap(registry, liveObjectIds(shapes));
+  const hiddenIds: string[] = [];
+  const shownIds: string[] = [];
+  const next = shapes.map((shape) => {
+    const wantHidden = !members.has(shape.id);
+    if (Boolean(shape.hidden) === wantHidden) return shape;
+    (wantHidden ? hiddenIds : shownIds).push(shape.id);
+    return { ...shape, hidden: wantHidden };
+  });
+  return hiddenIds.length + shownIds.length === 0 ? null : { shapes: next, hiddenIds, shownIds };
+}
+
 // ---- candidates for the merge question, and undoing a membership change that a merge makes in place -----------------------
 
 export interface MergePickCandidate {

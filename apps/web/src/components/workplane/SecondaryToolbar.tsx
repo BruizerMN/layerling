@@ -404,6 +404,7 @@ export function SecondaryToolbar({
   onSnap,
   onShowHidden,
   onHideOthers,
+  onVisualGroupsOnly,
   onInvertSelection,
   onToggleHidden,
   onUngroup,
@@ -620,6 +621,8 @@ export function SecondaryToolbar({
   onShowHidden: () => void;
   /** Hide everything but the selection, and select what is not selected (Discussion #1472). */
   onHideOthers: () => void;
+  /** Visual Groups Only (Build 0057, native View menu and toolbar): hide every object, then show the objects that are in a Visual Group; one step. */
+  onVisualGroupsOnly?: () => void;
   onInvertSelection: () => void;
   onToggleHidden: () => void;
   onUngroup: () => void;
@@ -996,6 +999,7 @@ export function SecondaryToolbar({
       case "view.hideSelected": onToggleHidden(); break;
       case "view.unhideAll": onShowHidden(); break;
       case "view.hideOthers": onHideOthers(); break;
+      case "view.visualGroupsOnly": if (toolbarMode !== "sketch") onVisualGroupsOnly?.(); break;
       case "view.notes": onToggleNotes(); break;
       case "view.overhangs": onToggleOverhangs(); break;
       case "file.import": if (!historyViewActive) onTopPanel("import"); break;

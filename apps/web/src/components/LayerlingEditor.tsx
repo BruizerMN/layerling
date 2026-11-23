@@ -170,7 +170,7 @@ import { historyViewMcpCommand } from "./workplane/historyViewMcp";
 import { attachmentsFingerprint } from "@/lib/projectAttachments";
 import { nativeVisualGroupsAvailable, nativeVisualGroupsWatching, onNativeVisualGroupsInvoke, onNativeVisualGroupsWatch, publishVisualGroupsState, requestVisualGroupChooser, requestVisualGroupPick, type VisualGroupsInvoke } from "@/lib/host/nativeVisualGroups";
 import { existingGroupId, visualGroupsMenuFits, visualGroupsOutline, visualGroupsPaletteState, type ChooserGroup } from "@/lib/visualGroupsSnapshot";
-import { EMPTY_VISUAL_GROUPS, applyMerge, setGroupLocked, toggleObjectLocked, findVisualGroup, focusGroupVisibility, moveItemsToGroup, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, copyPairs, mergePickCandidates, moveObjectsToGroup, placeDerivedObjects, placeReplacementObjects, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
+import { EMPTY_VISUAL_GROUPS, applyMerge, showOnlyGroupedObjects, setGroupLocked, toggleObjectLocked, findVisualGroup, focusGroupVisibility, moveItemsToGroup, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, copyPairs, mergePickCandidates, moveObjectsToGroup, placeDerivedObjects, placeReplacementObjects, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
 import { ATTACHMENT_MCP_READ_ACTIONS, attachmentMcpCommand, attachmentMcpList } from "@/lib/projectAttachmentsMcp";
 import { appendEditorHistorySnapshot, boundedEditorHistoryState, continuesKeyRun, type KeyRun, editorHistoryBranch, editorHistoryEntry, editorHistoryForExport, historyStateAt, hydrateEditorHistoryState, notesForHistoryIndex, projectSceneFingerprint, projectShapesFingerprint, workplaneForHistoryIndex, type EditorHistoryEntry, type EditorHistoryState } from "@/lib/editorHistory";
 import { deleteHistoryEntries, formatHistoryBytes, historyFreedBytes, historyIndexAfterDelete } from "@/lib/historyStepSizes";
@@ -10280,6 +10280,16 @@ export function LayerlingEditor({
     const change = toggleObjectLocked(shapesRef.current, id);
     if (change) commitShapes(change.shapes, selectedIdsRef.current);
   }, [commitShapes]);
+  /**
+   * Visual Groups Only (Build 0057): hide every object, show every object that is in a Visual Group, in ONE commit (one undo step). A one-shot action, not a mode: only the
+   * existing `hidden` flags are written, nothing is remembered, the registry and the selection are left as they are. Silent, like the palette's eye. Not while a history
+   * state is shown.
+   */
+  const showOnlyVisualGroupObjects = useCallback(() => {
+    if (historyViewStateRef.current) return;
+    const change = showOnlyGroupedObjects(visualGroupsRef.current, shapesRef.current);
+    if (change) commitShapes(change.shapes, selectedIdsRef.current);
+  }, [commitShapes]);
   const visualGroupOps = useMemo(() => ({
     create: (options?: { name?: string; parentId?: string | null; index?: number }): string => {
       let id = "";
@@ -20264,6 +20274,7 @@ export function LayerlingEditor({
         onSnap={snapSelected}
         onShowHidden={showHidden}
         onHideOthers={() => { hideOthers(); }}
+        onVisualGroupsOnly={showOnlyVisualGroupObjects}
         onInvertSelection={() => { invertSelection(); }}
         onToggleHidden={toggleHidden}
         onUngroup={ungroupSelected}
