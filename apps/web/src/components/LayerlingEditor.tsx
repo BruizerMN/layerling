@@ -316,6 +316,7 @@ import { DEFAULT_TEXT_BLOCK_GAP, offersTextBlock, TEXT_BLOCK_ALIGNS, textBlockFo
 import { offersTextLayers, textLayerStack, layeredTextShape, nameTagSource, nameTagsFor, offersIconLayers, iconLayerStack, iconTagArea, layeredIconShape, iconTagCopies, svgIconArea, iconTagFromSvg, keyringTabShape, keyringTabTag, keyringTabAt, keyringTabPlace, textFreeKeyring, textFreeKeyringPlace, iconFreeKeyring, iconFreeKeyringPlace } from "@/lib/editorTextTags";
 import { groupMarksOf } from "@/lib/groupMarks";
 import { isNonTextControl, isTypingTarget } from "@/lib/editorKeyTargets";
+import { pasteKeyHandling } from "@/lib/pasteKey";
 import { isFocusModeKey, useFocusMode } from "@/lib/focusMode";
 import { startPresentationGuard } from "@/lib/presentationMode";
 import { DEFAULT_KEYRING_DIAMETER } from "@/lib/textGeometry";
@@ -19528,6 +19529,12 @@ export function LayerlingEditor({
       }
 
       if (shortcut && key === "v") {
+        // Native app: the key is the menu's too. Paste here, once, and keep the key from AppKit's Edit > Paste (see lib/pasteKey.ts).
+        if (pasteKeyHandling(Boolean(nativeDocument)) === "run-now") {
+          event.preventDefault();
+          void pasteShapeRef.current();
+          return;
+        }
         // The browser's own paste follows the key and brings the system clipboard with it, unasked (#1548); the
         // paste listener below takes it. Should it not come, the paste runs as from the Paste button.
         const press = pasteKeyPressRef.current + 1;
