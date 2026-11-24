@@ -1,3 +1,5 @@
+import { parseDocumentDescriptor, type FileDocumentDescriptor } from "@/lib/host/hostDocument";
+
 /**
  * The host protocol: the narrow, versioned contract between the Layerling editor and a native host (the macOS app).
  * Specification: README.md in this folder. Shared fixtures (fixtures/v1) are tested by both sides.
@@ -37,6 +39,15 @@ export const RIBBON_CAPABILITY = "ribbon.v1";
  */
 export const VISUAL_GROUPS_CAPABILITY = "visualGroups.v1";
 export const VISUAL_GROUPS_OPS = ["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign", "pickResult", "move", "focusGroup", "renameObject", "lockGroup", "toggleObjectLock"] as const;
+/**
+ * Insert Layerling files (additive, needs `ui.v1`; Build 0070): the host owns the menu command and the file panel; the editor owns the import. The host sends
+ * the chosen files as resource descriptors (`designInsert.insert`: the same kind of one-file, token-guarded url a document is opened from) and the editor puts
+ * their bodies into the open design as ONE undoable step (the engine behind "Insert into this design"), then answers `designInsert.result` with what went in
+ * and what did not, file by file. The files are only read.
+ */
+export const DESIGN_INSERT_CAPABILITY = "designInsert.v1";
+/** The most files one insert may carry (the host panel is not limited; a bigger selection is refused with a message, never cut). */
+export const DESIGN_INSERT_MAX_FILES = 500;
 /** One entry of a native menu. `items` makes it a submenu. */
 export interface NativeMenuItem {
   key: string;
@@ -232,6 +243,14 @@ export interface VisualGroupsPickRequest {
   protocol: number;
   payload: { documentId: string; requestId: string; operation: string; objectCount: number; candidates: Array<{ id: string; name: string; count: number }> };
 }
+/** `designInsert.v1`: how an insert ended. Every file the host sent appears exactly once, in `imported` or in `failures` (`objectCount` counts top-level objects). */
+export interface DesignInsertResultRequest {
+  id: string;
+  session: string;
+  type: "designInsert.result";
+  protocol: number;
+  payload: { documentId: string; requestId: string; imported: Array<{ fileName: string; objectCount: number }>; failures: Array<{ fileName: string; reason: string }> };
+}
 /** Build 0007 (`ui.menu.v1`): show a native menu at a point of the page. Answered at once; the choice comes back as the event `menu.result`. */
 export interface MenuShowRequest {
   id: string;
@@ -301,6 +320,7 @@ export type HostRequest =
   | VisualGroupsStateRequest
   | VisualGroupsChooseRequest
   | VisualGroupsPickRequest
+  | DesignInsertResultRequest
   | HelloRequest
   | ReadyRequest
   | PingRequest
@@ -378,6 +398,8 @@ export type HostEvent =
   | { session: string; protocol: number; id: string; type: "visualGroups.invoke"; payload: { documentId: string; op: string; args: Record<string, unknown> } }
   /** `visualGroups.v1`: the palette is open (the page publishes `visualGroups.state`) or closed. */
   | { session: string; protocol: number; id: string; type: "visualGroups.watch"; payload: { documentId: string; watching: boolean } }
+  /** `designInsert.v1`: put the bodies of these files into the open design (one undo step) and answer with `designInsert.result` for `requestId`. */
+  | { session: string; protocol: number; id: string; type: "designInsert.insert"; payload: { documentId: string; requestId: string; files: FileDocumentDescriptor[] } }
   /** Build 0003 (`ui.v1`): the Document Settings window opened or closed; the page sends `settings.state` while it is open. */
   | { session: string; protocol: number; id: string; type: "settings.watch"; payload: { documentId: string; watching: boolean } }
   /** The file was changed by another application (not reloaded automatically). */
@@ -490,6 +512,18 @@ export function parseHostEvent(value: unknown): HostEvent | { invalid: string } 
   }
   if (value.type === "visualGroups.watch") {
     return isText(documentId) && typeof value.payload.watching === "boolean" ? { ...base, type: "visualGroups.watch", payload: { documentId, watching: value.payload.watching } } : { invalid: "visualGroups.watch needs documentId and watching" };
+  }
+  if (value.type === "designInsert.insert") {
+    if (!isText(documentId) || !isText(value.payload.requestId) || !Array.isArray(value.payload.files) || value.payload.files.length === 0 || value.payload.files.length > DESIGN_INSERT_MAX_FILES) {
+      return { invalid: `designInsert.insert needs documentId, requestId and 1-${DESIGN_INSERT_MAX_FILES} files` };
+    }
+    const files: FileDocumentDescriptor[] = [];
+    for (const entry of value.payload.files) {
+      const descriptor = parseDocumentDescriptor(entry);
+      if ("invalid" in descriptor || descriptor.kind !== "file") return { invalid: `designInsert.insert file: ${"invalid" in descriptor ? descriptor.invalid : "not a file descriptor"}` };
+      files.push(descriptor);
+    }
+    return { ...base, type: "designInsert.insert", payload: { documentId, requestId: value.payload.requestId, files } };
   }
   if (value.type === "settings.watch") {
     return isText(documentId) && typeof value.payload.watching === "boolean" ? { ...base, type: "settings.watch", payload: { documentId, watching: value.payload.watching } } : { invalid: "settings.watch needs documentId and watching" };

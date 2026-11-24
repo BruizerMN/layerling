@@ -23,7 +23,7 @@ export type NativeUiState = {
   standby?: boolean;
   edit?: { undo: boolean; redo: boolean; cut: boolean; copy: boolean; paste: boolean; duplicate: boolean; delete: boolean; history: boolean; historyActive: boolean } | null;
   view?: { hiddenCount: number; selectionHidden: boolean; hasSelection: boolean; outlinerOpen: boolean; noteCount: number; notesVisible: boolean; overhangsVisible: boolean; overhangAngle: number } | null;
-  file?: { import: boolean; export: boolean; attachments: boolean } | null;
+  file?: { import: boolean; export: boolean; attachments: boolean; /** Build 0070: Import Layerling Files can run now (3D, history view closed). */ insertDesigns?: boolean } | null;
 };
 
 let documentId: string | null = null;
@@ -90,7 +90,7 @@ export function publishSettingsState(payload: { workspace: Record<string, unknow
   void bridge.sendUi("settings.state", { documentId, ...payload });
 }
 
-type UiEvent = Extract<HostEvent, { type: "ui.command" | "settings.apply" | "settings.watch" }>;
+type UiEvent = Extract<HostEvent, { type: "ui.command" | "settings.apply" | "settings.watch" | "designInsert.insert" }>;
 
 /** Subscribes to the host's ui events for as long as the page lives, also when the bridge appears after the subscription. */
 export function subscribeNativeUiEvents(listener: (event: UiEvent) => void): () => void {
@@ -99,7 +99,7 @@ export function subscribeNativeUiEvents(listener: (event: UiEvent) => void): () 
     offEvents?.();
     offEvents = bridge
       ? bridge.onEvent((event) => {
-          if (event.type === "ui.command" || event.type === "settings.apply" || event.type === "settings.watch") {
+          if (event.type === "ui.command" || event.type === "settings.apply" || event.type === "settings.watch" || event.type === "designInsert.insert") {
             if (documentId === null || event.payload.documentId === documentId) listener(event);
           }
         })

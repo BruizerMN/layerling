@@ -86,3 +86,16 @@ Capability `document.save` (offered in `hello` next to `document.open`; granted 
 The editor packages **its current state only** (one history entry, ZIP level 1, the document's own project id, camera/saved views/rulers/tape passed explicitly, a best-effort `thumbnail.png`) with the unchanged `exportLylProject`, from an immutable snapshot taken in one synchronous block; edits made while it packages stay unsaved. The dirty flag is `signature != savedSignature`, where the signature is built from the current history entry's existing fingerprint plus attachments, document settings (not preferences, see `documentRevision.ts`), saved views, rulers and tape: undoing back to the saved content is clean again; camera moves and selection never count. The native file name is authoritative (`document.renamed`); the editor's project-name field is read-only without a rename callback.
 
 Fixtures: `fixtures/v3/`.
+
+## Capability `designInsert.v1`: Import Layerling Files (Build 0070; additive, needs `ui.v1`)
+
+The host owns the menu command (File > Import Layerling Files…) and the file panel; the editor owns the import. Its engine is "Insert into this design" (`insertDesignFile`: `importLylProject` + `placeInsertedDesign`), run for a list of files and committed ONCE.
+
+| Direction | Message | Payload |
+|---|---|---|
+| editor -> host | `hello` offers `designInsert.v1`; granted in `hello.ok` only with `ui.v1` and a host that handles the result | |
+| host -> editor | event `designInsert.insert` | `documentId`, `requestId`, `files`: 1-500 file descriptors exactly as `document.request.ok` sends them (`kind: "file"`, `fileName`, `byteLength`, `modifiedAt`, `url`: a one-file, token-guarded `layerling://app/__host__/doc/<token>`), in the order to import |
+| editor -> host | request `designInsert.result` (answered `designInsert.result.ok`) | `documentId`, `requestId`, `imported: [{fileName, objectCount}]`, `failures: [{fileName, reason}]`: every file appears exactly once |
+| page -> host | `ui.state.file.insertDesigns` (boolean) | the command can run now (3D, history view closed, not in Presentation Mode) |
+
+Rules: bodies keep their saved coordinates (no centring, scaling or arranging); every body and group below it gets a fresh id (two files that share ids never collide); notes and project assets come along as for "Insert into this design"; Visual Groups metadata of the files is NOT imported. All files that went well are one history step (one Undo). A file that cannot be read or parsed, or has no bodies, is reported and skipped; the others still go in. If the design is closed or replaced, or the history view is opened, while the files are being read, nothing is added and every file is reported as not imported. In Sketch mode, in Presentation Mode, or while another insert runs, the whole request is refused the same way. The files are only read.

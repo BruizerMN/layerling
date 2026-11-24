@@ -984,7 +984,7 @@ export function SecondaryToolbar({
       // View: the Visibility group's commands (objects only exist in 3D).
       view: sketching ? null : { hiddenCount: hiddenShapeCount, selectionHidden, hasSelection, outlinerOpen, noteCount, notesVisible, overhangsVisible, overhangAngle },
       // File: the File group's commands (3D only, as the ribbon group was).
-      file: sketching ? null : { import: !historyViewActive, export: true, attachments: true },
+      file: sketching ? null : { import: !historyViewActive, export: true, attachments: true, insertDesigns: !historyViewActive && !presentationActive },
     });
   }, [nativeChrome, toolbarMode, historyViewActive, focusMode, ribbonPinned, inspectorVisible, textFocus, presentationActive, presentationStandby, sketchCanUndo, sketchCanRedo, sketchHasSelection, sketchHasClipboard, canUndo, canRedo, canModifySelection, hasSelection, hasClipboard, canHistoryView, hiddenShapeCount, selectionHidden, outlinerOpen, noteCount, notesVisible, overhangsVisible, overhangAngle]);
   const nativeCommandRef = useRef<(command: string) => void>(() => undefined);

@@ -211,6 +211,8 @@ import { setInspectorTab } from "@/lib/inspectorTabs";
 import { plateSizePatch } from "@/lib/plateSize";
 import { readAppPrefs, subscribeAppPrefs, writeAppPrefs } from "@/lib/appPrefs";
 import { publishSettingsState, setNativeUiDocument, subscribeNativeUiEvents } from "@/lib/host/nativeUi";
+import { getHostBridge } from "@/lib/host/hostBridge";
+import { fetchDocumentBytes } from "@/lib/host/documentTransfer";
 import { readStartView } from "@/lib/designView";
 import { documentSettingsView, effectiveWorkspace, splitWorkspace } from "@/lib/settingsScope";
 import { useFileAccept } from "@/lib/fileAccept";
@@ -14029,7 +14031,7 @@ export function LayerlingEditor({
 
   const {
     customShapeEntries, customShapeFolders, serverAvailable: customShapesServerAvailable, myShapesFileInputRef,
-    refreshServerShapes, saveSelectionAsMyShape, insertMyShape, insertDesignFile, renameMyShapeEntry, deleteMyShapeEntry, runCustomShapeMcp,
+    refreshServerShapes, saveSelectionAsMyShape, insertMyShape, insertDesignFile, insertDesignFiles, renameMyShapeEntry, deleteMyShapeEntry, runCustomShapeMcp,
     moveMyShapeToServer, moveMyShapeToFolder, createShapeFolder, renameShapeFolder, deleteShapeFolder,
     backUpMyShapes, loadMyShapeFiles,
   } = useCustomShapes({
@@ -14038,6 +14040,32 @@ export function LayerlingEditor({
     newShapeOrigin: buildPlates.newShapeOrigin,
   });
   const noticeError = (error: unknown) => setNotice(error instanceof Error ? localizedError(error.message) : String(error));
+  // Import Layerling Files (Build 0070, host protocol `designInsert.v1`): the host chose the files and hands over one-file resource urls; the bodies go into
+  // this design as one undo step and the host is told, file by file, what went in and what did not. Refused (and reported) in Sketch mode, in Presentation
+  // Mode, and while another insert is still running.
+  const designInsertRef = useRef({ insertDesignFiles, sketch: false, presentation: false });
+  designInsertRef.current = { insertDesignFiles, sketch: toolbarMode === "sketch", presentation: presentationMode };
+  const designInsertBusyRef = useRef(false);
+  useEffect(() => {
+    if (!nativeDocument) return;
+    return subscribeNativeUiEvents((event) => {
+      if (event.type !== "designInsert.insert") return;
+      const { requestId, files } = event.payload;
+      const answer = (imported: Array<{ fileName: string; objectCount: number }>, failures: Array<{ fileName: string; reason: string }>) => {
+        void getHostBridge()?.sendUi("designInsert.result", { documentId: event.payload.documentId, requestId, imported, failures });
+      };
+      const refuseAll = (reason: string) => answer([], files.map((file) => ({ fileName: file.fileName, reason })));
+      const current = designInsertRef.current;
+      if (current.presentation) return refuseAll("Presentation Mode is on. Leave it and try again");
+      if (current.sketch) return refuseAll("Sketch mode is active. Switch to the 3D editor and try again");
+      if (designInsertBusyRef.current) return refuseAll("Another import is still running");
+      designInsertBusyRef.current = true;
+      void current.insertDesignFiles(files.map((file) => ({ fileName: file.fileName, load: () => fetchDocumentBytes(file) })))
+        .then((outcome) => answer(outcome.imported, outcome.failures))
+        .catch((error) => refuseAll(error instanceof Error && error.message ? error.message : "The import failed unexpectedly"))
+        .finally(() => { designInsertBusyRef.current = false; });
+    });
+  }, [nativeDocument]);
   /**
    * A custom shape put into the design, from the shapes panel or the command search: like the shapes of the library it
    * hangs on the pointer and sits down where you click, also on a face (#463). Without "click to place" it stays where
