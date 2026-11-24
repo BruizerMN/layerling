@@ -76,12 +76,14 @@ export function NativeSettingsPage({ bootstrap }: { bootstrap: SettingsBootstrap
   const [showWelcome, setShowWelcome] = useState(true);
   // Toolbar Appearance (Build 0026) also lives in the host: it decides whether the window gets the native toolbar. Default: native.
   const [toolbarAppearance, setToolbarAppearance] = useState<"native" | "classic">("native");
+  // Open documents in (Build 0077): New Window or New Tab for New / Open / Open Recent / Finder opens; kept by the host. Default: window.
+  const [openDocumentsIn, setOpenDocumentsIn] = useState<"window" | "tab">("window");
   // The viewport background images (Build 0020): the host keeps them; this page shows what is set and asks the host to choose, replace or clear.
   const [backgrounds, setBackgrounds] = useState<Record<BackgroundKind | "logo", string | null>>({ light: null, dark: null, presentation: null, logo: null });
   const [logoPrefs, setLogoPrefs] = useState<{ position: string; opacity: number }>({ position: "bottomRight", opacity: 0.75 });
   useEffect(() => {
     if (scope !== "app") return;
-    const w = window as unknown as { layerlingSettingsPage?: { welcome?: (on: boolean) => void; toolbar?: (value: unknown) => void; backgrounds?: (value: unknown) => void } };
+    const w = window as unknown as { layerlingSettingsPage?: { welcome?: (on: boolean) => void; toolbar?: (value: unknown) => void; openIn?: (value: unknown) => void; backgrounds?: (value: unknown) => void } };
     const take = (value: unknown) => {
       const source = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
       const pick = (key: string) => (typeof source[key] === "string" && source[key] ? (source[key] as string) : null);
@@ -89,11 +91,15 @@ export function NativeSettingsPage({ bootstrap }: { bootstrap: SettingsBootstrap
       const logo = normalizeLogo(source);
       setLogoPrefs({ position: logo.position, opacity: logo.opacity });
     };
-    w.layerlingSettingsPage = { welcome: (on) => setShowWelcome(Boolean(on)), toolbar: (value) => setToolbarAppearance(value === "classic" ? "classic" : "native"), backgrounds: take };
+    w.layerlingSettingsPage = { welcome: (on) => setShowWelcome(Boolean(on)), toolbar: (value) => setToolbarAppearance(value === "classic" ? "classic" : "native"), openIn: (value) => setOpenDocumentsIn(value === "tab" ? "tab" : "window"), backgrounds: take };
     void hostHandler()?.postMessage({ type: "backgrounds.get" }).then((reply) => take((reply as { backgrounds?: unknown } | null)?.backgrounds));
     void hostHandler()?.postMessage({ type: "toolbar.get" }).then((reply) => {
       const value = (reply as { value?: string } | null)?.value;
       if (value === "native" || value === "classic") setToolbarAppearance(value);
+    });
+    void hostHandler()?.postMessage({ type: "docopen.get" }).then((reply) => {
+      const value = (reply as { value?: string } | null)?.value;
+      if (value === "window" || value === "tab") setOpenDocumentsIn(value);
     });
     void hostHandler()?.postMessage({ type: "welcome.get" }).then((reply) => {
       const enabled = (reply as { enabled?: boolean } | null)?.enabled;
@@ -189,6 +195,11 @@ export function NativeSettingsPage({ bootstrap }: { bootstrap: SettingsBootstrap
       onToolbarAppearanceChange={scope === "app" ? (value) => {
         setToolbarAppearance(value);
         void hostHandler()?.postMessage({ type: "toolbar.set", value });
+      } : undefined}
+      openDocumentsIn={scope === "app" ? openDocumentsIn : undefined}
+      onOpenDocumentsInChange={scope === "app" ? (value) => {
+        setOpenDocumentsIn(value);
+        void hostHandler()?.postMessage({ type: "docopen.set", value });
       } : undefined}
       viewportBackgrounds={scope === "app" ? backgrounds : undefined}
       presentationLogo={scope === "app" ? logoPrefs : undefined}
