@@ -18,6 +18,7 @@ import { projectSectionPoint, type SectionBody, type SectionLoop, type SectionPo
 import { normalizeSectionCutFace, SECTION_CUT_FACES, sectionCapMesh, sectionHatchSpacing, sectionHatchTexture, sectionHatchTurned, sectionHatchUvs, type SectionCutFace } from "@/lib/sectionCaps";
 import { sectionMeasurement, sectionPointToWorld, snapSectionPoint, type SectionSnap } from "@/lib/sectionMeasure";
 import * as THREE from "three";
+import { getWorkplaneVisible, publishWorkplaneVisible } from "@/lib/workplaneDisplay";
 import { triangleTouchesRect, type ScreenRect } from "@/lib/screenRectHit";
 import { FramingSquareIcon } from "@/components/FramingSquareIcon";
 import { ProtractorIcon } from "@/components/ProtractorIcon";
@@ -1835,7 +1836,8 @@ export function WorkplaneViewport({
   const secondViewSupported = useSecondViewSupported();
   // Hides the whole plate - grid, labels and any face workplane - for a clear
   // look at the underside. Only the view changes: shapes still land on it.
-  const [workplaneLayerHidden, setWorkplaneLayerHidden] = useState(false);
+  // Starts from what this window last showed (lib/workplaneDisplay.ts: the footer's button reads it too), so leaving and re-entering Sketch mode keeps it.
+  const [workplaneLayerHidden, setWorkplaneLayerHidden] = useState(() => !getWorkplaneVisible());
   // Q hides the sizes and distances around the selection for a while, so a part being moved is easy to see (#981).
   const [dimensionsHidden, setDimensionsHidden] = useState(false);
   const dimensionsHiddenRef = useRef(dimensionsHidden);
@@ -3279,6 +3281,11 @@ export function WorkplaneViewport({
       threeRef.current.needsRender = true;
     }
   }, [language, placementWorkplane, projectName, resolvedTheme, themePreference, workplaneHidden, workspace]);
+
+  // Tells the footer's workplane button (a view setting only: nothing of the document).
+  useEffect(() => {
+    publishWorkplaneVisible(!workplaneLayerHidden);
+  }, [workplaneLayerHidden]);
 
   useEffect(() => {
     const state = threeRef.current;

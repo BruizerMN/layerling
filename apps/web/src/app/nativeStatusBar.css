@@ -255,3 +255,64 @@ html[data-presentation="on"][data-native-chrome="on"][data-inspector="on"] .work
 .native-status-bar[data-standby="on"] [data-presentation-grid] { pointer-events: none; opacity: 0.4; }
 /* The Enter button covers the footer's middle: the info on the left gives way before it. */
 .native-status-bar[data-enter-button="on"] .native-status-info { max-width: calc(50% - 104px); }
+
+/* ---- Build 0075: one look for the footer's bordered controls ----
+   The Enter / Exit Presentation Mode and Standby buttons and the editor's Snap Grid control (the mm / in chooser and the step menu, shown here by footerSnap.ts) used to be
+   styled separately and differed in border weight and colour, corner radius, height and hover. They now read the same tokens, so a change here changes all of them. The
+   borderless icon buttons (.native-status-button) are a different kind of control and keep their own look. */
+.dashboard-legal.editor-legal.native-status-bar {
+  --footer-control-height: 22px;
+  --footer-control-radius: 6px;
+  --footer-control-border: 1px solid rgba(127, 127, 127, 0.4);
+  --footer-control-bg: rgba(127, 127, 127, 0.16);
+  --footer-control-bg-hover: rgba(127, 127, 127, 0.26);
+  --footer-control-bg-selected: rgba(127, 127, 127, 0.32);
+  --footer-control-bg-active: rgba(127, 127, 127, 0.38);
+}
+.native-status-bar .native-presentation-exit,
+.native-status-bar .native-presentation-enter,
+.native-status-bar .native-presentation-standby {
+  box-sizing: border-box;
+  height: var(--footer-control-height);
+  padding-top: 0;
+  padding-bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--footer-control-border);
+  border-radius: var(--footer-control-radius);
+  background: var(--footer-control-bg);
+}
+.native-status-bar .native-presentation-exit:hover,
+.native-status-bar .native-presentation-enter:hover,
+.native-status-bar .native-presentation-standby:hover { background: var(--footer-control-bg-hover); }
+.native-status-bar .native-presentation-exit:active,
+.native-status-bar .native-presentation-enter:active,
+.native-status-bar .native-presentation-standby:active { background: var(--footer-control-bg-active); }
+
+.native-status-bar .native-status-snap .snap-units {
+  box-sizing: border-box;
+  align-items: stretch;
+  height: var(--footer-control-height);
+  margin-left: 2px;
+  border: var(--footer-control-border);
+  border-radius: var(--footer-control-radius);
+  background: var(--footer-control-bg);
+  opacity: 1;
+}
+.native-status-bar .native-status-snap .snap-units button { height: 100%; min-width: 26px; padding: 0 7px; line-height: 1; }
+.native-status-bar .native-status-snap .snap-units button + button { border-left: var(--footer-control-border); }
+.native-status-bar .native-status-snap .snap-units button:hover { background: var(--footer-control-bg-hover); }
+.native-status-bar .native-status-snap .snap-units button[aria-pressed="true"] { background: var(--footer-control-bg-selected); }
+.native-status-bar .native-status-snap .snap-units button:active { background: var(--footer-control-bg-active); }
+
+.native-status-bar .native-status-snap .snap-select {
+  box-sizing: border-box;
+  height: var(--footer-control-height);
+  border: var(--footer-control-border);
+  border-radius: var(--footer-control-radius);
+  background: var(--footer-control-bg);
+  color: inherit;
+}
+.native-status-bar .native-status-snap .snap-select:hover { background: var(--footer-control-bg-hover); }
+.native-status-bar .native-status-snap .snap-select:active { background: var(--footer-control-bg-active); }

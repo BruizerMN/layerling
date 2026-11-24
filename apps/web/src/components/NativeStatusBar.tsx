@@ -2,6 +2,8 @@
 
 import { EyeOff, Maximize2, Minus, PanelRight, Pin, PinOff, Plus } from "lucide-react";
 import { GridEyeIcon } from "@/components/GridEyeIcon";
+import { WorkplaneGridIcon } from "@/components/WorkplaneGridIcon";
+import { getWorkplaneVisible, subscribeWorkplaneVisible } from "@/lib/workplaneDisplay";
 import { hiddenObjectsLabel } from "@/lib/hiddenObjects";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties } from "react";
@@ -230,11 +232,9 @@ export function NativeStatusBar({
   void plateSizePatch;
   const camera = useSyncExternalStore(subscribeCameraStatus, getCameraStatus, () => null);
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
-  // The grid as the presentation starts with it; the footer's toggle changes the view only (nothing of the document).
-  const [gridVisible, setGridVisible] = useState(true);
-  useEffect(() => {
-    if (presentation) setGridVisible(window.layerlingWorkplaneDisplay?.().visible ?? true);
-  }, [presentation]);
+  // Whether this window shows the workplane (lib/workplaneDisplay.ts): the viewport's own switch, a view setting only (nothing of the document). The Presentation Mode grid
+  // button below and the workplane button in the controls drive and show the same state; entering a presentation remembers it and leaving restores it (LayerlingEditor).
+  const gridVisible = useSyncExternalStore(subscribeWorkplaneVisible, getWorkplaneVisible, () => true);
   const inspectorShown = useInspectorVisible();
   const ui = useSyncExternalStore(subscribeUiState, getUiState, () => null);
   const controller = getCameraController();
@@ -305,10 +305,24 @@ export function NativeStatusBar({
             onClick={() => {
               const next = !gridVisible;
               window.layerlingWorkplaneDisplay?.(next);
-              setGridVisible(next);
             }}
           >
             <GridEyeIcon size={15} strokeWidth={2.1} crossed={!gridVisible} aria-hidden="true" />
+          </button>
+        ) : null}
+        {!presentation && mode === "geometry" ? (
+          // Show / Hide Workplane (Build 0075): the viewport's existing plate switch (the eye in the camera bar). No aria-pressed: the label says what the button will do, and the
+          // icon (a grid, or the grid with a slash) shows the state without colour.
+          <button
+            type="button"
+            className="native-status-button"
+            data-workplane-toggle
+            data-workplane-hidden={gridVisible ? undefined : "true"}
+            aria-label={gridVisible ? "Hide Workplane" : "Show Workplane"}
+            title={gridVisible ? "Hide Workplane" : "Show Workplane"}
+            onClick={() => window.layerlingWorkplaneDisplay?.(!gridVisible)}
+          >
+            <WorkplaneGridIcon size={15} strokeWidth={1.9} slashed={!gridVisible} aria-hidden="true" />
           </button>
         ) : null}
         <button type="button" className="native-status-button" aria-label="Focus mode" title="Focus mode (View menu)" aria-pressed={Boolean(ui?.focusMode)} onClick={() => runUiCommand("focusMode.toggle")}>
