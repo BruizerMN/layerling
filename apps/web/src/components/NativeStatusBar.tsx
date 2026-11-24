@@ -1,6 +1,6 @@
 "use client";
 
-import { EyeOff, Maximize2, Minus, PanelRight, Pin, PinOff, Plus } from "lucide-react";
+import { EyeOff, Minus, PanelRight, Plus } from "lucide-react";
 import { GridEyeIcon } from "@/components/GridEyeIcon";
 import { WorkplaneGridIcon } from "@/components/WorkplaneGridIcon";
 import { getWorkplaneVisible, subscribeWorkplaneVisible } from "@/lib/workplaneDisplay";
@@ -13,7 +13,7 @@ import { setFooterSnapSlot } from "@/lib/footerSnap";
 import { toggleInspectorVisible, useInspectorVisible } from "@/lib/inspectorDock";
 import { formatPlateValue, parsePlateInput, plateRange, plateSizePatch, plateSummary, plateUnitLabel } from "@/lib/plateSize";
 import type { WorkplaneWorkspaceSettings } from "@/types/layerling";
-import { getUiState, requestHostAction, runUiCommand, subscribeUiState } from "@/lib/host/nativeUi";
+import { getUiState, requestHostAction, subscribeUiState } from "@/lib/host/nativeUi";
 
 /**
  * The native app's status bar (Build 0003): replaces the browser footer in the macOS app only. It is a web bar inside the editor because
@@ -325,12 +325,6 @@ export function NativeStatusBar({
             <WorkplaneGridIcon size={15} strokeWidth={1.9} slashed={!gridVisible} aria-hidden="true" />
           </button>
         ) : null}
-        <button type="button" className="native-status-button" aria-label="Focus mode" title="Focus mode (View menu)" aria-pressed={Boolean(ui?.focusMode)} onClick={() => runUiCommand("focusMode.toggle")}>
-          <Maximize2 size={13} aria-hidden="true" />
-        </button>
-        <button type="button" className="native-status-button" aria-label="Pin ribbon" title="Keep every ribbon group open (View menu)" aria-pressed={Boolean(ui?.ribbonPinned)} onClick={() => runUiCommand("ribbonPin.toggle")}>
-          {ui?.ribbonPinned ? <Pin size={13} aria-hidden="true" /> : <PinOff size={13} aria-hidden="true" />}
-        </button>
         <button type="button" className="native-status-button" aria-label="Inspector" title={inspectorShown ? "Hide Inspector (⌥⌘I)" : "Show Inspector (⌥⌘I)"} aria-pressed={inspectorShown} onClick={toggleInspectorVisible}>
           <PanelRight size={13} aria-hidden="true" />
         </button>
