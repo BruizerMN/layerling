@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { INSPECTOR_VISIBLE_STORAGE_KEY, getInspectorVisible, readInspectorVisible, refreshInspectorVisible, setInspectorVisible, toggleInspectorVisible } from "@/lib/inspectorDock";
+import { INSPECTOR_VISIBLE_STORAGE_KEY, getInspectorVisible, readInspectorVisible, setInspectorVisible, toggleInspectorVisible } from "@/lib/inspectorDock";
 
 class MemoryStorage {
   private map = new Map<string, string>();
@@ -32,12 +32,11 @@ describe("Inspector visibility is the user's preference, never the selection's",
     expect(storage.getItem(INSPECTOR_VISIBLE_STORAGE_KEY)).toBeNull();
   });
 
-  it("toggle flips it; another window's change is picked up from storage without echoing back", () => {
+  it("toggle flips it for this window only: a change another window makes to the stored value does not reach it (Build 0065)", () => {
     toggleInspectorVisible();
     expect(getInspectorVisible()).toBe(false);
-    storage.removeItem(INSPECTOR_VISIBLE_STORAGE_KEY);   // another window showed it again
-    refreshInspectorVisible();
-    expect(getInspectorVisible()).toBe(true);
-    expect(storage.getItem(INSPECTOR_VISIBLE_STORAGE_KEY)).toBeNull();
+    storage.removeItem(INSPECTOR_VISIBLE_STORAGE_KEY);   // another window showed it (and remembered that as the start value for new windows)
+    expect(getInspectorVisible()).toBe(false);          // this window keeps its own choice
+    expect(readInspectorVisible(storage)).toBe(true);   // a window opened now starts with the last choice made anywhere
   });
 });

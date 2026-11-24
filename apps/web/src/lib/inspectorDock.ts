@@ -3,9 +3,10 @@ import { useEffect, useSyncExternalStore } from "react";
 /**
  * The native app's Inspector (Build 0005).
  *
- * VISIBILITY is an application-wide preference owned by the user, never by the selection: it lives in localStorage like the other application
- * preferences (every document window shares it and hears about changes through the `storage` event, nativeAppSync.ts), it is not part of any document
- * and never marks one modified. Selecting or deselecting never changes it.
+ * VISIBILITY belongs to the WINDOW (Build 0065), never to the selection and never to a document: every window (page) keeps its own, and showing or hiding it in
+ * one window changes no other (nothing listens for another window's change any more; nativeAppSync.ts no longer syncs it). The last choice is also written to
+ * localStorage / the portable preferences, but only as the starting value of windows opened afterwards (a first run shows it). It is not part of any document and
+ * never marks one modified. Selecting or deselecting never changes it.
  *
  * The DOCK is the panel's place at the right of the 3D view. The editor registers the dock element when it exists; the viewport renders the Inspector
  * (one shape, several shapes, or the empty state) into it through a portal, so the existing React Inspector is adapted, not rebuilt.
@@ -48,7 +49,7 @@ export function getInspectorVisible(): boolean {
   return visible;
 }
 
-/** Shows or hides the Inspector for the whole application (this window now, every other window through the storage event). */
+/** Shows or hides the Inspector in THIS window. The choice is also remembered as the start value of windows opened later; open windows are not told. */
 export function setInspectorVisible(next: boolean, store: Pick<Storage, "setItem" | "removeItem"> | null = storage()) {
   visible = next;
   try {
@@ -63,14 +64,6 @@ export function setInspectorVisible(next: boolean, store: Pick<Storage, "setItem
 
 export function toggleInspectorVisible() {
   setInspectorVisible(!visible);
-}
-
-/** Another window changed the preference: read it again (nativeAppSync.ts). */
-export function refreshInspectorVisible() {
-  const next = readInspectorVisible();
-  if (next === visible) return;
-  visible = next;
-  notify();
 }
 
 export function useInspectorVisible(): boolean {

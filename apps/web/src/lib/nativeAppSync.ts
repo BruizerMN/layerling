@@ -5,7 +5,6 @@ import { SIMPLE_MODE_STORAGE_KEY, setSimpleMode } from "@/lib/simpleMode";
 import { TOOLBAR_SIZE_STORAGE_KEY, normalizeToolbarSize, setToolbarSize } from "@/lib/toolbarSize";
 import { VIEW_CUBE_POSITION_STORAGE_KEY, normalizeViewCubePosition, setViewCubePosition } from "@/lib/viewCubePosition";
 import { normalizeShapeColors } from "@/lib/shapeColors";
-import { INSPECTOR_VISIBLE_STORAGE_KEY, refreshInspectorVisible } from "@/lib/inspectorDock";
 
 /**
  * Application-wide preferences that live in their own localStorage keys (theme, language, toolbar size, shape colours, view cube corner, simple mode)
@@ -17,6 +16,8 @@ import { INSPECTOR_VISIBLE_STORAGE_KEY, refreshInspectorVisible } from "@/lib/in
  * The native shell starts this once per page. It re-reads the changed key and runs the same setter the Settings control uses (without the page
  * having to know who changed it). Writing back the value that was just read changes nothing in storage, so it cannot echo between windows. None of
  * this touches a document: these preferences are not part of the document's state or its dirty signature.
+ *
+ * The Inspector's visibility is deliberately NOT synchronized (Build 0065): it belongs to each window (lib/inspectorDock.ts).
  */
 export interface AppSyncActions {
   theme(): void;
@@ -25,7 +26,6 @@ export interface AppSyncActions {
   shapeColors(): void;
   viewCubePosition(): void;
   simpleMode(): void;
-  inspector(): void;
 }
 
 const read = (key: string): string | null => {
@@ -46,7 +46,6 @@ export const defaultAppSyncActions: AppSyncActions = {
   shapeColors: () => setShapeColors(normalizeShapeColors(read(SHAPE_COLORS_STORAGE_KEY))),
   viewCubePosition: () => setViewCubePosition(normalizeViewCubePosition(read(VIEW_CUBE_POSITION_STORAGE_KEY))),
   simpleMode: () => setSimpleMode(read(SIMPLE_MODE_STORAGE_KEY) === "on"),
-  inspector: () => refreshInspectorVisible(),
 };
 
 /** Runs the action for the key that changed (`null`: storage was cleared, everything is read again). Returns the names it ran. */
@@ -62,7 +61,6 @@ export function syncAppPreference(key: string | null, actions: AppSyncActions = 
   if (key === null || key === SHAPE_COLORS_STORAGE_KEY) run("shapeColors");
   if (key === null || key === VIEW_CUBE_POSITION_STORAGE_KEY) run("viewCubePosition");
   if (key === null || key === SIMPLE_MODE_STORAGE_KEY) run("simpleMode");
-  if (key === null || key === INSPECTOR_VISIBLE_STORAGE_KEY) run("inspector");
   return ran;
 }
 
