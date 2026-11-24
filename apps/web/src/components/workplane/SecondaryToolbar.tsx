@@ -42,6 +42,9 @@ import { TopPanel } from "./TopActionPanel";
 import { useToolbarCollapse } from "./useToolbarCollapse";
 import { createHoverOpener, type HoverOpener } from "@/lib/hoverOpen";
 import { publishUiState, requestHostAction, subscribeNativeUiEvents } from "@/lib/host/nativeUi";
+import { buildNativeShapesCatalog, nativeShapeIdFromTool } from "@/lib/host/nativeShapes";
+import { RECENT_SHAPES_EVENT, readRecentShapes } from "@/lib/shapeLibrarySections";
+import { getShapeColors, subscribeToShapeColors } from "@/lib/shapeColors";
 import { nativeRibbonActive, onNativeRibbonInvoke, publishRibbonState, useNativeRibbonActiveSubscribe, type RibbonToolState } from "@/lib/host/nativeRibbon";
 import { toggleInspectorVisible, useInspectorVisible } from "@/lib/inspectorDock";
 
@@ -854,6 +857,17 @@ export function SecondaryToolbar({
     setVisibilityOpen(false);
   }, [historyViewActive]);
   const simpleMode = useSimpleMode();
+  // Build 0061: the native Shapes popover shows the recently used shapes and the picture colours, so a change of either publishes the catalogue again.
+  const [, setNativeShapesTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setNativeShapesTick((tick) => tick + 1);
+    window.addEventListener(RECENT_SHAPES_EVENT, bump);
+    const off = subscribeToShapeColors(bump);
+    return () => {
+      window.removeEventListener(RECENT_SHAPES_EVENT, bump);
+      off();
+    };
+  }, []);
   // Buttons and groups taken out of the ribbon in the settings (#1519); the command search and the keys still have them.
   const ribbonHidden = useRibbonHidden();
   // The order of the groups set in the settings (#1519, #1502): every section carries its place as a CSS order, and the two
@@ -1636,7 +1650,10 @@ export function SecondaryToolbar({
       ] });
     }
   }
-  const nativeRibbonState = nativeRibbonOn ? { mode: toolbarMode, groups: nativeGroups.map((group) => ({ ...group, tools: group.tools.map(({ run, ...state }) => state) })) } : null;
+  const nativeShapes = nativeRibbonOn && toolbarMode === "geometry"
+    ? buildNativeShapesCatalog({ shapes: shownShapeAssets, label: (shape) => shapeAssetMenuLabel(shape).replace(/\s+/g, " "), color: (shape) => shapeAssetColor(shape, shapeCustomizations[shape.kind]), colors: getShapeColors(), recent: readRecentShapes() })
+    : null;
+  const nativeRibbonState = nativeRibbonOn ? { mode: toolbarMode, groups: nativeGroups.map((group) => ({ ...group, tools: group.tools.map(({ run, ...state }) => state) })), ...(nativeShapes ? { shapes: nativeShapes } : {}) } : null;
   const nativeRibbonKey = JSON.stringify(nativeRibbonState);
   useEffect(() => {
     if (nativeRibbonState) publishRibbonState(nativeRibbonState);
@@ -1644,6 +1661,13 @@ export function SecondaryToolbar({
   }, [nativeRibbonKey]);
   const nativeInvokeRef = useRef<(toolId: string) => void>(() => undefined);
   nativeInvokeRef.current = (toolId) => {
+    // Build 0061: a shape picked in the native Shapes popover goes through the web chooser's own handler (click-to-place, defaults, recently used, undo, special shapes).
+    const shapeId = nativeShapeIdFromTool(toolId);
+    if (shapeId) {
+      const asset = shownShapeAssets.find((shape) => shape.id === shapeId);
+      if (asset && !historyViewActive) addShapeFromMenu(asset);
+      return;
+    }
     // The Shapes panel opened from the native toolbar hangs from the top of the page, under the toolbar (CSS: data-shapes-anchor).
     const fromNative = (open: () => void) => { document.documentElement.dataset.shapesAnchor = "native"; open(); };
     const own = nativeGroups.flatMap((group) => group.tools).find((tool) => tool.id === toolId);

@@ -1,5 +1,6 @@
 import { getHostBridge, subscribeToHostBridge, type HostBridge } from "@/lib/host/hostBridge";
 import { nativeDocumentId } from "@/lib/host/nativeUi";
+import type { NativeShapesCatalog } from "@/lib/host/nativeShapes";
 
 /**
  * The native toolbar prototype's page side (capability `ribbon.v1`). The host can draw some ribbon groups itself (as an NSToolbar); the editor stays the single
@@ -33,6 +34,8 @@ export interface RibbonGroupState {
 export interface RibbonState {
   mode: "geometry" | "sketch";
   groups: RibbonGroupState[];
+  /** The shape catalogue for the native Shapes popover (Build 0061), 3D editor only; see lib/host/nativeShapes.ts. */
+  shapes?: NativeShapesCatalog;
 }
 
 let nativeActive = false;
