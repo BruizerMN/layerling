@@ -14052,7 +14052,11 @@ export function LayerlingEditor({
       if (event.type !== "designInsert.insert") return;
       const { requestId, files } = event.payload;
       const answer = (imported: Array<{ fileName: string; objectCount: number }>, failures: Array<{ fileName: string; reason: string }>) => {
-        void getHostBridge()?.sendUi("designInsert.result", { documentId: event.payload.documentId, requestId, imported, failures });
+        const bridge = getHostBridge();
+        void bridge?.sendUi("designInsert.result", { documentId: event.payload.documentId, requestId, imported, failures }).then((reply) => {
+          // The host's report is the only place the outcome is shown; if it cannot be delivered, say so here (an error notice reaches the person as a sheet).
+          if (!reply.ok) setNotice(`The import result could not be reported to the application (${reply.failure.message}). ${imported.length} file(s) were imported${failures.length ? `; not imported: ${failures.map((failure) => `${failure.fileName} (${failure.reason})`).join("; ")}` : ""}.`);
+        });
       };
       const refuseAll = (reason: string) => answer([], files.map((file) => ({ fileName: file.fileName, reason })));
       const current = designInsertRef.current;
@@ -14065,7 +14069,7 @@ export function LayerlingEditor({
         .catch((error) => refuseAll(error instanceof Error && error.message ? error.message : "The import failed unexpectedly"))
         .finally(() => { designInsertBusyRef.current = false; });
     });
-  }, [nativeDocument]);
+  }, [nativeDocument, setNotice]);
   /**
    * A custom shape put into the design, from the shapes panel or the command search: like the shapes of the library it
    * hangs on the pointer and sits down where you click, also on a face (#463). Without "click to place" it stays where

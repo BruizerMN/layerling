@@ -77,3 +77,41 @@ export async function buildDesignInsertBatch(
   }
   return batch;
 }
+
+/**
+ * What `insertDesignFiles` needs from the editor, so the whole run can be tested without it. Build 0071: a run raises NO editor notices of its own. In the native
+ * app every error-class notice becomes a modal sheet (useEditorNotice) and the generated notice classes put "Validating {name} before opening it as a new design",
+ * "{name} has no bodies to insert" and "Import cancelled" among the errors, so Build 0070's progress and failure notices produced spurious alerts next to the host's own
+ * report. The answer (`imported` / `failures`, every file exactly once) is the report; the host shows it.
+ */
+export interface DesignInsertRun {
+  sources: readonly DesignInsertSource[];
+  existingNotes: () => readonly WorkplaneNote[];
+  parse: (bytes: ArrayBuffer | Uint8Array) => Promise<RestoredDesign>;
+  /** The open design's id: a run whose design was closed or replaced meanwhile adds nothing. */
+  projectId: () => string | null;
+  historyViewActive: () => boolean;
+  /** Puts the prepared bodies into the design in ONE commit (one undo step); false when the editor did not take them. */
+  commit: (batch: DesignInsertBatch, label: string) => boolean;
+}
+
+export interface DesignInsertOutcome {
+  imported: Array<{ fileName: string; objectCount: number }>;
+  failures: Array<{ fileName: string; reason: string }>;
+}
+
+export async function runDesignInsert(run: DesignInsertRun): Promise<DesignInsertOutcome> {
+  const { sources } = run;
+  const refuseAll = (reason: string): DesignInsertOutcome => ({ imported: [], failures: sources.map((source) => ({ fileName: source.fileName, reason })) });
+  if (run.historyViewActive()) return refuseAll("The history view is open. Close it and try again");
+  const startProject = run.projectId();
+  const changed = () => run.projectId() !== startProject;
+  const batch = await buildDesignInsertBatch(sources, run.existingNotes(), run.parse, changed);
+  if (batch.cancelled || changed()) return refuseAll("The design was closed or replaced while the files were being read, so nothing was imported");
+  if (run.historyViewActive()) return refuseAll("The history view was opened while the files were being read, so nothing was imported");
+  if (batch.shapes.length === 0) return { imported: [], failures: batch.failures };
+  const label = sources.length === 1 ? sources[0].fileName : `${sources.length} files`;
+  // commitShapes can refuse (with its own notice) in a few states; the bodies must really be in the design before anything is reported as imported.
+  if (!run.commit(batch, label)) return refuseAll("The editor did not accept the change, so nothing was imported");
+  return { imported: batch.imported, failures: batch.failures };
+}

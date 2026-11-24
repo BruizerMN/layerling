@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildDesignInsertBatch, EMPTY_DESIGN_REASON, type RestoredDesign } from "@/lib/designInsertBatch";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { buildDesignInsertBatch, EMPTY_DESIGN_REASON, runDesignInsert, type DesignInsertBatch, type RestoredDesign } from "@/lib/designInsertBatch";
 import { DESIGN_INSERT_MAX_FILES, parseHostEvent } from "@/lib/host/hostProtocol";
 import type { WorkplaneNote, WorkplaneShape } from "@/types/layerling";
 
@@ -100,5 +102,91 @@ describe("designInsert.insert event", () => {
     expect(parseHostEvent(event({ requestId: "r1", files: Array.from({ length: DESIGN_INSERT_MAX_FILES + 1 }, () => file("a.lyl")) }))).toHaveProperty("invalid");
     expect(parseHostEvent(event({ requestId: "r1", files: [{ ...file("a.lyl"), url: "https://example.com/a.lyl" }] }))).toHaveProperty("invalid");
     expect(parseHostEvent(event({ files: [file("a.lyl")] }))).toHaveProperty("invalid");
+  });
+});
+
+describe("runDesignInsert (the whole run, Build 0071)", () => {
+  function run(designs: Record<string, RestoredDesign | Error>, names: string[], overrides: Partial<Parameters<typeof runDesignInsert>[0]> = {}) {
+    const { source, parse } = harness(designs);
+    const commits: Array<{ batch: DesignInsertBatch; label: string }> = [];
+    const outcome = runDesignInsert({
+      sources: names.map(source), existingNotes: () => [], parse, projectId: () => "project-1", historyViewActive: () => false,
+      commit: (batch, label) => { commits.push({ batch, label }); return true; },
+      ...overrides,
+    });
+    return { outcome, commits };
+  }
+  const good = (id: string, x: number) => ({ shapes: [box(id, x, x * 2, 5)], assets: [] }) satisfies RestoredDesign;
+
+  it("a single good file: one commit, reported once, nothing failed", async () => {
+    const { outcome, commits } = run({ "a.lyl": good("a", 10) }, ["a.lyl"]);
+    expect(await outcome).toEqual({ imported: [{ fileName: "a.lyl", objectCount: 1 }], failures: [] });
+    expect(commits).toHaveLength(1);
+    expect(commits[0].label).toBe("a.lyl");
+    expect([commits[0].batch.shapes[0].x, commits[0].batch.shapes[0].z, commits[0].batch.shapes[0].elevation]).toEqual([10, 20, 5]);
+  });
+
+  it("several good files: ONE commit for all of them (one undo step), coordinates and order as saved", async () => {
+    const { outcome, commits } = run({ "a.lyl": good("a", 10), "b.lyl": good("b", -30.5), "c.lyl": good("c", 7) }, ["a.lyl", "b.lyl", "c.lyl"]);
+    const result = await outcome;
+    expect(result.failures).toEqual([]);
+    expect(result.imported.map((entry) => entry.fileName)).toEqual(["a.lyl", "b.lyl", "c.lyl"]);
+    expect(commits).toHaveLength(1);
+    expect(commits[0].label).toBe("3 files");
+    expect(commits[0].batch.shapes.map((shape) => [shape.x, shape.z])).toEqual([[10, 20], [-30.5, -61], [7, 14]]);
+  });
+
+  it("a partial failure still imports the good files and reports each bad one by name", async () => {
+    const { outcome, commits } = run({ "a.lyl": good("a", 1), "broken.lyl": new Error("Legacy JSON project is malformed"), "empty.lyl": { shapes: [], assets: [] } }, ["a.lyl", "broken.lyl", "empty.lyl"]);
+    expect(await outcome).toEqual({
+      imported: [{ fileName: "a.lyl", objectCount: 1 }],
+      failures: [{ fileName: "broken.lyl", reason: "Legacy JSON project is malformed" }, { fileName: "empty.lyl", reason: EMPTY_DESIGN_REASON }],
+    });
+    expect(commits).toHaveLength(1);
+    expect(commits[0].batch.shapes).toHaveLength(1);
+  });
+
+  it("an entirely failed batch commits nothing and reports every file", async () => {
+    const { outcome, commits } = run({ "x.lyl": new Error("bad zip"), "y.lyl": { shapes: [], assets: [] } }, ["x.lyl", "y.lyl"]);
+    expect(await outcome).toEqual({ imported: [], failures: [{ fileName: "x.lyl", reason: "bad zip" }, { fileName: "y.lyl", reason: EMPTY_DESIGN_REASON }] });
+    expect(commits).toHaveLength(0);
+  });
+
+  it("adds nothing, and reports every file, when the design is replaced while reading", async () => {
+    let project = "project-1";
+    const { outcome, commits } = run({ "a.lyl": good("a", 1), "b.lyl": good("b", 2) }, ["a.lyl", "b.lyl"], { projectId: () => project, parse: async (bytes) => { project = "project-2"; return good("a", 1) } });
+    const result = await outcome;
+    expect(result.imported).toEqual([]);
+    expect(result.failures.map((failure) => failure.fileName)).toEqual(["a.lyl", "b.lyl"]);
+    expect(result.failures[0].reason).toMatch(/closed or replaced/);
+    expect(commits).toHaveLength(0);
+  });
+
+  it("adds nothing when the history view is open before, or opens while reading", async () => {
+    const before = run({ "a.lyl": good("a", 1) }, ["a.lyl"], { historyViewActive: () => true });
+    expect((await before.outcome).failures[0].reason).toMatch(/history view is open/);
+    expect(before.commits).toHaveLength(0);
+    let calls = 0;
+    const during = run({ "a.lyl": good("a", 1) }, ["a.lyl"], { historyViewActive: () => ++calls > 1 });
+    expect((await during.outcome).failures[0].reason).toMatch(/history view was opened/);
+    expect(during.commits).toHaveLength(0);
+  });
+
+  it("reports every file as not imported when the editor does not take the bodies", async () => {
+    const { outcome } = run({ "a.lyl": good("a", 1), "b.lyl": good("b", 2) }, ["a.lyl", "b.lyl"], { commit: () => false });
+    const result = await outcome;
+    expect(result.imported).toEqual([]);
+    expect(result.failures.map((failure) => failure.fileName)).toEqual(["a.lyl", "b.lyl"]);
+  });
+
+  it("raises no editor notice: insertDesignFiles never calls setNotice (a native alert would sit next to the host's report)", () => {
+    const source = readFileSync(path.resolve(__dirname, "../../apps/web/src/lib/useCustomShapes.ts"), "utf8");
+    const start = source.indexOf("const insertDesignFiles = useCallback(");
+    const end = source.indexOf("const renameMyShapeEntry = useCallback(", start);
+    expect(start).toBeGreaterThan(0);
+    const body = source.slice(start, end);
+    expect(body).not.toMatch(/setNotice|status\.validatingFile|status\.insertDesignEmpty|status\.importCancelled|status\.insertDesignFailed/);
+    const runner = readFileSync(path.resolve(__dirname, "../../apps/web/src/lib/designInsertBatch.ts"), "utf8");
+    expect(runner).not.toMatch(/setNotice|status\./);
   });
 });

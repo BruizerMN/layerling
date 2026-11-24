@@ -15,7 +15,7 @@ import {
   serverCustomShapeId,
   type ServerCustomShapes,
 } from "@/lib/customShapesServer";
-import { buildDesignInsertBatch, type DesignInsertSource } from "@/lib/designInsertBatch";
+import { runDesignInsert, type DesignInsertSource } from "@/lib/designInsertBatch";
 import { customShapeFingerprint, packCustomShape, placeCustomShape, placeInsertedDesign, type PackedCustomShape } from "@/lib/customShapePackage";
 import { t } from "@/lib/i18n";
 import { createLocalId } from "@/lib/localIds";
@@ -276,33 +276,20 @@ export function useCustomShapes(options: CustomShapesOptions) {
    * Several saved designs into the open one at once ("Import Layerling Files", host protocol `designInsert.v1`): each file's bodies where they were saved (as
    * `insertDesignFile`), all of them in ONE commit, so one Undo takes the whole batch back. A file that fails is reported and skipped; the rest still go in.
    * Nothing is added when the design was closed or replaced, or the history view was opened, while the files were being read: then every file is reported as
-   * not imported. Never throws; every source appears exactly once in the answer.
+   * not imported. Never throws; every source appears exactly once in the answer. It raises no editor notices (see `DesignInsertRun`): the host shows the report.
    */
-  const insertDesignFiles = useCallback(async (sources: DesignInsertSource[]) => {
-    const sourceProjectId = projectInfoRef.current.projectId;
-    const refuseAll = (reason: string) => ({ imported: [] as Array<{ fileName: string; objectCount: number }>, failures: sources.map((source) => ({ fileName: source.fileName, reason })) });
-    if (historyViewStateRef.current) return refuseAll("The history view is open. Close it and try again");
-    const label = sources.length === 1 ? sources[0].fileName : `${sources.length} files`;
-    setNotice(t("status.validatingFile", { name: label }), true);
-    const changed = () => projectInfoRef.current.projectId !== sourceProjectId;
-    const batch = await buildDesignInsertBatch(sources, notesRef.current, (bytes) => importLylProject(bytes), changed);
-    if (batch.cancelled || changed()) {
-      setNotice(t("status.importCancelled", { count: sources.length }));
-      return refuseAll("The design was closed or replaced while the files were being read, so nothing was imported");
-    }
-    if (historyViewStateRef.current) return refuseAll("The history view was opened while the files were being read, so nothing was imported");
-    if (batch.shapes.length === 0) {
-      setNotice(t("status.insertDesignEmpty", { name: label }));
-      return { imported: [], failures: batch.failures };
-    }
-    const firstId = batch.shapes[0].id;
-    addInsertedBodies(batch.assets, { shapes: batch.shapes, notes: batch.notes, dropped: batch.dropped }, t("status.insertedDesign", { count: batch.shapes.length, name: label }));
-    // commitShapes refuses (with its own notice) in a few states; the bodies must really be in the design before anything is reported as imported.
-    if (!shapesRef.current.some((shape) => shape.id === firstId)) {
-      return refuseAll("The editor did not accept the change, so nothing was imported");
-    }
-    return { imported: batch.imported, failures: batch.failures };
-  }, [commitShapes]); // eslint-disable-line react-hooks/exhaustive-deps
+  const insertDesignFiles = useCallback((sources: DesignInsertSource[]) => runDesignInsert({
+    sources,
+    existingNotes: () => notesRef.current,
+    parse: (bytes) => importLylProject(bytes),
+    projectId: () => projectInfoRef.current.projectId,
+    historyViewActive: () => Boolean(historyViewStateRef.current),
+    commit: (batch, label) => {
+      const firstId = batch.shapes[0].id;
+      addInsertedBodies(batch.assets, { shapes: batch.shapes, notes: batch.notes, dropped: batch.dropped }, t("status.insertedDesign", { count: batch.shapes.length, name: label }));
+      return shapesRef.current.some((shape) => shape.id === firstId);
+    },
+  }), [commitShapes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const renameMyShapeEntry = useCallback(async (id: string, name: string) => {
     const server = serverShapeFor(id);
