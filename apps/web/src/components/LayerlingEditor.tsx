@@ -16,6 +16,8 @@ import { NativeSaveError, type NativeSaveApi, type NativePackage } from "@/lib/h
 import type { SavePhase } from "@/lib/host/hostProtocol";
 import { subscribeTransientStore } from "@/lib/host/transientProject";
 import * as THREE from "three";
+import { isNativeAppearance } from "@/lib/appTheme";
+import { isNativeMenuKey } from "@/lib/nativeMenuKeys";
 import type { AppThemePreference, ResolvedAppTheme } from "@/lib/appTheme";
 import { getLanguage, numberLocale, t, type MessageKey } from "@/lib/i18n";
 import { guideHref } from "@/lib/guideLinks";
@@ -19317,6 +19319,9 @@ export function LayerlingEditor({
       // Chrome sends keydown without a key when an autofill suggestion is picked.
       const key = (event.key ?? "").toLowerCase();
       const shortcut = event.ctrlKey || event.metaKey;
+
+      // The native app keeps Cmd+N for File > New (nativeMenuKeys.ts): the page neither handles nor swallows it. Not in a browser.
+      if (isNativeMenuKey(event, isNativeAppearance())) return;
 
       // In the native app, Save and Save As belong to the host menu (Cmd+S, Shift+Cmd+S): the page
       // leaves the key alone, without preventDefault, so WKWebView hands it back to AppKit.
