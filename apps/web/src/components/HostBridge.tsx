@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { startHostBridge } from "@/lib/host/hostBridge";
+import { installDocumentSettingsEngine } from "@/lib/host/nativeDocumentSettings";
 import { installPreferencesSnapshot } from "@/lib/host/preferencesSnapshot";
 
 /**
@@ -11,6 +12,7 @@ import { installPreferencesSnapshot } from "@/lib/host/preferencesSnapshot";
 export function HostBridge() {
   useEffect(() => {
     installPreferencesSnapshot();
+    installDocumentSettingsEngine();
     return startHostBridge();
   }, []);
   return null;

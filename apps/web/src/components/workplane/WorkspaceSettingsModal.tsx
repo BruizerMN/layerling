@@ -121,11 +121,11 @@ const SETTINGS_HELP_SECTION: Record<WorkspaceSettingsSection, GuideSection> = {
   backups: "fileBackups",
 };
 
-const MIN_WORKSPACE_SIZE = PLATE_SIZE_MIN_MM;
-const MAX_WORKSPACE_SIZE = PLATE_SIZE_MAX_MM;
-const MIN_GRID_BLOCK_SIZE = 1;
-const MAX_GRID_BLOCK_SIZE = 200;
-const WORKSPACE_SIZE_PRESETS = [
+export const MIN_WORKSPACE_SIZE = PLATE_SIZE_MIN_MM;
+export const MAX_WORKSPACE_SIZE = PLATE_SIZE_MAX_MM;
+export const MIN_GRID_BLOCK_SIZE = 1;
+export const MAX_GRID_BLOCK_SIZE = 200;
+export const WORKSPACE_SIZE_PRESETS = [
   { label: "200 x 200 mm", width: 200, depth: 200 },
   { label: "300 x 300 mm", width: 300, depth: 300 },
   { label: "500 x 500 mm", width: 500, depth: 500 },
@@ -135,12 +135,12 @@ const WORKSPACE_SIZE_PRESETS = [
 ];
 // Alphabetical, numbers counted as numbers (Ender 3 before Ender 10): the list of the slicer is in no order a person could search by (#305).
 const PRINTER_COLLATOR = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
-const PRINTER_VENDORS = [...new Set(PRINTER_PRESETS.map((preset) => preset.vendor))].sort(PRINTER_COLLATOR.compare);
-const PRINTERS_BY_VENDOR = new Map(PRINTER_VENDORS.map((vendor) => [
+export const PRINTER_VENDORS = [...new Set(PRINTER_PRESETS.map((preset) => preset.vendor))].sort(PRINTER_COLLATOR.compare);
+export const PRINTERS_BY_VENDOR = new Map(PRINTER_VENDORS.map((vendor) => [
   vendor,
   PRINTER_PRESETS.filter((preset) => preset.vendor === vendor).sort((a, b) => PRINTER_COLLATOR.compare(a.model, b.model)),
 ]));
-const GRID_BLOCK_PRESETS = ["1 mm", "2.5 mm", "5 mm", "10 mm", "20 mm", "50 mm", "100 mm", "Custom"] as const;
+export const GRID_BLOCK_PRESETS = ["1 mm", "2.5 mm", "5 mm", "10 mm", "20 mm", "50 mm", "100 mm", "Custom"] as const;
 /** Nur die freie Wahl wird uebersetzt; Masse bleiben Masse. */
 const THEME_LABEL_KEYS: Record<AppThemePreference, MessageKey> = {
   system: "workspace.themeSystem",
@@ -163,16 +163,16 @@ const VIEW_CUBE_POSITION_LABEL_KEYS: Record<ViewCubePosition, MessageKey> = {
   "bottom-right": "workspace.viewCubePositionBottomRight",
 };
 
-function gridBlockPresetLabel(preset: string) {
+export function gridBlockPresetLabel(preset: string) {
   return preset === "Custom" ? t("workspace.custom") : preset;
 }
-const HISTORY_LIMIT_OPTIONS = [30, 50, 100, "unlimited", "custom"] as const;
-const BOOLEAN_LIMIT_PRESET_LABEL_KEYS: Record<BooleanTriangleLimitPreset, MessageKey> = {
+export const HISTORY_LIMIT_OPTIONS = [30, 50, 100, "unlimited", "custom"] as const;
+export const BOOLEAN_LIMIT_PRESET_LABEL_KEYS: Record<BooleanTriangleLimitPreset, MessageKey> = {
   older: "workspace.booleanTriangleLimitOlder",
   normal: "workspace.booleanTriangleLimitNormal",
   fast: "workspace.booleanTriangleLimitFast",
 };
-const HISTORY_CUSTOM_DEFAULT = 250;
+export const HISTORY_CUSTOM_DEFAULT = 250;
 const TEXT_FONT_OPTIONS = ["Multilanguage", "Sans", "Serif", "Script", "Monospace", "Rounded", "Stencil", "Japanese"];
 const GEAR_TYPE_OPTIONS: Array<{ value: GearType; label: MessageKey }> = [
   { value: "spur", label: "gear.spur" },
@@ -223,27 +223,27 @@ const BENT_TUBE_PROFILE_OPTIONS: Array<{ value: BentTubeProfile; label: MessageK
 type ShapeSpecialNumberKey = "steps" | "sides" | "bevel" | "segments" | "topRadius" | "baseRadius" | "teeth" | "toothSize" | "toothWidth" | "centerHoleSize" | "helixAngle" | "helixQuality" | "gearPressureAngle" | "gearBacklash" | "gearRim" | "threadDiameter" | "threadPitch" | "threadClearance" | "threadBoltClearance" | "threadAxialClearance" | "threadQuality" | "threadChamfer" | "threadHeadChamfer" | "springTurns" | "springWire" | "springQuality" | "topWidth" | "topDepth" | "starPoints" | "starInnerSize" | "starOuterFillet" | "starInnerFillet" | "starQuality" | "heartTipFillet" | "heartQuality" | "crescentThickness" | "crescentTipFillet" | "crescentQuality" | "honeycombCellSize" | "honeycombWallThickness" | "honeycombFrameWidth" | "dovetailNeckWidth" | "dovetailClearance" | "hingeKnuckles" | "hingePinDiameter" | "hingeLeafThickness" | "hingeClearance" | "screwHoleShaft" | "screwHoleHeadDepth" | "screwHoleAngle" | "cornerFillet" | "topBottomFillet" | "roundedBoxQuality" | "bentTubeSize" | "bentTubeWall" | "bentTubeQuality" | "knurlCount" | "knurlDepth" | "knurlAngle" | "knurlChamfer"
   | "loftBottomWidth" | "loftBottomDepth" | "loftTopWidth" | "loftTopDepth" | "loftWall"
   | "pulleyBeltWidth" | "pulleyFlange" | "pulleyFlangeRise" | "pulleyHubHeight" | "pulleyHubDiameter";
-type ShapeSpecialField =
+export type ShapeSpecialField =
   | { type: "number"; key: ShapeSpecialNumberKey; label: string; defaultValue: number; min: number; max: number; step?: number; unit?: string }
   | { type: "select"; key: "font" | "gearType" | "gearProfile" | "threadRole" | "threadHead" | "threadHand" | "threadProfile" | "springHand" | "springForm" | "springPattern" | "springEnds" | "bentTubeProfile" | "bentTubeInnerProfile" | "knurlPattern" | "gridfinityType" | "loftBottomOutline" | "loftTopOutline"; label: string; defaultValue: string; options: Array<{ value: string; label: string }> }
   | { type: "text"; key: "text"; label: string; defaultValue: string; maxLength: number };
 
-function clamp(value: number, min: number, max: number) {
+export function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function gridBlockSizeForPreset(preset: string, fallback: number) {
+export function gridBlockSizeForPreset(preset: string, fallback: number) {
   if (preset === "Custom") {
     return clamp(fallback, MIN_GRID_BLOCK_SIZE, MAX_GRID_BLOCK_SIZE);
   }
   return clamp(inchGridPresetMm(preset) ?? (Number.parseFloat(preset) || DEFAULT_WORKPLANE_WORKSPACE.gridBlockSize), MIN_GRID_BLOCK_SIZE, MAX_GRID_BLOCK_SIZE);
 }
 
-function isHistoryLimitPreset(value: unknown): value is 30 | 50 | 100 {
+export function isHistoryLimitPreset(value: unknown): value is 30 | 50 | 100 {
   return value === 30 || value === 50 || value === 100;
 }
 
-function specialFieldsForShape(
+export function specialFieldsForShape(
   kind: ShapeKind,
   dimensions: { width: number; depth: number; height: number },
   customization: ShapeCustomization,
