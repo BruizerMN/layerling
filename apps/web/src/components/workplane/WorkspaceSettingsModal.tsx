@@ -1148,7 +1148,7 @@ export function WorkspaceSettingsModal({
                   ) : null}
                   {onExportPreferences ? (
                     <div data-setting="export-preferences" style={{ display: "grid", gap: 6, justifyItems: "start" }}>
-                      <button type="button" data-action="export-preferences" onClick={onExportPreferences}>Export Preferences…</button>
+                      <button type="button" className="make-default-button" data-action="export-preferences" onClick={onExportPreferences}>Export Preferences…</button>
                       <small style={{ opacity: 0.7 }}>Saves a JSON file of your current application preferences (including defaults you have not changed). Nothing is changed.</small>
                     </div>
                   ) : null}
