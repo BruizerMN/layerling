@@ -128,6 +128,8 @@ export type ThreeState = {
   lights: { ambient: THREE.HemisphereLight; key: THREE.DirectionalLight; fill: THREE.DirectionalLight; head: THREE.DirectionalLight };
   disposeInteractionListeners: () => void;
   resize: () => void;
+  /** Draws one frame now (set by the viewport component once its loop exists): a resize redraws the canvas it just cleared in the same task. */
+  renderNow?: () => void;
 };
 
 export type MoveDimensionSession = {

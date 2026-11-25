@@ -24,6 +24,17 @@ import { RENDER_LAYER_MODIFIERS, RENDER_LAYER_PREVIEWS, clamp, pullModifierEdgeT
 import { CAMERA_DAMPING_PER_60HZ_FRAME } from "@/lib/cameraInertia";
 import { fitBackground } from "@/components/workplane/viewportBackgroundImage";
 
+/**
+ * Sets the renderer's size, but only if it differs from the size it has: assigning a canvas size always clears the drawing buffer, even to the same value. Returns whether it
+ * changed anything (a caller that got `false` has nothing to redraw).
+ */
+export function resizeRendererIfNeeded(renderer: { getSize(target: THREE.Vector2): THREE.Vector2; setSize(width: number, height: number): void }, width: number, height: number): boolean {
+  const current = renderer.getSize(new THREE.Vector2());
+  if (current.x === width && current.y === height) return false;
+  renderer.setSize(width, height);
+  return true;
+}
+
 export const WORKPLANE_WIDTH = 200;
 export const WORKPLANE_DEPTH = 140;
 export const DEFAULT_WORKSPACE = DEFAULT_WORKPLANE_WORKSPACE;
@@ -184,7 +195,8 @@ export function createThreeScene(host: HTMLDivElement): ThreeState {
   const resize = () => {
     const width = Math.max(1, host.clientWidth);
     const height = Math.max(1, host.clientHeight);
-    renderer.setSize(width, height);
+    // The window's resize event and the host's ResizeObserver both report one change: the second finds nothing to do (setSize would clear the canvas again for nothing).
+    if (!resizeRendererIfNeeded(renderer, width, height)) return;
     fitBackground(state);   // a custom background image keeps filling the viewport without distortion
     updateCameraViewport(state.camera, width, height);
     [state.transformGuideLayer, state.moveDimensionLayer, state.originDimensionLayer, state.cornerRulerLayer, state.modifierLayer].forEach((layer) => {
@@ -199,6 +211,9 @@ export function createThreeScene(host: HTMLDivElement): ThreeState {
       });
     });
     state.needsRender = true;
+    // Setting the canvas size cleared it. A ResizeObserver callback runs after the animation callbacks and before paint, so waiting for the next animation frame would present
+    // one blank frame (the flicker when an inspector appears or goes): the scene is drawn again right here, through the same frame as the loop's.
+    state.renderNow?.();
   };
 
   const state: ThreeState = {

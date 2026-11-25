@@ -3469,8 +3469,9 @@ export function WorkplaneViewport({
 
     // The camera's glide brakes by the time since the last frame, not per frame (Discussion #1143).
     let lastFrameAt = performance.now();
-    const animate = () => {
-      state.animationId = window.requestAnimationFrame(animate);
+    // One frame of the loop. `state.renderNow` runs it outside the animation callback: a resize clears the canvas, and it is drawn again in the same task (see `resize` in
+    // viewportScene.ts), so a cleared canvas is never presented.
+    const frame = () => {
       const now = performance.now();
       const turning = stepCameraTurn(state, now);
       state.controls.dampingFactor = timedCameraDamping(now - lastFrameAt);
@@ -3554,6 +3555,11 @@ export function WorkplaneViewport({
       state.wasCameraMoving = controlsChanged;
       state.needsRender = false;
     };
+    const animate = () => {
+      state.animationId = window.requestAnimationFrame(animate);
+      frame();
+    };
+    state.renderNow = frame;
 
     animate();
     window.addEventListener("resize", state.resize);
