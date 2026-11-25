@@ -3,10 +3,6 @@ import { readAppPrefs } from "@/lib/appPrefs";
 import { normalizeCustomShortcuts } from "@/lib/customShortcuts";
 import { getLanguage } from "@/lib/i18n";
 import { normalizePrintMaterial, normalizeInfillPercent, normalizeWalls } from "@/lib/printEstimate";
-import { normalizeRibbonFold } from "@/lib/ribbonFold";
-import { normalizeRibbonHidden } from "@/lib/ribbonHidden";
-import { normalizeRibbonOrder } from "@/lib/ribbonOrder";
-import { normalizeRibbonToolOrder } from "@/lib/ribbonToolOrder";
 import { normalizeSectionCutFace } from "@/lib/sectionCaps";
 import { normalizeShapeColors } from "@/lib/shapeColors";
 import { normalizeSimpleModeChoice, resolveSimpleMode } from "@/lib/simpleMode";
@@ -21,7 +17,7 @@ import { normalizeViewCubePosition } from "@/lib/viewCubePosition";
  * host's "Export Preferences…". Read-only by construction: it reads `localStorage` through each preference's own normalizer and never writes (the
  * application settings are read through a storage view whose writes are dropped, because `readAppPrefs` seeds a missing store).
  *
- * Only the keys listed here are supported. Panel layout and window state (object list width/open/order, inspector cards/visibility, pinned menus, closed
+ * Only the keys listed here are supported. The classic ribbon layout (ribbonOrder/Hidden/Fold/ToolOrder) is not exported: the native app has no classic ribbon (Build 0082). Panel layout and window state (object list width/open/order, inspector cards/visibility, pinned menus, closed
  * shape sections), last-used tool memory (edge modifier amounts) and migration markers are deliberately not preferences in this sense.
  * The host adds the native side; the host's list of web keys is `PortablePreferences.exportedKeys`.
  */
@@ -71,10 +67,6 @@ export function preferencesSnapshot(): Record<string, unknown> {
     "layerling.appPrefs.v1": readAppPrefs(readOnlyStorage()),
     // The workspace defaults saved for new documents; null: none saved, the application defaults apply.
     "layerling.workspaceDefault.global": json("layerling.workspaceDefault.global", null),
-    "layerling.ribbonOrder": [...normalizeRibbonOrder(json("layerling.ribbonOrder", []))],
-    "layerling.ribbonHidden": [...normalizeRibbonHidden(json("layerling.ribbonHidden", []))].sort(),
-    "layerling.ribbonFold": normalizeRibbonFold(json("layerling.ribbonFold", {})),
-    "layerling.ribbonToolOrder": normalizeRibbonToolOrder(json("layerling.ribbonToolOrder", {})),
     "layerling.customShortcuts": normalizeCustomShortcuts(json("layerling.customShortcuts", {})),
     "layerling.viewScrollbars": raw("layerling.viewScrollbars") === "on",
     "layerling.touchHandleMode": isTouchHandleMode(raw("layerling.touchHandleMode")) ? raw("layerling.touchHandleMode") : "all",
