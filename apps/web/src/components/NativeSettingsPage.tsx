@@ -201,6 +201,7 @@ export function NativeSettingsPage({ bootstrap }: { bootstrap: SettingsBootstrap
         setOpenDocumentsIn(value);
         void hostHandler()?.postMessage({ type: "docopen.set", value });
       } : undefined}
+      onExportPreferences={scope === "app" ? () => void hostHandler()?.postMessage({ type: "preferences.export" }) : undefined}
       viewportBackgrounds={scope === "app" ? backgrounds : undefined}
       presentationLogo={scope === "app" ? logoPrefs : undefined}
       onPresentationLogoChange={scope === "app" ? (patch) => {

@@ -537,6 +537,7 @@ export function WorkspaceSettingsModal({
   onToolbarAppearanceChange,
   openDocumentsIn,
   onOpenDocumentsInChange,
+  onExportPreferences,
   viewportBackgrounds,
   presentationLogo,
   onPresentationLogoChange,
@@ -572,6 +573,8 @@ export function WorkspaceSettingsModal({
   /** Native app (Application Settings, Build 0077): whether new and opened documents get their own window or join the front window's tabs, kept by the host. */
   openDocumentsIn?: "window" | "tab";
   onOpenDocumentsInChange?: (value: "window" | "tab") => void;
+  /** Native Application Settings only (Build 0080): the host exports the application preferences to a file the user chooses. */
+  onExportPreferences?: () => void;
   /** Native app (Application Settings): the custom viewport background images by mode (an address the page can show, or null), and what to do about each. */
   viewportBackgrounds?: Record<"light" | "dark" | "presentation" | "logo", string | null>;
   /** Presentation Mode's Organization Logo preferences (native Application Settings): where the corner watermark sits and how opaque it is. */
@@ -1141,6 +1144,12 @@ export function WorkspaceSettingsModal({
                         </label>
                       ))}
                       <small style={{ opacity: 0.7 }}>Applies to New and to opening documents, and takes precedence over the macOS tabbing setting. Open in New Tab… (⌘T) and the tab bar's + button always open tabs. Changes nothing about windows already open.</small>
+                    </div>
+                  ) : null}
+                  {onExportPreferences ? (
+                    <div data-setting="export-preferences" style={{ display: "grid", gap: 6, justifyItems: "start" }}>
+                      <button type="button" data-action="export-preferences" onClick={onExportPreferences}>Export Preferences…</button>
+                      <small style={{ opacity: 0.7 }}>Saves a JSON file of your current application preferences (including defaults you have not changed). Nothing is changed.</small>
                     </div>
                   ) : null}
                   {onShowWelcomeChange ? (
