@@ -76,7 +76,7 @@ export function publishUiState(state: NativeUiState) {
 }
 
 /** Asks the host to open one of its windows. */
-export function requestHostAction(action: "openSettings" | "openDocumentSettings" | "enterPresentation") {
+export function requestHostAction(action: "openSettings" | "openDocumentSettings" | "enterPresentation" | "colorSessionBegin" | "colorSessionEnd") {
   const bridge = getHostBridge();
   if (!documentId || !bridge?.supportsUi()) return false;
   void bridge.sendUi("ui.action", { documentId, action });

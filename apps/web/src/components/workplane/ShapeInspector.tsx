@@ -1,6 +1,7 @@
 "use client";
 
 import { useFooterSnapSlot } from "@/lib/footerSnap";
+import { announceColorSession, blurEndsSession, createPickerSession, subscribeColorPanelClosed, type PickerSession } from "@/lib/colorPickerSession";
 import { displayY, displayYTurn, insideZ, insideZTurn } from "@/lib/displayAxes";
 import { GuideHelpLink } from "@/components/GuideHelpLink";
 import { SnapGridMenuItems } from "@/components/workplane/SnapGridMenu";
@@ -8585,6 +8586,26 @@ function useInteractionHold(onInteractionActiveChange?: (active: boolean) => voi
 }
 
 /**
+ * One colour-picker session (Build 0090, lib/colorPickerSession.ts): the interaction is held from the first colour event (or the focus) until the session ends,
+ * and the session ends when the host reports the native Colors panel closed, or when the input loses focus to something else on the page.
+ */
+function useColorPickerSession(inputRef: { current: HTMLInputElement | null }, onInteractionActiveChange?: (active: boolean) => void) {
+  const holdInteraction = useInteractionHold(onInteractionActiveChange);
+  const sessionRef = useRef<PickerSession | null>(null);
+  if (!sessionRef.current) sessionRef.current = createPickerSession(holdInteraction, announceColorSession);
+  const session = sessionRef.current;
+  useEffect(() => subscribeColorPanelClosed(() => {
+    // The host closed the picker's side of it: the input has nothing more to say, so it does not keep the keyboard either.
+    if (session.end()) inputRef.current?.blur();
+  }), [session, inputRef]);
+  useEffect(() => () => { session.end(); }, [session]);
+  const blurred = useCallback(() => {
+    if (blurEndsSession()) session.end();
+  }, [session]);
+  return { session, begin: session.begin, blurred };
+}
+
+/**
  * Das Feld fuer eine eigene Farbe. Es bleibt dasselbe Element, wenn sich die
  * Farbe aendert - frueher wurde es dabei ausgetauscht, waehrend es noch den
  * Fokus hatte, und eine zweite eigene Farbe kam gar nicht mehr an.
@@ -8599,7 +8620,7 @@ function CustomColorInput({ color, disabled, onCommit, onInteractionActiveChange
   onInteractionActiveChange?: (active: boolean) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const holdInteraction = useInteractionHold(onInteractionActiveChange);
+  const { session, begin, blurred } = useColorPickerSession(inputRef, onInteractionActiveChange);
   const commitRef = useRef(onCommit);
   commitRef.current = onCommit;
   useEffect(() => {
@@ -8609,13 +8630,14 @@ function CustomColorInput({ color, disabled, onCommit, onInteractionActiveChange
   useEffect(() => {
     const input = inputRef.current;
     if (!input) return;
-    // React's color-input onChange follows the native input event and fires for
-    // every movement in the picker. Commit only the native change event, which
-    // fires after the user finishes choosing, so dragging stays responsive.
-    const commit = () => commitRef.current(input.value);
+    // WebKit's native picker fires `change` with every movement (Chrome only at the end): each one is an interactive preview, all of them inside one session.
+    const commit = () => {
+      session.begin();
+      commitRef.current(input.value);
+    };
     input.addEventListener("change", commit);
     return () => input.removeEventListener("change", commit);
-  }, []);
+  }, [session]);
   return (
     <input
       ref={inputRef}
@@ -8625,21 +8647,18 @@ function CustomColorInput({ color, disabled, onCommit, onInteractionActiveChange
       aria-label={ariaLabel}
       defaultValue={color}
       disabled={disabled}
-      onFocus={() => holdInteraction(true)}
-      onBlur={() => holdInteraction(false)}
+      onFocus={begin}
+      onBlur={blurred}
     />
   );
 }
 
 /**
- * The Solid swatch as a colour button (Build 0034): a click on it opens WebKit's own macOS colour popover next to the swatch.
- *
- * WebKit on macOS anchors that popover to the colour input as if the input's top edge were measured up from the bottom of the web view, so an input near the
- * top of the window (the swatch) gets a popover near the bottom (measured in Build 0034: popover bottom = view bottom + input top + input height). The swatch itself
- * therefore only takes the click; the real, invisible colour input is moved, for the click, to the mirrored spot (top = view height - swatch bottom) where WebKit
- * then draws the popover against the swatch, and parked off screen again when the popover closes. The input must stay hit-testable (with pointer-events: none
- * WebKit anchors it elsewhere). The click runs inside the user's own click, so WebKit's user-gesture rule is met. If WebKit ever anchors correctly, only `open`
- * changes: set the input's top to the swatch's own.
+ * The Solid swatch as a colour button (Build 0033, positioning corrected in Build 0090): the real, invisible colour input lies over the swatch, so a click on it is a
+ * genuine click on the colour input and WebKit opens its own macOS colour popover right there, anchored to the swatch, where the system puts it (the standard way).
+ * Build 0034 had moved the input to a mirrored spot because WebKit then anchored the popover as if the input's top were measured up from the bottom of the web view;
+ * current WebKit anchors a plain input correctly (probed in a bare WKWebView, Build 0090), so the workaround put the popover in the wrong place and is gone.
+ * The rest of the tile still selects Solid. The colour card's Custom button and the other colour inputs are unchanged. See `useColorPickerSession` for the session.
  */
 function SwatchColorPicker({ color, disabled, title, ariaLabel, onCommit, onInteractionActiveChange }: {
   color: string;
@@ -8649,17 +8668,10 @@ function SwatchColorPicker({ color, disabled, title, ariaLabel, onCommit, onInte
   onCommit: (color: string) => void;
   onInteractionActiveChange?: (active: boolean) => void;
 }) {
-  const swatchRef = useRef<HTMLSpanElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const holdInteraction = useInteractionHold(onInteractionActiveChange);
+  const { session, begin, blurred } = useColorPickerSession(inputRef, onInteractionActiveChange);
   const commitRef = useRef(onCommit);
   commitRef.current = onCommit;
-  const park = useCallback(() => {
-    const input = inputRef.current;
-    if (!input) return;
-    input.style.left = "-100px";
-    input.style.top = "0px";
-  }, []);
   useEffect(() => {
     const input = inputRef.current;
     if (input && input.value.toLowerCase() !== color.toLowerCase()) input.value = color;
@@ -8667,58 +8679,26 @@ function SwatchColorPicker({ color, disabled, title, ariaLabel, onCommit, onInte
   useEffect(() => {
     const input = inputRef.current;
     if (!input) return;
-    // As the Custom field: only the native change event (the user is done choosing) commits, so dragging in the picker stays light.
-    const commit = () => commitRef.current(input.value);
+    // WebKit's native picker fires `change` with every movement (Chrome only at the end): each one is an interactive preview, all of them inside one session.
+    const commit = () => {
+      session.begin();
+      commitRef.current(input.value);
+    };
     input.addEventListener("change", commit);
     return () => input.removeEventListener("change", commit);
-  }, []);
-  const open = () => {
-    const swatch = swatchRef.current;
-    const input = inputRef.current;
-    if (!swatch || !input || disabled) return;
-    const box = swatch.getBoundingClientRect();
-    input.style.left = `${box.left}px`;
-    input.style.top = `${window.innerHeight - box.bottom}px`;
-    input.style.width = `${box.width}px`;
-    input.style.height = `${box.height}px`;
-    // Lay the moved input out NOW: WebKit reads its rect at the click, and without this it still sees the parked position (Build 0034: no popover in view).
-    input.getBoundingClientRect();
-    input.focus({ preventScroll: true });
-    input.click();
-  };
+  }, [session]);
   return (
-    <>
-      <span
-        ref={swatchRef}
-        className="solid-swatch-picker"
-        role="button"
-        tabIndex={disabled ? -1 : 0}
-        aria-disabled={disabled || undefined}
-        title={title}
-        aria-label={ariaLabel}
-        onClick={open}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            open();
-          }
-        }}
-      />
-      <input
-        ref={inputRef}
-        type="color"
-        className="solid-swatch-input"
-        tabIndex={-1}
-        aria-hidden="true"
-        defaultValue={color}
-        disabled={disabled}
-        onFocus={() => holdInteraction(true)}
-        onBlur={() => {
-          holdInteraction(false);
-          park();
-        }}
-      />
-    </>
+    <input
+      ref={inputRef}
+      type="color"
+      className="solid-swatch-picker"
+      title={title}
+      aria-label={ariaLabel}
+      defaultValue={color}
+      disabled={disabled}
+      onFocus={begin}
+      onBlur={blurred}
+    />
   );
 }
 
