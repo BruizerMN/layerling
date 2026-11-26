@@ -9100,7 +9100,7 @@ export function WorkplaneViewport({
       "workplane.place": !splitActive, "workplane.lookOnto": true,
       "workplane.faceVisible": faceWorkplaneForMenu && Boolean(onToggleWorkplaneHidden), "workplane.reset": faceWorkplaneForMenu,
       "measure.tape": !splitActive, "measure.cornerRuler": !splitActive, "measure.protractor": !splitActive, "measure.section": true,
-      "measure.note": Boolean(onNoteTool && onToggleNotes),
+      "measure.note": Boolean(onNoteTool && onToggleNotes), "view.notes": noteCount > 0,
       "measure.tape.add": !splitActive, "measure.tape.move": !splitActive, "measure.tape.delete": !splitActive, "measure.tape.wholeEdges": true,
       "measure.tape.visible": tapeModel.segments.length > 0, "measure.tape.clear": tapeModel.segments.length > 0 || tapeModel.points.length > 0,
       "measure.protractor.points": !splitActive, "measure.protractor.faces": !splitActive, "measure.protractor.clear": protractorOpen,
@@ -9112,9 +9112,9 @@ export function WorkplaneViewport({
       "measure.tape": tapeMode || tapeMoveMode || tapeDeleteMode, "measure.cornerRuler": cornerRulerMode, "measure.protractor": protractorOpen,
       "measure.tape.add": tapeMode, "measure.tape.move": tapeMoveMode, "measure.tape.delete": tapeDeleteMode, "measure.tape.wholeEdges": tapeWholeEdges, "measure.tape.visible": !tapeModel.hidden,
       "measure.protractor.points": protractorOpen && protractorKind === "points", "measure.protractor.faces": protractorOpen && protractorKind === "faces",
-      "measure.section": sectionViewOpen || sectionSettings.enabled, "measure.note": noteMode,
+      "measure.section": sectionViewOpen || sectionSettings.enabled, "measure.note": noteMode, "view.notes": notesVisible,
     },
-  }), [tapeMode, tapeMoveMode, tapeDeleteMode, tapeWholeEdges, tapeModel.hidden, tapeModel.segments.length, tapeModel.points.length, protractorKind, cubeRect, splitActive, faceWorkplaneForMenu, onToggleWorkplaneHidden, onNoteTool, onToggleNotes, orthographicView, viewScrollbarsOn, workplaneLayerHidden, workplaneMode, workplaneHidden, tapeToolsOpen, cornerRulerMode, protractorOpen, sectionViewOpen, sectionSettings.enabled, noteMode]);
+  }), [noteCount, notesVisible, tapeMode, tapeMoveMode, tapeDeleteMode, tapeWholeEdges, tapeModel.hidden, tapeModel.segments.length, tapeModel.points.length, protractorKind, cubeRect, splitActive, faceWorkplaneForMenu, onToggleWorkplaneHidden, onNoteTool, onToggleNotes, orthographicView, viewScrollbarsOn, workplaneLayerHidden, workplaneMode, workplaneHidden, tapeToolsOpen, cornerRulerMode, protractorOpen, sectionViewOpen, sectionSettings.enabled, noteMode]);
   useEffect(() => { publishViewBarState(viewBarState); }, [viewBarState]);
   useEffect(() => () => publishViewBarState(null), []);
 

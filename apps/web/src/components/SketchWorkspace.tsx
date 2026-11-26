@@ -2428,10 +2428,10 @@ export function SketchWorkspace({
     enabled: {
       "camera.home": true, "camera.focusSelection": true, "camera.zoomIn": true, "camera.zoomOut": true,
       "measure.tape": true, "sketch.measurements": true, "sketch.partEdges": Boolean(onToggleReferenceEdges),
-      "measure.note": Boolean(onNoteTool && onToggleNotes),
+      "measure.note": Boolean(onNoteTool && onToggleNotes), "view.notes": noteCount > 0,
     },
-    checked: { "measure.tape": tool === "measure", "sketch.measurements": showMeasurements, "sketch.partEdges": Boolean(showReferenceEdges), "measure.note": noteMode },
-  }), [onToggleReferenceEdges, onNoteTool, onToggleNotes, tool, showMeasurements, showReferenceEdges, noteMode]);
+    checked: { "view.notes": notesVisible, "measure.tape": tool === "measure", "sketch.measurements": showMeasurements, "sketch.partEdges": Boolean(showReferenceEdges), "measure.note": noteMode },
+  }), [noteCount, notesVisible, onToggleReferenceEdges, onNoteTool, onToggleNotes, tool, showMeasurements, showReferenceEdges, noteMode]);
   useEffect(() => { publishViewBarState(sketchViewBarState); }, [sketchViewBarState]);
   useEffect(() => () => publishViewBarState(null), []);
 

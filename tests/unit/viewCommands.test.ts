@@ -169,3 +169,26 @@ describe("Native Delete All Measurements confirmation (Build 0100)", () => {
   });
 });
 
+describe("Native Notes (Build 0101)", () => {
+  it("the view bar state carries the note tool's state and the visibility switch, in 3D and in Sketch", () => {
+    const viewport = readFileSync("apps/web/src/components/WorkplaneViewport.tsx", "utf8");
+    expect(viewport).toContain('"measure.note": Boolean(onNoteTool && onToggleNotes), "view.notes": noteCount > 0,');
+    expect(viewport).toContain('"measure.note": noteMode, "view.notes": notesVisible,');
+    const sketch = readFileSync("apps/web/src/components/SketchWorkspace.tsx", "utf8");
+    expect(sketch).toContain('"view.notes": noteCount > 0,');
+    expect(sketch).toContain('checked: { "view.notes": notesVisible,');
+    expect(sketch).toContain('case "measure.note": onNoteTool?.(); break;');
+  });
+
+  it("the commands the Notes popover sends are the existing ones: the note tool (shared with the bar and the menu) and the editor's own visibility toggle; one-shot placement and Escape are untouched", () => {
+    expect(isViewCommand("measure.note")).toBe(true);
+    expect((UI_COMMANDS as readonly string[]).includes("view.notes")).toBe(true);
+    const toolbar = readFileSync("apps/web/src/components/workplane/SecondaryToolbar.tsx", "utf8");
+    expect(toolbar).toContain('case "view.notes": onToggleNotes(); break;');
+    const viewport = readFileSync("apps/web/src/components/WorkplaneViewport.tsx", "utf8");
+    expect(viewport).toContain("onNoteModeChange?.(false);");   // one click places one note, then the tool is put down
+    const editor = readFileSync("apps/web/src/components/LayerlingEditor.tsx", "utf8");
+    expect(editor).toContain("if (noteMode) {\n          setNoteMode(false);");   // Escape puts the armed note tool down
+  });
+});
+

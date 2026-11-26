@@ -32,11 +32,17 @@ export function isViewCommand(command: string): command is ViewCommand {
   return (VIEW_COMMANDS as readonly string[]).includes(command);
 }
 
+/**
+ * Build 0101: the keys of `ViewBarState.enabled` and `.checked`: every View Bar command, plus `view.notes` (the existing visibility toggle, "Show Notes and Points": its availability and its
+ * state are reported here so the native Notes popover can show them; the command itself is the editor's existing `view.notes`).
+ */
+export type ViewBarKey = ViewCommand | "view.notes";
+
 /** What the menus need: for the view that is mounted, which commands can run now and which are on (checkmarks). A command not listed is not available. */
 export interface ViewBarState {
   kind: "geometry" | "sketch";
-  enabled: Partial<Record<ViewCommand, boolean>>;
-  checked: Partial<Record<ViewCommand, boolean>>;
+  enabled: Partial<Record<ViewBarKey, boolean>>;
+  checked: Partial<Record<ViewBarKey, boolean>>;
   /**
    * Build 0096: where the view cube is in the page, in CSS points from the page's top-left corner (which is the web view's own), or null while it is not shown (Presentation Mode, Sketch).
    * The host pins its camera strip under it. It changes only when the layout does, never while the camera turns (the rectangle is the cube's box, not its rotating faces).
