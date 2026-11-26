@@ -15,6 +15,8 @@ import { lockBadgeSpot, rotateHandleSpots } from "@/lib/sketchHandleSpots";
 import { SKETCH_DOUBLE_CLICK_PIXELS, useSketchViewSlide } from "@/lib/useSketchViewSlide";
 import { ToolbarConstructionLineIcon, ToolbarNoteIcon } from "@/components/toolbarIcons";
 import { CAMERA_BAR_PANEL, CameraBarHandle, useCameraBarPeek } from "@/components/workplane/CameraBarHandle";
+import { registerViewCommands, type ViewBarState, type ViewCommand } from "@/lib/viewCommands";
+import { publishViewBarState } from "@/lib/host/nativeUi";
 import { constructionCrossings } from "@/lib/sketchConstruction";
 import { movingSelectionCentre, outlineSideMiddles, selectionSnapTargets, sketchSnapPoints, snappedSelectionTarget } from "@/lib/sketchSnapPoints";
 import { openEndPoints } from "@/lib/sketchPointJoin";
@@ -2375,6 +2377,38 @@ export function SketchWorkspace({
         }
       : {}),
   } as CSSProperties;
+
+  // --- Build 0095: the host's View Bar menu in Sketch mode. Each command runs the function its sketch view bar button runs (Home, Focus, Zoom, Measure, Show measurements, Show part
+  // edges, Note tool); the state says which are available and which are on. Nothing here is saved in the document.
+  const sketchViewCommandRunRef = useRef<(command: ViewCommand) => void>(() => undefined);
+  sketchViewCommandRunRef.current = (command) => {
+    switch (command) {
+      case "camera.home": resetView(); break;
+      case "camera.focusSelection": if (!focusSelection()) resetView(); break;   // as F and the bar's button do
+      case "camera.zoomIn": zoomByButton(ZOOM_STEP_IN); break;
+      case "camera.zoomOut": zoomByButton(ZOOM_STEP_OUT); break;
+      case "measure.tape": onMeasureTool(); break;
+      case "sketch.measurements": toggleMeasurements(); break;
+      case "sketch.partEdges": onToggleReferenceEdges?.(); break;
+      case "measure.note": onNoteTool?.(); break;
+      default: break;
+    }
+  };
+  useEffect(() => {
+    registerViewCommands({ kind: "sketch", run: (command) => sketchViewCommandRunRef.current(command) });
+    return () => registerViewCommands(null);
+  }, []);
+  const sketchViewBarState = useMemo<ViewBarState>(() => ({
+    kind: "sketch",
+    enabled: {
+      "camera.home": true, "camera.focusSelection": true, "camera.zoomIn": true, "camera.zoomOut": true,
+      "measure.tape": true, "sketch.measurements": true, "sketch.partEdges": Boolean(onToggleReferenceEdges),
+      "measure.note": Boolean(onNoteTool && onToggleNotes),
+    },
+    checked: { "measure.tape": tool === "measure", "sketch.measurements": showMeasurements, "sketch.partEdges": Boolean(showReferenceEdges), "measure.note": noteMode },
+  }), [onToggleReferenceEdges, onNoteTool, onToggleNotes, tool, showMeasurements, showReferenceEdges, noteMode]);
+  useEffect(() => { publishViewBarState(sketchViewBarState); }, [sketchViewBarState]);
+  useEffect(() => () => publishViewBarState(null), []);
 
   return (
     <main className="sketch-workspace-stage" style={sketchColorStyle}>

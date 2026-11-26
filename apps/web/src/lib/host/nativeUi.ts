@@ -1,5 +1,6 @@
 import { getHostBridge, subscribeToHostBridge, type HostBridge } from "@/lib/host/hostBridge";
 import type { HostEvent, UiCommand } from "@/lib/host/hostProtocol";
+import type { ViewBarState } from "@/lib/viewCommands";
 
 /**
  * The page's side of the native shell's menus and Settings windows (capability `ui.v1`, hostProtocol.ts). Nothing here does anything in a browser:
@@ -23,12 +24,15 @@ export type NativeUiState = {
   standby?: boolean;
   edit?: { undo: boolean; redo: boolean; cut: boolean; copy: boolean; paste: boolean; duplicate: boolean; delete: boolean; history: boolean; historyActive: boolean } | null;
   view?: { hiddenCount: number; selectionHidden: boolean; hasSelection: boolean; outlinerOpen: boolean; noteCount: number; notesVisible: boolean; overhangsVisible: boolean; overhangAngle: number } | null;
+  /** Build 0095: which View Bar commands the mounted view (3D or Sketch) can run now and which are on; the host's "View Bar" menu validates and checks from it. */
+  viewBar?: ViewBarState | null;
   file?: { import: boolean; export: boolean; attachments: boolean; /** Build 0070: Import Layerling Files can run now (3D, history view closed). */ insertDesigns?: boolean } | null;
 };
 
 let documentId: string | null = null;
 let lastState = "";
 let latestUiState: NativeUiState | null = null;
+let latestViewBar: ViewBarState | null = null;
 const uiStateListeners = new Set<() => void>();
 
 /** The document this page runs (null before the editor says which). */
@@ -62,7 +66,18 @@ export function nativeUiActive(): boolean {
 }
 
 /** Reports what the menus show (the mode checkmark, focus mode, ribbon pin). Only when it changed. */
-export function publishUiState(state: NativeUiState) {
+/**
+ * The mounted view (3D viewport or sketch workspace) reports its View Bar commands (Build 0095). They are merged into the same `ui.state` the toolbar sends, so the host keeps one
+ * state per document and the existing change check applies; null when the view goes away.
+ */
+export function publishViewBarState(state: ViewBarState | null) {
+  if (JSON.stringify(latestViewBar) === JSON.stringify(state)) return;
+  latestViewBar = state;
+  if (latestUiState) publishUiState(latestUiState);
+}
+
+export function publishUiState(incoming: NativeUiState) {
+  const state: NativeUiState = { ...incoming, viewBar: latestViewBar };
   const key = JSON.stringify(state);
   if (JSON.stringify(latestUiState) !== key) {
     latestUiState = state;

@@ -43,6 +43,9 @@ import { ViewScrollbars } from "@/components/workplane/ViewScrollbars";
 import { ViewScrollbarsIcon } from "@/components/ViewScrollbarsIcon";
 import { readViewScrollbars, storeViewScrollbars } from "@/lib/viewScroll";
 import { openSecondViewWindow, SecondViewWindow, useSecondViewSupported } from "@/components/workplane/SecondViewWindow";
+import { isNativeAppearance } from "@/lib/appTheme";
+import { registerViewCommands, type ViewBarState, type ViewCommand } from "@/lib/viewCommands";
+import { publishViewBarState } from "@/lib/host/nativeUi";
 import { starSettingsForSize } from "@/lib/starGeometry";
 import { carriedOntoFace } from "@/lib/carryOntoFace";
 import { keepsProportionsForUpdate, keepsProportionsOnAxis } from "@/lib/keepProportions";
@@ -1833,7 +1836,8 @@ export function WorkplaneViewport({
   const [orthographicView, setOrthographicView] = useState(false);
   /** The window of the second view, while it is open. */
   const [secondViewWindow, setSecondViewWindow] = useState<Window | null>(null);
-  const secondViewSupported = useSecondViewSupported();
+  // Build 0095: Second View is retired from the Mac app (the browser edition keeps it): its button is not offered there.
+  const secondViewSupported = useSecondViewSupported() && !isNativeAppearance();
   // Hides the whole plate - grid, labels and any face workplane - for a clear
   // look at the underside. Only the view changes: shapes still land on it.
   // Starts from what this window last showed (lib/workplaneDisplay.ts: the footer's button reads it too), so leaving and re-entering Sketch mode keeps it.
@@ -8988,6 +8992,58 @@ export function WorkplaneViewport({
           onSnapDockedChange={setSelectionSnapDocked}
         />
       ) : null;
+
+  // --- Build 0095: the host's View Bar menu. Each command runs the function its view bar button runs; the state says which are available and which are on.
+  const viewCommandRunRef = useRef<(command: ViewCommand) => void>(() => undefined);
+  viewCommandRunRef.current = (command) => {
+    // Tools that the bar's own button disables while the Split tool is active.
+    if (splitActiveRef.current && (command === "workplane.place" || command === "measure.tape" || command === "measure.cornerRuler" || command === "measure.protractor")) return;
+    // The tool panels (tape, protractor, section) are drawn inside the bar: a folded bar is unfolded first, so choosing one from the menu shows its panel.
+    if ((command === "measure.tape" || command === "measure.protractor" || command === "measure.section") && cameraControlsCollapsed) setCameraControlsCollapsed(false);
+    switch (command) {
+      case "camera.home": resetView(); break;
+      case "camera.focusSelection": if (!focusSelection()) resetView(); break;   // as F and the bar's button do: nothing selected means the whole scene
+      case "camera.zoomIn": zoomCamera(ZOOM_STEP_IN); break;
+      case "camera.zoomOut": zoomCamera(ZOOM_STEP_OUT); break;
+      case "camera.projection": toggleProjection(); break;
+      case "camera.scrollbars": toggleViewScrollbars(); break;
+      case "workplane.visible": setWorkplaneLayerHidden((current) => !current); break;
+      case "workplane.place": togglePlacementWorkplane(); break;
+      case "workplane.lookOnto": lookOntoWorkplane(); break;
+      case "workplane.faceVisible": if (!placementWorkplaneIsBase(placementWorkplane)) onToggleWorkplaneHidden?.(); break;
+      case "workplane.reset": if (!placementWorkplaneIsBase(placementWorkplane)) resetPlacementWorkplane(); break;
+      case "measure.tape": toggleTapeTools(); break;
+      case "measure.cornerRuler": toggleCornerRulerTool(); break;
+      case "measure.protractor": toggleProtractor(); break;
+      case "measure.section": toggleSectionView(); break;
+      case "measure.note": onNoteTool?.(); break;
+      default: break;
+    }
+  };
+  useEffect(() => {
+    registerViewCommands({ kind: "geometry", run: (command) => viewCommandRunRef.current(command) });
+    return () => registerViewCommands(null);
+  }, []);
+  const faceWorkplaneForMenu = !placementWorkplaneIsBase(placementWorkplane);
+  const viewBarState = useMemo<ViewBarState>(() => ({
+    kind: "geometry",
+    enabled: {
+      "camera.home": true, "camera.focusSelection": true, "camera.zoomIn": true, "camera.zoomOut": true,
+      "camera.projection": true, "camera.scrollbars": true, "workplane.visible": true,
+      "workplane.place": !splitActive, "workplane.lookOnto": true,
+      "workplane.faceVisible": faceWorkplaneForMenu && Boolean(onToggleWorkplaneHidden), "workplane.reset": faceWorkplaneForMenu,
+      "measure.tape": !splitActive, "measure.cornerRuler": !splitActive, "measure.protractor": !splitActive, "measure.section": true,
+      "measure.note": Boolean(onNoteTool && onToggleNotes),
+    },
+    checked: {
+      "camera.projection": orthographicView, "camera.scrollbars": viewScrollbarsOn, "workplane.visible": !workplaneLayerHidden,
+      "workplane.place": workplaneMode, "workplane.faceVisible": !workplaneHidden,
+      "measure.tape": tapeToolsOpen, "measure.cornerRuler": cornerRulerMode, "measure.protractor": protractorOpen,
+      "measure.section": sectionViewOpen || sectionSettings.enabled, "measure.note": noteMode,
+    },
+  }), [splitActive, faceWorkplaneForMenu, onToggleWorkplaneHidden, onNoteTool, onToggleNotes, orthographicView, viewScrollbarsOn, workplaneLayerHidden, workplaneMode, workplaneHidden, tapeToolsOpen, cornerRulerMode, protractorOpen, sectionViewOpen, sectionSettings.enabled, noteMode]);
+  useEffect(() => { publishViewBarState(viewBarState); }, [viewBarState]);
+  useEffect(() => () => publishViewBarState(null), []);
 
   return (
     <main className="workplane-stage">

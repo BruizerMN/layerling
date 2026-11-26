@@ -1,5 +1,6 @@
 "use client";
 
+import { isViewCommand, runViewCommand } from "@/lib/viewCommands";
 import { GuideHelpLink } from "@/components/GuideHelpLink";
 import { RibbonIconOr, RibbonToolIcon } from "@/components/RibbonIcon";
 import { ribbonIconKey } from "@/lib/host/ribbonIcons";
@@ -1028,6 +1029,8 @@ export function SecondaryToolbar({
       case "whatsNew": onWhatsNew?.(); break;
       case "shortcuts": onShortcuts(); break;
       case "interactiveHelp": onInteractiveHelp(); break;
+      // Build 0095: the host's View Bar menu. The mounted view (3D viewport or sketch workspace) runs the very function its view bar button runs.
+      default: if (isViewCommand(command)) runViewCommand(command); break;
       case "settings.saveStartView":
       case "settings.resetStartView":
       case "settings.makeFitTest":
