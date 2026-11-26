@@ -1844,6 +1844,8 @@ export function WorkplaneViewport({
   const [workplaneLayerHidden, setWorkplaneLayerHidden] = useState(() => !getWorkplaneVisible());
   // Q hides the sizes and distances around the selection for a while, so a part being moved is easy to see (#981).
   const [dimensionsHidden, setDimensionsHidden] = useState(false);
+  // Build 0102: bumped when a saved-view slot was written, so the published slot flags are read again (storage is not reactive).
+  const [savedViewsTick, setSavedViewsTick] = useState(0);
   const dimensionsHiddenRef = useRef(dimensionsHidden);
   const showDimensions = useCallback((visible: boolean) => {
     dimensionsHiddenRef.current = !visible;
@@ -3667,6 +3669,7 @@ export function WorkplaneViewport({
 
   const { saveView, showSavedView } = useDesignViews({
     threeRef, projectIdRef, viewCubeRef, designViewRestoredRef, orthographicView, setOrthographicView, onNotice,
+    onSavedViewsChanged: () => setSavedViewsTick((tick) => tick + 1),
   });
 
   // Native app: a custom image behind the model, chosen by the appearance (Light / Dark; Classic has none) from the host's list; follows changes at once, no reload.
@@ -9026,6 +9029,11 @@ export function WorkplaneViewport({
       case "camera.zoomOut": zoomCamera(ZOOM_STEP_OUT); break;
       case "camera.projection": toggleProjection(); break;
       case "camera.scrollbars": toggleViewScrollbars(); break;
+      // Build 0102: Q's toggle with its notice (view state only: not saved, not an undo step)
+      case "camera.dimensions": { const visible = dimensionsHiddenRef.current; showDimensions(visible); onNotice?.(t(visible ? "camera.dimensionsShown" : "camera.dimensionsHidden")); break; }
+      // Build 0102: the saved views, through the functions the keys use (saving writes the document's slot, never the undo history)
+      case "savedView.go.1": case "savedView.go.2": case "savedView.go.3": case "savedView.go.4": showSavedView(Number(command.slice(-1)) - 1); break;
+      case "savedView.save.1": case "savedView.save.2": case "savedView.save.3": case "savedView.save.4": saveView(Number(command.slice(-1)) - 1); break;
       case "workplane.visible": setWorkplaneLayerHidden((current) => !current); break;
       case "workplane.place": togglePlacementWorkplane(); break;
       case "workplane.lookOnto": lookOntoWorkplane(); break;
@@ -9092,11 +9100,18 @@ export function WorkplaneViewport({
       document.removeEventListener("transitionend", schedule, true);
     };
   }, []);
+  // Build 0102: which of the four slots hold a view ("savedView.go.N" is enabled then), read again after every save.
+  const savedViewFlags = useMemo(() => {
+    const views = readSavedViews(projectIdRef.current);
+    return { "savedView.go.1": Boolean(views[0]), "savedView.go.2": Boolean(views[1]), "savedView.go.3": Boolean(views[2]), "savedView.go.4": Boolean(views[3]) } as const;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedViewsTick, projectId]);
   const viewBarState = useMemo<ViewBarState>(() => ({
     kind: "geometry",
     enabled: {
       "camera.home": true, "camera.focusSelection": true, "camera.zoomIn": true, "camera.zoomOut": true,
-      "camera.projection": true, "camera.scrollbars": true, "workplane.visible": true,
+      "camera.projection": true, "camera.scrollbars": true, "workplane.visible": true, "camera.dimensions": true,
+      ...savedViewFlags, "savedView.save.1": true, "savedView.save.2": true, "savedView.save.3": true, "savedView.save.4": true,
       "workplane.place": !splitActive, "workplane.lookOnto": true,
       "workplane.faceVisible": faceWorkplaneForMenu && Boolean(onToggleWorkplaneHidden), "workplane.reset": faceWorkplaneForMenu,
       "measure.tape": !splitActive, "measure.cornerRuler": !splitActive, "measure.protractor": !splitActive, "measure.section": true,
@@ -9107,14 +9122,14 @@ export function WorkplaneViewport({
     },
     cube: cubeRect,
     checked: {
-      "camera.projection": orthographicView, "camera.scrollbars": viewScrollbarsOn, "workplane.visible": !workplaneLayerHidden,
+      "camera.projection": orthographicView, "camera.scrollbars": viewScrollbarsOn, "workplane.visible": !workplaneLayerHidden, "camera.dimensions": !dimensionsHidden,
       "workplane.place": workplaneMode, "workplane.faceVisible": !workplaneHidden,
       "measure.tape": tapeMode || tapeMoveMode || tapeDeleteMode, "measure.cornerRuler": cornerRulerMode, "measure.protractor": protractorOpen,
       "measure.tape.add": tapeMode, "measure.tape.move": tapeMoveMode, "measure.tape.delete": tapeDeleteMode, "measure.tape.wholeEdges": tapeWholeEdges, "measure.tape.visible": !tapeModel.hidden,
       "measure.protractor.points": protractorOpen && protractorKind === "points", "measure.protractor.faces": protractorOpen && protractorKind === "faces",
       "measure.section": sectionViewOpen || sectionSettings.enabled, "measure.note": noteMode, "view.notes": notesVisible,
     },
-  }), [noteCount, notesVisible, tapeMode, tapeMoveMode, tapeDeleteMode, tapeWholeEdges, tapeModel.hidden, tapeModel.segments.length, tapeModel.points.length, protractorKind, cubeRect, splitActive, faceWorkplaneForMenu, onToggleWorkplaneHidden, onNoteTool, onToggleNotes, orthographicView, viewScrollbarsOn, workplaneLayerHidden, workplaneMode, workplaneHidden, tapeToolsOpen, cornerRulerMode, protractorOpen, sectionViewOpen, sectionSettings.enabled, noteMode]);
+  }), [dimensionsHidden, savedViewFlags, noteCount, notesVisible, tapeMode, tapeMoveMode, tapeDeleteMode, tapeWholeEdges, tapeModel.hidden, tapeModel.segments.length, tapeModel.points.length, protractorKind, cubeRect, splitActive, faceWorkplaneForMenu, onToggleWorkplaneHidden, onNoteTool, onToggleNotes, orthographicView, viewScrollbarsOn, workplaneLayerHidden, workplaneMode, workplaneHidden, tapeToolsOpen, cornerRulerMode, protractorOpen, sectionViewOpen, sectionSettings.enabled, noteMode]);
   useEffect(() => { publishViewBarState(viewBarState); }, [viewBarState]);
   useEffect(() => () => publishViewBarState(null), []);
 

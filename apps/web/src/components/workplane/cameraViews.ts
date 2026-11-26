@@ -79,6 +79,8 @@ type DesignViewOptions = {
   orthographicView: boolean;
   setOrthographicView: (orthographic: boolean) => void;
   onNotice?: (message: string) => void;
+  /** Build 0102: a slot was just saved (by key, MCP or the host's Display popover), so what the slots hold changed. */
+  onSavedViewsChanged?: () => void;
 };
 
 /**
@@ -152,6 +154,7 @@ export function useDesignViews(options: DesignViewOptions) {
     const state = threeRef.current;
     if (!state) return false;
     onNotice?.(saveViewInSlot(projectIdRef.current, state, slot));
+    optionsRef.current.onSavedViewsChanged?.();
     return true;
   }, []);
 

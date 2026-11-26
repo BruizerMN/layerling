@@ -192,3 +192,35 @@ describe("Native Notes (Build 0101)", () => {
   });
 });
 
+
+describe("Native Display popover (Build 0102)", () => {
+  it("the dimensions toggle and the eight saved-view commands are known ui commands", () => {
+    for (const command of ["camera.dimensions", "savedView.go.1", "savedView.go.4", "savedView.save.1", "savedView.save.4"]) {
+      expect(isViewCommand(command)).toBe(true);
+      expect((UI_COMMANDS as readonly string[]).includes(command)).toBe(true);
+    }
+    expect(isViewCommand("savedView.go.5")).toBe(false);
+  });
+
+  it("each command runs the function the key runs: Q's toggle with its notice, the saved-view functions of the keys, and a save refreshes the published slot flags", () => {
+    const viewport = readFileSync("apps/web/src/components/WorkplaneViewport.tsx", "utf8");
+    expect(viewport).toContain('case "camera.dimensions": { const visible = dimensionsHiddenRef.current; showDimensions(visible); onNotice?.(t(visible ? "camera.dimensionsShown" : "camera.dimensionsHidden")); break; }');
+    expect(viewport).toContain("showSavedView(Number(command.slice(-1)) - 1)");
+    expect(viewport).toContain("saveView(Number(command.slice(-1)) - 1)");
+    // the keys call the same two functions
+    expect(viewport).toContain("if (savedView.save) saveView(savedView.slot);");
+    expect(viewport).toContain("else showSavedView(savedView.slot);");
+    // the slot flags are re-read after every save (keys, MCP and commands all go through saveView), and the state carries the dimensions switch
+    const views = readFileSync("apps/web/src/components/workplane/cameraViews.ts", "utf8");
+    expect(views).toContain("optionsRef.current.onSavedViewsChanged?.();");
+    expect(viewport).toContain('"camera.dimensions": !dimensionsHidden,');
+    expect(viewport).toContain("...savedViewFlags,");
+  });
+
+  it("nothing here touches the document's history: the slots are saved by the existing writer and no undo entry is made", () => {
+    const views = readFileSync("apps/web/src/components/workplane/cameraViews.ts", "utf8");
+    const save = views.slice(views.indexOf("export function saveViewInSlot"), views.indexOf("export function showViewInSlot"));
+    expect(save).toContain("writeSavedViews(projectId, views);");
+    expect(save).not.toMatch(/undo|history|commit/i);
+  });
+});
