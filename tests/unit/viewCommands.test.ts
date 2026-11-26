@@ -73,3 +73,32 @@ describe("View Bar commands (Build 0095)", () => {
     expect(toolbar).toContain("isViewCommand(command)) runViewCommand(command)");
   });
 });
+
+describe("Camera navigation (Build 0096)", () => {
+  it("the cube's rectangle travels with the view bar state and is null while the cube is hidden", () => {
+    const shown: ViewBarState = { kind: "geometry", enabled: { "camera.home": true }, checked: {}, cube: { x: 10, y: 22, width: 82, height: 82 } };
+    publishUiState(base);
+    publishViewBarState(shown);
+    expect(getUiState()?.viewBar?.cube).toEqual({ x: 10, y: 22, width: 82, height: 82 });
+    publishViewBarState({ ...shown, cube: null });   // Presentation Mode hides the cube with CSS: the strip goes with it
+    expect(getUiState()?.viewBar?.cube).toBeNull();
+    publishViewBarState({ kind: "sketch", enabled: {}, checked: {} });   // a sketch has no cube
+    expect(getUiState()?.viewBar?.cube).toBeUndefined();
+  });
+
+  it("the viewport measures the cube's own box, not its turning faces, and the footer's zoom works in Sketch", () => {
+    const viewport = readFileSync("apps/web/src/components/WorkplaneViewport.tsx", "utf8");
+    expect(viewport).toContain('closest<HTMLElement>(".view-cube")');
+    expect(viewport).toContain("cube: cubeRect,");
+    expect(viewport).toContain("focusSelection: () => { if (!focusSelection()) resetView(); },");
+    const sketch = readFileSync("apps/web/src/components/SketchWorkspace.tsx", "utf8");
+    expect(sketch).toContain("registerCameraController({");
+    expect(sketch).toContain("publishCameraStatus({ distance: HOME_VIEW_DISTANCE / Math.max(view.zoom, 1e-6)");
+    const footer = readFileSync("apps/web/src/components/NativeStatusBar.tsx", "utf8");
+    const zoom = footer.slice(footer.indexOf('className="native-zoom"'));
+    expect(zoom).not.toContain('mode !== "geometry"');
+    expect(zoom).toContain("disabled={!camera}");
+    expect(footer).toContain("Zoom to Selection");
+  });
+});
+

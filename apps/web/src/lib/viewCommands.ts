@@ -32,6 +32,11 @@ export interface ViewBarState {
   kind: "geometry" | "sketch";
   enabled: Partial<Record<ViewCommand, boolean>>;
   checked: Partial<Record<ViewCommand, boolean>>;
+  /**
+   * Build 0096: where the view cube is in the page, in CSS points from the page's top-left corner (which is the web view's own), or null while it is not shown (Presentation Mode, Sketch).
+   * The host pins its camera strip under it. It changes only when the layout does, never while the camera turns (the rectangle is the cube's box, not its rotating faces).
+   */
+  cube?: { x: number; y: number; width: number; height: number } | null;
 }
 
 export interface ViewCommandController {

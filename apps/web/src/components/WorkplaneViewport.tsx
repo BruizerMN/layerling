@@ -8368,9 +8368,10 @@ export function WorkplaneViewport({
       zoomIn: () => zoomCamera(ZOOM_STEP_IN),
       zoomOut: () => zoomCamera(ZOOM_STEP_OUT),
       home: () => resetView(),
+      focusSelection: () => { if (!focusSelection()) resetView(); },
     });
     return () => registerCameraController(null);
-  }, [resetView, zoomCamera]);
+  }, [focusSelection, resetView, zoomCamera]);
 
   const toggleProjection = useCallback(() => {
     const state = threeRef.current;
@@ -9025,6 +9026,40 @@ export function WorkplaneViewport({
     return () => registerViewCommands(null);
   }, []);
   const faceWorkplaneForMenu = !placementWorkplaneIsBase(placementWorkplane);
+  // Build 0096: where the view cube is, for the host's camera strip under it. The cube's own box (not its turning faces) in CSS points from the page's top-left corner; null while hidden
+  // (Presentation Mode hides it with CSS). Measured again whenever the layout can have moved it, reported only when it changed.
+  const [cubeRect, setCubeRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  useEffect(() => {
+    const cube = viewCubeRef.current?.closest<HTMLElement>(".view-cube") ?? null;
+    if (!cube) return;
+    let frame = 0;
+    const half = (value: number) => Math.round(value * 2) / 2;
+    const measure = () => {
+      frame = 0;
+      const box = cube.getBoundingClientRect();
+      const style = window.getComputedStyle(cube);
+      const shown = box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+      const next = shown ? { x: half(box.left), y: half(box.top), width: half(box.width), height: half(box.height) } : null;
+      setCubeRect((previous) => (previous && next && previous.x === next.x && previous.y === next.y && previous.width === next.width && previous.height === next.height) || (!previous && !next) ? previous : next);
+    };
+    const schedule = () => { if (!frame) frame = window.requestAnimationFrame(measure); };
+    const resizes = new ResizeObserver(schedule);
+    resizes.observe(cube);
+    resizes.observe(document.documentElement);
+    if (cube.parentElement) resizes.observe(cube.parentElement);
+    const attributes = new MutationObserver(schedule);
+    attributes.observe(document.documentElement, { attributes: true });
+    window.addEventListener("resize", schedule);
+    document.addEventListener("transitionend", schedule, true);
+    measure();
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      resizes.disconnect();
+      attributes.disconnect();
+      window.removeEventListener("resize", schedule);
+      document.removeEventListener("transitionend", schedule, true);
+    };
+  }, []);
   const viewBarState = useMemo<ViewBarState>(() => ({
     kind: "geometry",
     enabled: {
@@ -9035,13 +9070,14 @@ export function WorkplaneViewport({
       "measure.tape": !splitActive, "measure.cornerRuler": !splitActive, "measure.protractor": !splitActive, "measure.section": true,
       "measure.note": Boolean(onNoteTool && onToggleNotes),
     },
+    cube: cubeRect,
     checked: {
       "camera.projection": orthographicView, "camera.scrollbars": viewScrollbarsOn, "workplane.visible": !workplaneLayerHidden,
       "workplane.place": workplaneMode, "workplane.faceVisible": !workplaneHidden,
       "measure.tape": tapeToolsOpen, "measure.cornerRuler": cornerRulerMode, "measure.protractor": protractorOpen,
       "measure.section": sectionViewOpen || sectionSettings.enabled, "measure.note": noteMode,
     },
-  }), [splitActive, faceWorkplaneForMenu, onToggleWorkplaneHidden, onNoteTool, onToggleNotes, orthographicView, viewScrollbarsOn, workplaneLayerHidden, workplaneMode, workplaneHidden, tapeToolsOpen, cornerRulerMode, protractorOpen, sectionViewOpen, sectionSettings.enabled, noteMode]);
+  }), [cubeRect, splitActive, faceWorkplaneForMenu, onToggleWorkplaneHidden, onNoteTool, onToggleNotes, orthographicView, viewScrollbarsOn, workplaneLayerHidden, workplaneMode, workplaneHidden, tapeToolsOpen, cornerRulerMode, protractorOpen, sectionViewOpen, sectionSettings.enabled, noteMode]);
   useEffect(() => { publishViewBarState(viewBarState); }, [viewBarState]);
   useEffect(() => () => publishViewBarState(null), []);
 

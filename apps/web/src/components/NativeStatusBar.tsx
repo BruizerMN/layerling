@@ -64,6 +64,10 @@ function ZoomPercentMenu({ camera, onClose }: { camera: CameraStatus; onClose: (
           {percent === 100 ? <small>Home view</small> : null}
         </button>
       ))}
+      {/* Build 0096: the footer is where zoom lives in 3D and in Sketch; Zoom to Selection belongs beside the percentages. */}
+      <button type="button" role="menuitem" className="native-zoom-menu-item" onClick={() => { controller?.focusSelection(); onClose(); }}>
+        <span>Zoom to Selection</span>
+      </button>
       <form
         className="native-zoom-menu-custom"
         onSubmit={(event) => {
@@ -332,8 +336,8 @@ export function NativeStatusBar({
         {/* The Snap Grid selector and the mm/in chooser: the editor's own control, shown here (footerSnap.ts). */}
         <div className="native-status-snap" ref={setFooterSnapSlot} />
         <span className="native-status-sep native-status-snap-sep" aria-hidden="true" />
-        <div className="native-zoom" role="group" aria-label="Zoom" data-disabled={camera && mode === "geometry" ? undefined : "true"}>
-          <button type="button" className="native-status-button" aria-label="Zoom out" title="Zoom out" disabled={!camera || mode !== "geometry"} onClick={() => controller?.zoomOut()}>
+        <div className="native-zoom" role="group" aria-label="Zoom" data-disabled={camera ? undefined : "true"}>
+          <button type="button" className="native-status-button" aria-label="Zoom out" title="Zoom out" disabled={!camera} onClick={() => controller?.zoomOut()}>
             <Minus size={13} aria-hidden="true" />
           </button>
           <input
@@ -345,14 +349,14 @@ export function NativeStatusBar({
             max={1000}
             step={1}
             value={Math.round(position * 1000)}
-            disabled={!camera || mode !== "geometry"}
+            disabled={!camera}
             onChange={(event) => {
               if (camera) controller?.setDistance(distanceFromSlider(Number(event.target.value) / 1000, camera.minDistance, camera.maxDistance));
             }}
             onDoubleClick={() => controller?.home()}
             title="Zoom (double-click for the home view)"
           />
-          <button type="button" className="native-status-button" aria-label="Zoom in" title="Zoom in" disabled={!camera || mode !== "geometry"} onClick={() => controller?.zoomIn()}>
+          <button type="button" className="native-status-button" aria-label="Zoom in" title="Zoom in" disabled={!camera} onClick={() => controller?.zoomIn()}>
             <Plus size={13} aria-hidden="true" />
           </button>
           <button
@@ -362,7 +366,7 @@ export function NativeStatusBar({
             title="Choose or enter a zoom percentage (relative to the home view)"
             aria-haspopup="menu"
             aria-expanded={zoomMenuOpen}
-            disabled={!camera || mode !== "geometry"}
+            disabled={!camera}
             onClick={() => setZoomMenuOpen((open) => !open)}
           >
             {camera ? formatZoomPercent(camera.distance) : "—"}

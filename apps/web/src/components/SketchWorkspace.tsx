@@ -16,6 +16,7 @@ import { SKETCH_DOUBLE_CLICK_PIXELS, useSketchViewSlide } from "@/lib/useSketchV
 import { ToolbarConstructionLineIcon, ToolbarNoteIcon } from "@/components/toolbarIcons";
 import { CAMERA_BAR_PANEL, CameraBarHandle, useCameraBarPeek } from "@/components/workplane/CameraBarHandle";
 import { registerViewCommands, type ViewBarState, type ViewCommand } from "@/lib/viewCommands";
+import { HOME_VIEW_DISTANCE, publishCameraStatus, registerCameraController } from "@/lib/cameraStatus";
 import { publishViewBarState } from "@/lib/host/nativeUi";
 import { constructionCrossings } from "@/lib/sketchConstruction";
 import { movingSelectionCentre, outlineSideMiddles, selectionSnapTargets, sketchSnapPoints, snappedSelectionTarget } from "@/lib/sketchSnapPoints";
@@ -2398,6 +2399,29 @@ export function SketchWorkspace({
     registerViewCommands({ kind: "sketch", run: (command) => sketchViewCommandRunRef.current(command) });
     return () => registerViewCommands(null);
   }, []);
+  // Build 0096: the footer's zoom controls in Sketch mode, through the same controller and status the 3D viewport gives them. The sketch's own zoom is shown on the footer's scale:
+  // zoom 1 (what Home gives) is 100 %, so "distance" is the home distance divided by the zoom. The functions are the sketch bar's own (zoomByButton, resetView, focusSelection).
+  const sketchCameraRef = useRef<{ setZoom: (zoom: number) => void; zoomIn: () => void; zoomOut: () => void; home: () => void; focus: () => void }>({ setZoom: () => undefined, zoomIn: () => undefined, zoomOut: () => undefined, home: () => undefined, focus: () => undefined });
+  sketchCameraRef.current = {
+    setZoom: (zoom) => setView((current) => ({ ...current, zoom: clamp(zoom, minZoom, SKETCH_MANUAL_MAX_ZOOM) })),
+    zoomIn: () => zoomByButton(ZOOM_STEP_IN),
+    zoomOut: () => zoomByButton(ZOOM_STEP_OUT),
+    home: () => resetView(),
+    focus: () => { if (!focusSelection()) resetView(); },
+  };
+  useEffect(() => {
+    registerCameraController({
+      setDistance: (distance) => sketchCameraRef.current.setZoom(HOME_VIEW_DISTANCE / Math.max(distance, 1e-6)),
+      zoomIn: () => sketchCameraRef.current.zoomIn(),
+      zoomOut: () => sketchCameraRef.current.zoomOut(),
+      home: () => sketchCameraRef.current.home(),
+      focusSelection: () => sketchCameraRef.current.focus(),
+    });
+    return () => registerCameraController(null);
+  }, []);
+  useEffect(() => {
+    publishCameraStatus({ distance: HOME_VIEW_DISTANCE / Math.max(view.zoom, 1e-6), orthographic: true, minDistance: HOME_VIEW_DISTANCE / SKETCH_MANUAL_MAX_ZOOM, maxDistance: HOME_VIEW_DISTANCE / minZoom });
+  }, [view.zoom, minZoom]);
   const sketchViewBarState = useMemo<ViewBarState>(() => ({
     kind: "sketch",
     enabled: {

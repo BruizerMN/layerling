@@ -17,6 +17,8 @@ export interface CameraController {
   zoomIn(): void;
   zoomOut(): void;
   home(): void;
+  /** Zoom to the selection; with nothing selected the whole scene (as the F key and the Zoom to Selection commands do). */
+  focusSelection(): void;
 }
 
 export function zoomPercent(distance: number): number {
