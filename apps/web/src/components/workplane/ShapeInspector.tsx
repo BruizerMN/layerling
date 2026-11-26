@@ -1,6 +1,8 @@
 "use client";
 
 import { useFooterSnapSlot } from "@/lib/footerSnap";
+import { createPickerSession } from "@/lib/colorPickerSession";
+import { nativeColorPickerAvailable, openNativeColorPicker } from "@/lib/nativeColorPicker";
 import { displayY, displayYTurn, insideZ, insideZTurn } from "@/lib/displayAxes";
 import { GuideHelpLink } from "@/components/GuideHelpLink";
 import { SnapGridMenuItems } from "@/components/workplane/SnapGridMenu";
@@ -8672,11 +8674,31 @@ function SwatchColorPicker({ color, disabled, title, ariaLabel, onCommit, onInte
     input.addEventListener("change", commit);
     return () => input.removeEventListener("change", commit);
   }, []);
+  // Build 0091: with the macOS host the colour picker is the system's own (see lib/nativeColorPicker.ts); the colours it sends are applied like the input's, inside one session.
+  const nativeSession = useMemo(() => createPickerSession(holdInteraction), [holdInteraction]);
+  useEffect(() => () => { nativeSession.end(); }, [nativeSession]);
   const open = () => {
     const swatch = swatchRef.current;
     const input = inputRef.current;
     if (!swatch || !input || disabled) return;
     const box = swatch.getBoundingClientRect();
+    if (nativeColorPickerAvailable() && /^#[0-9a-f]{6}$/i.test(color)) {
+      void openNativeColorPicker({
+        color,
+        rect: [box.left, box.top, box.width, box.height],
+        onChange: (hex) => {
+          nativeSession.begin();
+          commitRef.current(hex);
+        },
+        onEnd: () => { nativeSession.end(); },
+      }).then((taken) => { if (!taken) openInput(box); });
+      return;
+    }
+    openInput(box);
+  };
+  const openInput = (box: DOMRect) => {
+    const input = inputRef.current;
+    if (!input) return;
     input.style.left = `${box.left}px`;
     input.style.top = `${window.innerHeight - box.bottom}px`;
     input.style.width = `${box.width}px`;
