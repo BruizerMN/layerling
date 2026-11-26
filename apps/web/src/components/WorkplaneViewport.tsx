@@ -9040,7 +9040,10 @@ export function WorkplaneViewport({
       case "measure.tape.delete": engageTape(); activateTapeDelete(); break;
       case "measure.tape.wholeEdges": toggleTapeWholeEdges(); break;
       case "measure.tape.visible": toggleTapeHidden(); break;
-      case "measure.tape.clear": requestClearTape(); break;   // the page's own confirmation, unchanged
+      // Build 0100: in the Mac app the confirmation is a native document-modal sheet: with measurements to delete the page asks the host for it (the browser edition and the legacy panel keep the web
+      // dialog); only the explicit confirmation reaches the engine's own deletion handler below. With no measurement, only points, `requestClearTape` clears them silently, as before.
+      case "measure.tape.clear": if (isNativeAppearance() && tapeModelRef.current.segments.length > 0) requestHostAction("confirmClearMeasurements"); else requestClearTape(); break;
+      case "measure.tape.clearConfirmed": confirmClearTape(); break;
       case "measure.protractor.points": if (!protractorOpenRef.current) openProtractor(); chooseProtractorKind("points"); break;
       case "measure.protractor.faces": if (!protractorOpenRef.current) openProtractor(); chooseProtractorKind("faces"); break;
       case "measure.protractor.clear": clearProtractor(); break;

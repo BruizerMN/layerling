@@ -124,7 +124,7 @@ describe("Native Measure (Build 0099)", () => {
     const viewport = readFileSync("apps/web/src/components/WorkplaneViewport.tsx", "utf8");
     for (const [command, call] of [
       ["measure.tape.add", "engageTape(); activateTapeAdd();"], ["measure.tape.move", "engageTape(); activateTapeMove();"], ["measure.tape.delete", "engageTape(); activateTapeDelete();"],
-      ["measure.tape.wholeEdges", "toggleTapeWholeEdges();"], ["measure.tape.visible", "toggleTapeHidden();"], ["measure.tape.clear", "requestClearTape();"],
+      ["measure.tape.wholeEdges", "toggleTapeWholeEdges();"], ["measure.tape.visible", "toggleTapeHidden();"], ["measure.tape.clearConfirmed", "confirmClearTape();"],
       ["measure.protractor.clear", "clearProtractor();"], ["measure.end", "endMeasuring();"],
     ]) expect(viewport.includes(`case "${command}": ${call}`) || viewport.includes(`case "${command}": ${call.replace(/;$/, "")}`), command).toBe(true);
     expect(viewport).toContain("chooseProtractorKind(\"points\")");
@@ -151,6 +151,21 @@ describe("Native Measure (Build 0099)", () => {
     const gatePresentation = toolbar.indexOf("if (presentationActive && command !==", closed);
     expect(closed).toBeGreaterThan(0);
     expect(closed).toBeLessThan(gatePresentation);   // honoured even in Presentation Mode
+  });
+});
+
+describe("Native Delete All Measurements confirmation (Build 0100)", () => {
+  it("is a known command and host action; the page asks the host only in the Mac app and only when there are measurements, and only the confirmation deletes", () => {
+    expect(isViewCommand("measure.tape.clearConfirmed")).toBe(true);
+    expect((UI_COMMANDS as readonly string[]).includes("measure.tape.clearConfirmed")).toBe(true);
+    const viewport = readFileSync("apps/web/src/components/WorkplaneViewport.tsx", "utf8");
+    expect(viewport).toContain('case "measure.tape.clear": if (isNativeAppearance() && tapeModelRef.current.segments.length > 0) requestHostAction("confirmClearMeasurements"); else requestClearTape(); break;');
+    // the engine's own deletion handler is what the confirmed command runs; the browser edition's panel button still goes through the web dialog
+    expect(viewport).toContain('case "measure.tape.clearConfirmed": confirmClearTape(); break;');
+    expect(viewport).toContain("onClick={requestClearTape}");
+    const text = readFileSync("apps/web/src/lib/messages.en.ts", "utf8");
+    expect(text).toContain('"confirm.clearTapeTitle": "Delete all measurements?"');
+    expect(text).toContain('"confirm.clearTapeBody": "All tape measurements in this design will be deleted. This cannot be undone."');
   });
 });
 
