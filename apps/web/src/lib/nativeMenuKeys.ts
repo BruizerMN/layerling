@@ -8,5 +8,7 @@ export type NativeMenuKeyEvent = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKe
 
 export function isNativeMenuKey(event: NativeMenuKeyEvent, native: boolean): boolean {
   if (!native) return false;
-  return event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && (event.key ?? "").toLowerCase() === "n";
+  if (event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && (event.key ?? "").toLowerCase() === "n") return true;
+  // Build 0093: Shift+Cmd+A is the native Edit > Deselect All. The editor's Select All test ignored Shift (Cmd+A and Shift+Cmd+A both selected everything), so the page must not take this key.
+  return event.metaKey && !event.ctrlKey && !event.altKey && event.shiftKey && (event.key ?? "").toLowerCase() === "a";
 }

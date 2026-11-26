@@ -406,6 +406,7 @@ export function SecondaryToolbar({
   onRedo,
   onSnap,
   onShowHidden,
+  onClearSelection,
   onHideOthers,
   onVisualGroupsOnly,
   onInvertSelection,
@@ -622,6 +623,8 @@ export function SecondaryToolbar({
   onRedo: () => void;
   onSnap: () => void;
   onShowHidden: () => void;
+  /** Deselect All (Build 0093, native Edit menu): clears the selection, nothing else. */
+  onClearSelection?: () => void;
   /** Hide everything but the selection, and select what is not selected (Discussion #1472). */
   onHideOthers: () => void;
   /** Visual Groups Only (Build 0057, native View menu and toolbar): hide every object, then show the objects that are in a Visual Group; one step. */
@@ -1009,6 +1012,7 @@ export function SecondaryToolbar({
       case "edit.paste": toolbarMode === "sketch" ? onSketchPaste() : onPaste(); break;
       case "edit.duplicate": toolbarMode === "sketch" ? onSketchDuplicate() : onDuplicate(); break;
       case "edit.delete": toolbarMode === "sketch" ? onSketchDelete() : onDelete(); break;
+      case "edit.deselectAll": if (toolbarMode !== "sketch") onClearSelection?.(); break;
       case "view.objectList": onToggleOutliner(); break;
       case "view.hideSelected": onToggleHidden(); break;
       case "view.unhideAll": onShowHidden(); break;

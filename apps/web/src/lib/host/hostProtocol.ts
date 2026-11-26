@@ -63,7 +63,7 @@ export interface NativeMenuItem {
   items?: NativeMenuItem[];
 }
 /** Commands a host menu can send to a document page (`ui.command`). */
-export const UI_COMMANDS = ["mode.geometry", "mode.sketch", "focusMode.toggle", "ribbonPin.toggle", "search", "guide", "whatsNew", "shortcuts", "interactiveHelp", "inspector.toggle", "edit.undo", "edit.redo", "edit.history", "edit.cut", "edit.copy", "edit.paste", "edit.duplicate", "edit.delete", "view.objectList", "view.hideSelected", "view.unhideAll", "view.hideOthers", "view.visualGroupsOnly", "view.notes", "view.overhangs", "file.import", "file.export", "file.attachments", "presentation.enter", "presentation.exit", "presentation.standby", "settings.saveStartView", "settings.resetStartView", "settings.makeFitTest"] as const;
+export const UI_COMMANDS = ["mode.geometry", "mode.sketch", "focusMode.toggle", "ribbonPin.toggle", "search", "guide", "whatsNew", "shortcuts", "interactiveHelp", "inspector.toggle", "edit.undo", "edit.redo", "edit.history", "edit.cut", "edit.copy", "edit.paste", "edit.duplicate", "edit.delete", "edit.deselectAll", "view.objectList", "view.hideSelected", "view.unhideAll", "view.hideOthers", "view.visualGroupsOnly", "view.notes", "view.overhangs", "file.import", "file.export", "file.attachments", "presentation.enter", "presentation.exit", "presentation.standby", "settings.saveStartView", "settings.resetStartView", "settings.makeFitTest"] as const;
 export type UiCommand = (typeof UI_COMMANDS)[number];
 /** The first protocol version that carries the document messages. */
 export const DOCUMENT_PROTOCOL_MIN = 2;

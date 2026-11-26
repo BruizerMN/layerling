@@ -22,6 +22,15 @@ describe("keys the native app keeps for its menus", () => {
     expect(isNativeMenuKey(press("n", { metaKey: true, altKey: true }), true)).toBe(false);
     for (const k of ["c", "v", "x", "z", "a", "s", "d", "m", "l", "e"]) expect(isNativeMenuKey(press(k, { metaKey: true }), true), k).toBe(false);
   });
+  it("Shift+Cmd+A is the native Edit > Deselect All, not Select All (Build 0093)", () => {
+    expect(isNativeMenuKey(press("a", { metaKey: true, shiftKey: true }), true)).toBe(true);
+    expect(isNativeMenuKey(press("A", { metaKey: true, shiftKey: true }), true)).toBe(true);   // Shift makes it a capital A
+    expect(isNativeMenuKey(press("a", { metaKey: true, shiftKey: true }), false)).toBe(false);   // the browser edition is unchanged
+    expect(isNativeMenuKey(press("a", { metaKey: true }), true)).toBe(false);   // Cmd+A stays the editor's Select All
+    expect(isNativeMenuKey(press("a", { ctrlKey: true, shiftKey: true }), true)).toBe(false);
+    expect(isNativeMenuKey(press("a", { metaKey: true, shiftKey: true, altKey: true }), true)).toBe(false);
+    expect(isNativeMenuKey(press("a", { shiftKey: true }), true)).toBe(false);
+  });
   it("the editor asks before it handles any key, and does not assign Cmd+N to another command", () => {
     const src = readFileSync("apps/web/src/components/LayerlingEditor.tsx", "utf8");
     const at = src.indexOf("const handleKeyDown = (event: KeyboardEvent) => {");

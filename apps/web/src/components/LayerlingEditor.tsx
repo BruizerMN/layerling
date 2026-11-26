@@ -4485,6 +4485,11 @@ export function LayerlingEditor({
     setSelectedIds(shapes.filter((shape) => !shape.hidden && !shape.imagePlate).map((shape) => shape.id));
     setNotice(t("status.selectedAllVisible"));
   }, [shapes]);
+  // Clear the selection (Build 0093): the one operation behind Escape and the native Edit > Deselect All. The selection is view state: no history entry, no change to the model.
+  const clearSelection = useCallback(() => {
+    setSelectedIds([]);
+    setNotice(t("status.selectionCleared"));
+  }, []);
   // Invert selection (Discussion #1472): every visible part that is not selected, as Select all counts them. Without a
   // selection it is Select all. MCP's select_objects with invert goes through here too.
   const invertSelection = useCallback((fromIds?: string[]): string[] => {
@@ -19533,8 +19538,7 @@ export function LayerlingEditor({
           setScalePercentError(null);
           return;
         }
-        setSelectedIds([]);
-        setNotice(t("status.selectionCleared"));
+        clearSelection();
         return;
       }
 
@@ -20310,6 +20314,7 @@ export function LayerlingEditor({
         onRedo={redo}
         onSnap={snapSelected}
         onShowHidden={showHidden}
+        onClearSelection={clearSelection}
         onHideOthers={() => { hideOthers(); }}
         onVisualGroupsOnly={showOnlyVisualGroupObjects}
         onInvertSelection={() => { invertSelection(); }}
