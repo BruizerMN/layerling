@@ -20,6 +20,11 @@ export const VIEW_COMMANDS = [
   "measure.tape", "measure.cornerRuler", "measure.protractor", "measure.section", "measure.note",
   // Sketch only
   "sketch.measurements", "sketch.partEdges",
+  // Build 0099: the native Measure popover's operational controls (3D: Tape Measure, Corner Ruler via "measure.cornerRuler", Protractor), the end of every measuring operation, and the popover's
+  // own open and closed reports. They call the same functions the legacy panels' buttons called.
+  "measure.tape.add", "measure.tape.move", "measure.tape.delete", "measure.tape.wholeEdges", "measure.tape.visible", "measure.tape.clear",
+  "measure.protractor.points", "measure.protractor.faces", "measure.protractor.clear",
+  "measure.end", "measure.popoverOpened", "measure.popoverClosed",
 ] as const;
 export type ViewCommand = (typeof VIEW_COMMANDS)[number];
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { isViewCommand, runViewCommand } from "@/lib/viewCommands";
+import { setMeasurePopoverOpen } from "@/lib/measurePopover";
 import { GuideHelpLink } from "@/components/GuideHelpLink";
 import { RibbonIconOr, RibbonToolIcon } from "@/components/RibbonIcon";
 import { ribbonIconKey } from "@/lib/host/ribbonIcons";
@@ -993,8 +994,11 @@ export function SecondaryToolbar({
   }, [nativeChrome, toolbarMode, historyViewActive, focusMode, ribbonPinned, inspectorVisible, textFocus, presentationActive, presentationStandby, sketchCanUndo, sketchCanRedo, sketchHasSelection, sketchHasClipboard, canUndo, canRedo, canModifySelection, hasSelection, hasClipboard, canHistoryView, hiddenShapeCount, selectionHidden, outlinerOpen, noteCount, notesVisible, overhangsVisible, overhangAngle]);
   const nativeCommandRef = useRef<(command: string) => void>(() => undefined);
   nativeCommandRef.current = (command) => {
+    // Build 0099: the host's Measure popover closed (any reason, Presentation Mode too): the page puts every measuring operation down, existing measurements untouched.
+    if (command === "measure.popoverClosed") { setMeasurePopoverOpen(false); runViewCommand("measure.end"); return; }
     // Presentation Mode is read-only: the only commands it takes from the host are to leave and to toggle Standby.
     if (presentationActive && command !== "presentation.exit" && command !== "presentation.standby") return;
+    if (command === "measure.popoverOpened") { setMeasurePopoverOpen(true); return; }
     if (command === "presentation.standby") { if (presentationActive) onPresentationStandby?.(); return; }
     if (command === "presentation.enter") { if (toolbarMode === "geometry") onPresentationEnter?.(); return; }
     if (command === "presentation.exit") { onPresentationExit?.(); return; }

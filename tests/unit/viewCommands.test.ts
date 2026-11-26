@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UI_COMMANDS } from "@/lib/host/hostProtocol";
 import { getUiState, publishUiState, publishViewBarState, type NativeUiState } from "@/lib/host/nativeUi";
+import { isMeasurePopoverOpen, setMeasurePopoverOpen } from "@/lib/measurePopover";
 import { VIEW_COMMANDS, isViewCommand, registerViewCommands, runViewCommand, type ViewBarState } from "@/lib/viewCommands";
 
 const base: NativeUiState = { mode: "geometry", sketchEnabled: true, focusMode: false, ribbonPinned: false };
@@ -99,6 +100,57 @@ describe("Camera navigation (Build 0096)", () => {
     expect(zoom).not.toContain('mode !== "geometry"');
     expect(zoom).toContain("disabled={!camera}");
     expect(footer).toContain("Zoom to Selection");
+  });
+});
+
+describe("Native Measure (Build 0099)", () => {
+  it("the operational controls are known ui commands and the popover reports are page commands", () => {
+    for (const command of ["measure.tape.add", "measure.tape.move", "measure.tape.delete", "measure.tape.wholeEdges", "measure.tape.visible", "measure.tape.clear",
+      "measure.protractor.points", "measure.protractor.faces", "measure.protractor.clear", "measure.end", "measure.popoverOpened", "measure.popoverClosed"]) {
+      expect(isViewCommand(command), command).toBe(true);
+      expect((UI_COMMANDS as readonly string[]).includes(command), command).toBe(true);
+    }
+  });
+
+  it("the page knows whether the host's Measure popover is open", () => {
+    expect(isMeasurePopoverOpen()).toBe(false);
+    setMeasurePopoverOpen(true);
+    expect(isMeasurePopoverOpen()).toBe(true);
+    setMeasurePopoverOpen(false);
+    expect(isMeasurePopoverOpen()).toBe(false);
+  });
+
+  it("the controls call the legacy panels' own functions; the panels and the bar's buttons give way to the native popover in the Mac app only", () => {
+    const viewport = readFileSync("apps/web/src/components/WorkplaneViewport.tsx", "utf8");
+    for (const [command, call] of [
+      ["measure.tape.add", "engageTape(); activateTapeAdd();"], ["measure.tape.move", "engageTape(); activateTapeMove();"], ["measure.tape.delete", "engageTape(); activateTapeDelete();"],
+      ["measure.tape.wholeEdges", "toggleTapeWholeEdges();"], ["measure.tape.visible", "toggleTapeHidden();"], ["measure.tape.clear", "requestClearTape();"],
+      ["measure.protractor.clear", "clearProtractor();"], ["measure.end", "endMeasuring();"],
+    ]) expect(viewport.includes(`case "${command}": ${call}`) || viewport.includes(`case "${command}": ${call.replace(/;$/, "")}`), command).toBe(true);
+    expect(viewport).toContain("chooseProtractorKind(\"points\")");
+    expect(viewport).toContain("chooseProtractorKind(\"faces\")");
+    expect(viewport).toContain("tapeToolsOpen && !isNativeAppearance()");
+    expect(viewport).toContain("protractorOpen && !isNativeAppearance()");
+    for (const action of ["showMeasureTape", "showMeasureCornerRuler", "showMeasureProtractor"]) expect(viewport).toContain(`requestHostAction("${action}")`);
+    expect(viewport).toContain("isNativeAppearance() ? () => requestHostAction(\"showMeasureTape\") : toggleTapeTools");   // the browser edition keeps its own handler
+  });
+
+  it("Escape: with the popover open the editor leaves the key to the measuring tools and the host; Sketch leaves it unhandled when nothing is being measured", () => {
+    const editor = readFileSync("apps/web/src/components/LayerlingEditor.tsx", "utf8");
+    const escape = editor.indexOf("if (projectInteractionActiveRef.current || escapeWasHandled(event)) return;");
+    const gate = editor.indexOf("if (isMeasurePopoverOpen()) return;", escape);
+    const clear = editor.indexOf("clearSelection();", gate);
+    expect(escape).toBeGreaterThan(0);
+    expect(gate).toBeGreaterThan(escape);
+    expect(clear).toBeGreaterThan(gate);   // before the selection is cleared
+    expect(editor).toContain("leaveEscapeToHost: () => isMeasurePopoverOpen() && sketchTool !== \"measure\" && !noteMode");
+    const keys = readFileSync("apps/web/src/lib/sketchEditorKeys.ts", "utf8");
+    expect(keys).toContain("!actions.leaveEscapeToHost?.()");
+    const toolbar = readFileSync("apps/web/src/components/workplane/SecondaryToolbar.tsx", "utf8");
+    const closed = toolbar.indexOf('command === "measure.popoverClosed"');
+    const gatePresentation = toolbar.indexOf("if (presentationActive && command !==", closed);
+    expect(closed).toBeGreaterThan(0);
+    expect(closed).toBeLessThan(gatePresentation);   // honoured even in Presentation Mode
   });
 });
 

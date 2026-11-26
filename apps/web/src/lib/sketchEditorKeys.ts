@@ -2,6 +2,8 @@ import { escapeWasHandled } from "@/lib/escapeHandled";
 
 /** What the editor does for each key in sketch mode; the key handling itself lives here. */
 export type SketchEditorKeyActions = {
+  /** Build 0099: Esc is not the editor's to take now (the native Measure popover is open and no measuring is in progress): leave it unhandled for the host. */
+  leaveEscapeToHost?: () => boolean;
   /** Esc: put the tool down, then clear the selection (#664). */
   escape: () => void;
   deleteSelection: () => void;
@@ -38,7 +40,7 @@ export function handleSketchEditorKey(event: KeyboardEvent, actions: SketchEdito
 
   if (event.key === "Escape") {
     // A crop, a calibration or the mirror panel that closes with this key is all it does.
-    if (!escapeWasHandled(event)) run(actions.escape);
+    if (!escapeWasHandled(event) && !actions.leaveEscapeToHost?.()) run(actions.escape);
   } else if (event.key === "Delete" || event.key === "Backspace") {
     run(actions.deleteSelection);
   } else if (shortcut && !event.altKey) {

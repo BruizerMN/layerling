@@ -2392,6 +2392,7 @@ export function SketchWorkspace({
       case "sketch.measurements": toggleMeasurements(); break;
       case "sketch.partEdges": onToggleReferenceEdges?.(); break;
       case "measure.note": onNoteTool?.(); break;
+      case "measure.end": if (tool === "measure") onMeasureTool(); break;   // Build 0099: the host's Measure popover closed: the sketch measuring tool goes down (the measurement shown stays as it is)
       default: break;
     }
   };

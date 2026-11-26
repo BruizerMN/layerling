@@ -45,7 +45,7 @@ import { readViewScrollbars, storeViewScrollbars } from "@/lib/viewScroll";
 import { openSecondViewWindow, SecondViewWindow, useSecondViewSupported } from "@/components/workplane/SecondViewWindow";
 import { isNativeAppearance } from "@/lib/appTheme";
 import { registerViewCommands, type ViewBarState, type ViewCommand } from "@/lib/viewCommands";
-import { publishViewBarState } from "@/lib/host/nativeUi";
+import { publishViewBarState, requestHostAction } from "@/lib/host/nativeUi";
 import { starSettingsForSize } from "@/lib/starGeometry";
 import { carriedOntoFace } from "@/lib/carryOntoFace";
 import { keepsProportionsForUpdate, keepsProportionsOnAxis } from "@/lib/keepProportions";
@@ -8995,6 +8995,24 @@ export function WorkplaneViewport({
       ) : null;
 
   // --- Build 0095: the host's View Bar menu. Each command runs the function its view bar button runs; the state says which are available and which are on.
+  // Build 0099: starting a tape operation puts the other measuring tools down, as opening the tape panel did; ending measuring leaves existing measurements untouched.
+  const engageTape = () => {
+    if (splitActiveRef.current || tapeToolsOpen) return;
+    setSectionViewOpen(false);
+    setProtractorActive(false);
+    cornerRulerModeRef.current = false;
+    setCornerRulerMode(false);
+    setTapeToolsOpen(true);
+  };
+  const endMeasuring = () => {
+    setTapeActive(false);
+    leaveTapeSubModes();
+    tapePointDragRef.current = null;
+    setTapeToolsOpen(false);
+    cornerRulerModeRef.current = false;
+    setCornerRulerMode(false);
+    setProtractorActive(false);
+  };
   const viewCommandRunRef = useRef<(command: ViewCommand) => void>(() => undefined);
   viewCommandRunRef.current = (command) => {
     // Tools that the bar's own button disables while the Split tool is active.
@@ -9016,6 +9034,17 @@ export function WorkplaneViewport({
       case "measure.tape": toggleTapeTools(); break;
       case "measure.cornerRuler": toggleCornerRulerTool(); break;
       case "measure.protractor": toggleProtractor(); break;
+      // Build 0099: the native Measure popover's operational controls. Each calls the function the legacy panel's button called; one measuring tool takes the clicks at a time.
+      case "measure.tape.add": engageTape(); activateTapeAdd(); break;
+      case "measure.tape.move": engageTape(); activateTapeMove(); break;
+      case "measure.tape.delete": engageTape(); activateTapeDelete(); break;
+      case "measure.tape.wholeEdges": toggleTapeWholeEdges(); break;
+      case "measure.tape.visible": toggleTapeHidden(); break;
+      case "measure.tape.clear": requestClearTape(); break;   // the page's own confirmation, unchanged
+      case "measure.protractor.points": if (!protractorOpenRef.current) openProtractor(); chooseProtractorKind("points"); break;
+      case "measure.protractor.faces": if (!protractorOpenRef.current) openProtractor(); chooseProtractorKind("faces"); break;
+      case "measure.protractor.clear": clearProtractor(); break;
+      case "measure.end": endMeasuring(); break;
       case "measure.section": toggleSectionView(); break;
       case "measure.note": onNoteTool?.(); break;
       default: break;
@@ -9069,15 +9098,20 @@ export function WorkplaneViewport({
       "workplane.faceVisible": faceWorkplaneForMenu && Boolean(onToggleWorkplaneHidden), "workplane.reset": faceWorkplaneForMenu,
       "measure.tape": !splitActive, "measure.cornerRuler": !splitActive, "measure.protractor": !splitActive, "measure.section": true,
       "measure.note": Boolean(onNoteTool && onToggleNotes),
+      "measure.tape.add": !splitActive, "measure.tape.move": !splitActive, "measure.tape.delete": !splitActive, "measure.tape.wholeEdges": true,
+      "measure.tape.visible": tapeModel.segments.length > 0, "measure.tape.clear": tapeModel.segments.length > 0 || tapeModel.points.length > 0,
+      "measure.protractor.points": !splitActive, "measure.protractor.faces": !splitActive, "measure.protractor.clear": protractorOpen,
     },
     cube: cubeRect,
     checked: {
       "camera.projection": orthographicView, "camera.scrollbars": viewScrollbarsOn, "workplane.visible": !workplaneLayerHidden,
       "workplane.place": workplaneMode, "workplane.faceVisible": !workplaneHidden,
-      "measure.tape": tapeToolsOpen, "measure.cornerRuler": cornerRulerMode, "measure.protractor": protractorOpen,
+      "measure.tape": tapeMode || tapeMoveMode || tapeDeleteMode, "measure.cornerRuler": cornerRulerMode, "measure.protractor": protractorOpen,
+      "measure.tape.add": tapeMode, "measure.tape.move": tapeMoveMode, "measure.tape.delete": tapeDeleteMode, "measure.tape.wholeEdges": tapeWholeEdges, "measure.tape.visible": !tapeModel.hidden,
+      "measure.protractor.points": protractorOpen && protractorKind === "points", "measure.protractor.faces": protractorOpen && protractorKind === "faces",
       "measure.section": sectionViewOpen || sectionSettings.enabled, "measure.note": noteMode,
     },
-  }), [cubeRect, splitActive, faceWorkplaneForMenu, onToggleWorkplaneHidden, onNoteTool, onToggleNotes, orthographicView, viewScrollbarsOn, workplaneLayerHidden, workplaneMode, workplaneHidden, tapeToolsOpen, cornerRulerMode, protractorOpen, sectionViewOpen, sectionSettings.enabled, noteMode]);
+  }), [tapeMode, tapeMoveMode, tapeDeleteMode, tapeWholeEdges, tapeModel.hidden, tapeModel.segments.length, tapeModel.points.length, protractorKind, cubeRect, splitActive, faceWorkplaneForMenu, onToggleWorkplaneHidden, onNoteTool, onToggleNotes, orthographicView, viewScrollbarsOn, workplaneLayerHidden, workplaneMode, workplaneHidden, tapeToolsOpen, cornerRulerMode, protractorOpen, sectionViewOpen, sectionSettings.enabled, noteMode]);
   useEffect(() => { publishViewBarState(viewBarState); }, [viewBarState]);
   useEffect(() => () => publishViewBarState(null), []);
 
@@ -9260,11 +9294,11 @@ export function WorkplaneViewport({
                 aria-expanded={tapeToolsOpen}
                 aria-controls="tape-tool-popover"
                 disabled={splitActive}
-                onClick={toggleTapeTools}
+                onClick={isNativeAppearance() ? () => requestHostAction("showMeasureTape") : toggleTapeTools}   // Build 0099: the Mac app has the native Measure popover
               >
                 <RulerDimensionLine size={26} strokeWidth={2.2} aria-hidden="true" />
               </button>
-              {tapeToolsOpen ? (
+              {tapeToolsOpen && !isNativeAppearance() ? (   /* Build 0099: the native popover replaces this panel in the Mac app */
                 <MovableTapePanel>
                   <button className={tapeMode ? "active" : ""} aria-label={t("camera.addMeasurement")} title={t("camera.addMeasurement")} aria-pressed={tapeMode} onClick={activateTapeAdd}>
                     <Plus size={21} strokeWidth={2.4} aria-hidden="true" />
@@ -9295,7 +9329,7 @@ export function WorkplaneViewport({
                 title={t("camera.cornerRulerTool")}
                 aria-pressed={cornerRulerMode}
                 disabled={splitActive}
-                onClick={toggleCornerRulerTool}
+                onClick={isNativeAppearance() ? () => requestHostAction("showMeasureCornerRuler") : toggleCornerRulerTool}
               >
                 <FramingSquareIcon size={24} strokeWidth={2.15} aria-hidden="true" />
               </button>
@@ -9308,11 +9342,11 @@ export function WorkplaneViewport({
                 aria-expanded={protractorOpen}
                 aria-controls="protractor-tool-popover"
                 disabled={splitActive}
-                onClick={toggleProtractor}
+                onClick={isNativeAppearance() ? () => requestHostAction("showMeasureProtractor") : toggleProtractor}
               >
                 <ProtractorIcon size={24} strokeWidth={2.15} aria-hidden="true" />
               </button>
-              {protractorOpen ? (
+              {protractorOpen && !isNativeAppearance() ? (   /* Build 0099: the native popover replaces this panel in the Mac app */
                 <MovableProtractorPanel>
                   <button className={protractorKind === "points" ? "active" : ""} aria-label={t("camera.protractorPoints")} title={t("camera.protractorPointsHint")} aria-pressed={protractorKind === "points"} onClick={() => chooseProtractorKind("points")}>
                     <ProtractorIcon size={20} strokeWidth={2.25} aria-hidden="true" />

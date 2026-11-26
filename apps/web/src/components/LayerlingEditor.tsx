@@ -311,6 +311,7 @@ import { createKeyRepeatBatch } from "@/lib/keyRepeatBatch";
 import { escapeWasHandled } from "@/lib/escapeHandled";
 import { handleSketchEditorKey } from "@/lib/sketchEditorKeys";
 import { sketchEscapeAction } from "@/lib/sketchEscape";
+import { isMeasurePopoverOpen } from "@/lib/measurePopover";
 import { booleanAutomationScene } from "@/lib/editorAutomation";
 import { debugShapeSummary, mcpPivotRequest, compactShapeSummary, mcpGridfinityLabelFont, mcpShapeSummary, mcpSketchFillProfile, mcpTextFont } from "@/lib/editorMcpSummary";
 import { sweepAnchorFromParams, sweepPathFromParams, sweepSectionFromParams, sweepSketchProfile } from "@/lib/sweepSketch";
@@ -19387,6 +19388,8 @@ export function LayerlingEditor({
 
       if (sketchActive && toolbarMode === "sketch") {
         handleSketchEditorKey(event, {
+          // Build 0099: with the Measure popover open and no sketch measuring in progress the key is left to the host (it dismisses the popover); the selection is kept.
+          leaveEscapeToHost: () => isMeasurePopoverOpen() && sketchTool !== "measure" && !noteMode,
           escape: () => {
             // As in 3D: first the tool goes down, then the selection (#664).
             if (noteMode) {
@@ -19429,6 +19432,9 @@ export function LayerlingEditor({
       if (event.key === "Escape") {
         // A drag that the work area cancels with this key is all the key does (#440).
         if (projectInteractionActiveRef.current || escapeWasHandled(event)) return;
+        // Build 0099: with the native Measure popover open, Escape belongs to the measuring tools and the popover (the tools' own handlers cancel an operation; with none active the key is left
+        // unhandled and the host dismisses the popover): the editor neither puts other tools down nor clears the selection.
+        if (isMeasurePopoverOpen()) return;
         // Erst das Werkzeug ablegen, dann die Auswahl - wer ein Werkzeug in der
         // Hand hat, meint mit Escape das Werkzeug.
         if (intersectPreviewIdsRef.current) {
