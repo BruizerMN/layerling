@@ -2265,6 +2265,7 @@ export const MESSAGES_EN = {
   "status.historyViewClosed": "Back at the current state",
   "status.historyViewBlocksEdits": "Close the history view before changing the design",
   "status.historyViewEmpty": "Nothing to look back at yet",
+  "status.historyViewInGroupSession": "Finish or cancel the group you are editing first: Undo and Redo work on its steps, and the History view comes back afterwards",
   "status.finishBeforeHistory": "Finish the current action before looking back",
   "status.historyProjectCreating": "Creating a project from this state…",
   "status.historyProjectCreateFailed": "Could not create a project from this state",

@@ -2264,6 +2264,7 @@ export const MESSAGES_NL: Record<MessageKey, string> = {
   "status.historyViewClosed": "Terug bij de huidige toestand",
   "status.historyViewBlocksEdits": "Sluit de geschiedenisweergave voordat je het ontwerp wijzigt",
   "status.historyViewEmpty": "Nog niets om op terug te kijken",
+  "status.historyViewInGroupSession": "Finish or cancel the group you are editing first: Undo and Redo work on its steps, and the History view comes back afterwards",
   "status.finishBeforeHistory": "Rond de huidige actie af voordat je terugkijkt",
   "status.historyProjectCreating": "Project maken van deze toestand…",
   "status.historyProjectCreateFailed": "Kon geen project maken van deze toestand",

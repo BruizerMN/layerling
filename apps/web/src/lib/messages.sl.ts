@@ -1612,6 +1612,7 @@ export const MESSAGES_SL: Partial<Record<MessageKey, string>> = {
   "status.historyViewClosed": "Nazaj v trenutnem stanju",
   "status.historyViewBlocksEdits": "Pred spreminjanjem projekta zapri pogled zgodovine",
   "status.historyViewEmpty": "Ni še ničesar za ogled",
+  "status.historyViewInGroupSession": "Finish or cancel the group you are editing first: Undo and Redo work on its steps, and the History view comes back afterwards",
   "status.finishBeforeHistory": "Pred ogledom preteklosti dokončaj trenutno dejanje",
   "status.historyProjectCreating": "Ustvarjanje projekta iz tega stanja…",
   "status.historyProjectCreateFailed": "Projekta iz tega stanja ni bilo mogoče ustvariti",

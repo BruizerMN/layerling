@@ -185,7 +185,7 @@ import { composedShapeRotation, geometryRotationDegreesForShortcut, geometryRota
 import { carryShapePivot, heightPatchKeepingBase, pivotAfterJoin, shapePivotFromWorld, shapePivotWorld, type PivotPoint } from "@/lib/rotationPivot";
 import { createLocalId } from "@/lib/localIds";
 import { canEditGroupAtLevel, mcpOpenGroupSummary, openGroupLevelsStillOpen, trackOpenGroupLevels, type OpenGroupLevel, type OpenGroupSession } from "@/lib/openGroupParts";
-import { rewindOpenStep } from "@/lib/historyRewind";
+import { appendInSession, boundSession, endSession, sessionFrame, type GroupEditSession } from "@/lib/historyFrames";
 import type { TapeMeasurementsAnswer, TapeMeasurementsRequest } from "@/lib/tapeLengthEdit";
 import { projectExportFileName, stlNameAsksForNewFile } from "@/lib/exportNames";
 import { exportMeshesToObj } from "@/lib/objExport";
@@ -3374,6 +3374,12 @@ export function LayerlingEditor({
   const openGroup = openGroups.at(-1) ?? null;
   /** The levels open at each history step, by the step's fingerprint. */
   const openGroupHistoryRef = useRef(new Map<string, OpenGroupLevel[]>());
+  /**
+   * Build 0123: the transaction around a group opened for editing (native). While it is set, historyRef/historyIndexRef/openGroupHistoryRef ARE the session's own
+   * history (first entry = the state right after the group opened, the floor of Undo); the document's history is in the session's `stash`, untouched, until the
+   * session ends (endGroupSession). See lib/historyFrames.ts and docs/GROUP-EDITING-TRANSACTION-HISTORY.md.
+   */
+  const groupSessionRef = useRef<GroupEditSession<OpenGroupLevel[]> | null>(null);
   const openGroupCount = useCallback((entry: EditorHistoryEntry) => openGroupHistoryRef.current.get(entry.fingerprint)?.length ?? 0, []);
   // What the arrows of the history view would undo and redo from the state it shows.
   const historyViewSteps = useMemo(
@@ -5393,11 +5399,10 @@ export function LayerlingEditor({
   useEffect(() => {
     const limitChanged = historyLimitRef.current !== workspaceSettings.historyLimit;
     historyLimitRef.current = workspaceSettings.historyLimit;
-    const bounded = boundedEditorHistoryState(
-      historyRef.current,
-      historyIndexRef.current,
-      workspaceSettings.historyLimit,
-    );
+    // Inside a group editing session only the session's own history is bounded (its first entry stays); the stashed document history is never touched here.
+    const bounded = groupSessionRef.current
+      ? boundSession({ entries: historyRef.current, index: historyIndexRef.current }, historyRef.current[0], workspaceSettings.historyLimit)
+      : boundedEditorHistoryState(historyRef.current, historyIndexRef.current, workspaceSettings.historyLimit);
     if (bounded.entries !== historyRef.current || bounded.index !== historyIndexRef.current) {
       historyRef.current = bounded.entries;
       historyIndexRef.current = bounded.index;
@@ -5411,14 +5416,11 @@ export function LayerlingEditor({
   const lastHistoryChangeRef = useRef<{ at: number; index: number } | null>(null);
   const appendHistoryEntry = useCallback((entry: EditorHistoryEntry, replaceCurrent = false) => {
     openGroupHistoryRef.current.set(entry.fingerprint, openGroupsRef.current);
-    const result = appendEditorHistorySnapshot(
-      historyRef.current,
-      historyIndexRef.current,
-      entry,
-      workspaceSettingsRef.current.historyLimit,
-      Date.now(),
-      replaceCurrent,
-    );
+    const limit = workspaceSettingsRef.current.historyLimit;
+    // Inside a group editing session the step joins the session's history; the history limit can never evict the session's first entry.
+    const result = groupSessionRef.current && !(replaceCurrent && historyIndexRef.current === 0)
+      ? appendInSession({ entries: historyRef.current, index: historyIndexRef.current }, historyRef.current[0], entry, limit, Date.now(), replaceCurrent)
+      : appendEditorHistorySnapshot(historyRef.current, historyIndexRef.current, entry, limit, Date.now(), replaceCurrent);
     if (result.entries !== historyRef.current) {
       historyRef.current = result.entries;
       setHistory(result.entries);
@@ -7029,6 +7031,8 @@ export function LayerlingEditor({
       incomingNotes,
     );
     projectHydratingRef.current = true;
+    // A document loaded over an open session (never expected: the host blocks it): the loaded history replaces everything.
+    groupSessionRef.current = null;
     shapesRef.current = incoming;
     selectedIdsRef.current = [];
     notesRef.current = incomingNotes;
@@ -7667,7 +7671,7 @@ export function LayerlingEditor({
     placementElevationRef.current = nextElevation;
     setHistoryIndex(nextIndex);
     setShapes(nextShapes);
-    setOpenGroupLevels((entry && openGroupHistoryRef.current.get(entry.fingerprint)) ?? []);
+    setOpenGroupLevels((entry && openGroupHistoryRef.current.get(entry.fingerprint)) ?? (groupSessionRef.current ? openGroupsRef.current : []));
     setNotes(nextNotes);
     setSelectedIds(nextSelection);
     setPlacementWorkplane(nextWorkplane);
@@ -7714,7 +7718,7 @@ export function LayerlingEditor({
     placementElevationRef.current = nextElevation;
     setHistoryIndex(nextIndex);
     setShapes(nextShapes);
-    setOpenGroupLevels((entry && openGroupHistoryRef.current.get(entry.fingerprint)) ?? []);
+    setOpenGroupLevels((entry && openGroupHistoryRef.current.get(entry.fingerprint)) ?? (groupSessionRef.current ? openGroupsRef.current : []));
     setNotes(nextNotes);
     setSelectedIds(nextSelection);
     setPlacementWorkplane(nextWorkplane);
@@ -7732,6 +7736,11 @@ export function LayerlingEditor({
    * abgelegt - sie wuerden sonst auf einem Stand arbeiten, der nur gezeigt wird.
    */
   const openHistoryView = useCallback(() => {
+    if (groupSessionRef.current) {
+      // Build 0123: the History view shows the document's history; inside a group editing session Undo and Redo work on the session's own steps.
+      setNotice(t("status.historyViewInGroupSession"));
+      return;
+    }
     if (projectInteractionActiveRef.current) {
       setNotice(t("status.finishBeforeHistory"));
       return;
@@ -12740,6 +12749,99 @@ export function LayerlingEditor({
     setCookieCutterTool((current) => current && !current.busy && !(selectedIds.length === current.targetIds.length && current.targetIds.every((id) => selectedIds.includes(id))) ? null : current);
   }, [selectedIds]);
 
+  /**
+   * Build 0123: the document's history goes into the session's stash and the editor works on a history of its own (see groupSessionRef). The stash keeps the very
+   * entries array the document had (never modified); the editor starts the session history from the document's current entry and rebaseGroupSession then starts
+   * it at the state right after the group opened.
+   */
+  const beginGroupSession = useCallback(() => {
+    const entries = historyRef.current;
+    const index = Math.min(historyIndexRef.current, Math.max(0, entries.length - 1));
+    const current = entries[index];
+    if (!current) return;
+    groupSessionRef.current = { stash: { entries, index }, stashLevels: openGroupHistoryRef.current };
+    openGroupHistoryRef.current = new Map([[current.fingerprint, openGroupsRef.current]]);
+    const frame = sessionFrame(current);
+    historyRef.current = frame.entries;
+    historyIndexRef.current = frame.index;
+    setHistory(frame.entries);
+    setHistoryIndex(frame.index);
+  }, []);
+
+  /** The session's history is this one entry: the state right after the group opened. */
+  const rebaseGroupSession = useCallback((openEntry: EditorHistoryEntry) => {
+    if (!groupSessionRef.current) return;
+    const levels = openGroupsRef.current;
+    // The step that opened the group (and the stash's current entry it started from) are not part of the session history; what the open step did to Visual Groups
+    // stays attached to this entry (membershipHistoryRef), so ending the session can undo or keep it.
+    const frame = sessionFrame(openEntry);
+    openGroupHistoryRef.current = new Map([[openEntry.fingerprint, levels]]);
+    historyRef.current = frame.entries;
+    historyIndexRef.current = frame.index;
+    setHistory(frame.entries);
+    setHistoryIndex(frame.index);
+  }, []);
+
+  /**
+   * Build 0123: the session is over; the document's history comes back. `done`: ONE entry for the finished state is added to it, in the normal way (the stash is
+   * never modified; an identical state adds nothing), carrying everything the session did to Visual Groups. `restore`: the document history comes back as it was
+   * (Redo included) and the editor shows that state again (Cancel, and Done on a session that changed nothing). Works from the references only, so it cannot be
+   * stopped by a missing step; true when a session was ended.
+   */
+  const endGroupSession = useCallback((mode: "done" | "restore", selectId?: string): boolean => {
+    const session = groupSessionRef.current;
+    if (!session) return false;
+    const limit = workspaceSettingsRef.current.historyLimit;
+    const stash = boundedEditorHistoryState(session.stash.entries as EditorHistoryEntry[], session.stash.index, limit);
+    const sessionEntries = historyRef.current;
+    const sessionIndex = historyIndexRef.current;
+    const sessionCurrent = sessionEntries[sessionIndex];
+    let next: { entries: EditorHistoryEntry[]; index: number; changed: boolean };
+    if (mode === "done" && sessionCurrent) {
+      next = endSession({ stash }, sessionCurrent, limit, Date.now());
+      if (next.changed) {
+        const joined: MembershipChange[] = [];
+        for (let position = 0; position <= sessionIndex; position += 1) joined.push(...(membershipHistoryRef.current.get(sessionEntries[position]) ?? []));
+        if (joined.length) membershipHistoryRef.current.set(sessionCurrent, joined);
+      }
+    } else {
+      next = { ...stash, changed: false };
+      // What the session did to Visual Groups (the open step included) goes back too.
+      for (let position = sessionIndex; position >= 0; position -= 1) restoreMembership(sessionEntries[position], "undo");
+    }
+    const map = session.stashLevels;
+    const entry = next.entries[next.index];
+    groupSessionRef.current = null;
+    if (mode === "done" && entry) map.set(entry.fingerprint, openGroupsRef.current);
+    openGroupHistoryRef.current = map;
+    historyRef.current = next.entries;
+    historyIndexRef.current = next.index;
+    lastHistoryChangeRef.current = next.changed ? { at: performance.now(), index: next.index } : null;
+    setHistory(next.entries);
+    setHistoryIndex(next.index);
+    if (mode === "restore" && entry) {
+      const nextShapes = (entry.shapes ?? []).map(canonicalizeShape);
+      const nextSelection = selectId && nextShapes.some((shape) => shape.id === selectId) ? [selectId] : (entry.selectedIds ?? []).filter((id) => nextShapes.some((shape) => shape.id === id));
+      const nextNotes = normalizeNotes(entry.notes);
+      const nextWorkplane = normalizePlacementWorkplane(entry.placementWorkplane);
+      const nextElevation = Math.abs(nextWorkplane.normal.x) < 1e-6 && Math.abs(nextWorkplane.normal.y - 1) < 1e-6 && Math.abs(nextWorkplane.normal.z) < 1e-6 ? nextWorkplane.origin.y : 0;
+      shapesRef.current = nextShapes;
+      selectedIdsRef.current = nextSelection;
+      notesRef.current = nextNotes;
+      placementWorkplaneRef.current = nextWorkplane;
+      placementElevationRef.current = nextElevation;
+      keyRunRef.current = null;
+      setShapes(nextShapes);
+      setOpenGroupLevels([]);
+      setNotes(nextNotes);
+      setSelectedIds(nextSelection);
+      setPlacementWorkplane(nextWorkplane);
+      setPlacementElevation(nextElevation);
+      syncProjectShapes(nextShapes);
+    }
+    return true;
+  }, [restoreMembership, setOpenGroupLevels, syncProjectShapes]);
+
   // Each step answers with what happened, so the buttons can show it and MCP can pass it on.
   const refuseOpenGroupStep = useCallback((message: string): OpenGroupOutcome => {
     setNotice(message);
@@ -12751,7 +12853,12 @@ export function LayerlingEditor({
     const current = historyRef.current[historyIndexRef.current];
     if (current) openGroupHistoryRef.current.set(current.fingerprint, levels);
     setOpenGroupLevels(levels);
-  }, [setOpenGroupLevels]);
+    // Build 0123: the last level is over: the session ends like Done, one entry for what it left.
+    if (!levels.length) {
+      openGroupsRef.current = levels;
+      endGroupSession("done");
+    }
+  }, [endGroupSession, setOpenGroupLevels]);
 
   /** Opening and closing a level are not edits of the level around it: nothing to track. */
   const commitOpenGroupTransition = useCallback((levels: OpenGroupLevel[], next: WorkplaneShape[], selection: string | string[], message: string, amendNewest = false) => {
@@ -12779,32 +12886,39 @@ export function LayerlingEditor({
     const parts = restoreGroupedChildren(group);
     const childIds = parts.map((shape) => shape.id);
     const message = t("status.groupOpened", { name: displayShapeName(group) });
-    commitOpenGroupTransition(
-      [...levels, { original: group, childIds, notes: notesPinnedTo(notesRef.current, group) }],
-      // The native app keeps the user's order: the parts stand where the group stood. (The browser edition keeps its own behaviour: the parts go to the end.)
-      nativeDocument ? replaceAtFirst(shapesRef.current, [group.id], parts) : [...shapesRef.current.filter((shape) => shape.id !== group.id), ...parts],
-      selectPart !== undefined && childIds[selectPart] ? [childIds[selectPart]] : childIds,
-      message,
-      amendNewest,
-    );
+    const beginsSession = Boolean(nativeDocument) && levels.length === 0 && !groupSessionRef.current;
+    if (beginsSession) beginGroupSession();
+    try {
+      commitOpenGroupTransition(
+        [...levels, { original: group, childIds, notes: notesPinnedTo(notesRef.current, group) }],
+        // The native app keeps the user's order: the parts stand where the group stood. (The browser edition keeps its own behaviour: the parts go to the end.)
+        nativeDocument ? replaceAtFirst(shapesRef.current, [group.id], parts) : [...shapesRef.current.filter((shape) => shape.id !== group.id), ...parts],
+        selectPart !== undefined && childIds[selectPart] ? [childIds[selectPart]] : childIds,
+        message,
+        amendNewest,
+      );
+    } catch (error) {
+      // Build 0123: a session that never got going leaves the document exactly as it was (history and scene), then the error goes on.
+      if (beginsSession) {
+        setOpenGroupLevels([]);
+        endGroupSession("restore");
+      }
+      throw error;
+    }
     if (nativeDocument) {
       // Build 0122: what the scene is right after this level opened (see OpenGroupSession).
       const entry = historyRef.current[historyIndexRef.current];
       if (entry) {
-        const index = historyIndexRef.current;
-        const pre = !amendNewest && index > 0 ? historyRef.current[index - 1] : null;
-        const record: OpenGroupSession = {
-          shapesFingerprint: projectShapesFingerprint(shapesRef.current),
-          notes: notesRef.current,
-          step: { index, fingerprint: entry.fingerprint, preIndex: pre ? index - 1 : null, preFingerprint: pre?.fingerprint ?? null },
-        };
+        const record: OpenGroupSession = { shapesFingerprint: projectShapesFingerprint(shapesRef.current), notes: notesRef.current };
         const withSession = openGroupsRef.current.map((level, position, all) => (position === all.length - 1 ? { ...level, session: record } : level));
         openGroupHistoryRef.current.set(entry.fingerprint, withSession);
         setOpenGroupLevels(withSession);
+        // Build 0123: the session's history starts at this state (Undo inside the session stops here).
+        if (beginsSession) rebaseGroupSession(entry);
       }
     }
     return { ok: true, message, partIds: childIds };
-  }, [commitOpenGroupTransition, nativeDocument, refuseOpenGroupStep]);
+  }, [beginGroupSession, commitOpenGroupTransition, endGroupSession, nativeDocument, rebaseGroupSession, refuseOpenGroupStep, setOpenGroupLevels]);
 
   // A click on a part in the object list opens its group and selects that part (Discussion #1316).
   const openGroupPartForEditing = useCallback((groupId: string, partId: string) => {
@@ -12819,54 +12933,13 @@ export function LayerlingEditor({
     Boolean(level.session) && projectShapesFingerprint(shapesRef.current) === level.session!.shapesFingerprint && notesRef.current === level.session!.notes
   ), []);
 
-  /**
-   * Build 0122: takes the open step out of the history again (no step added since: the history, the document and the undo steps are exactly as before the session).
-   * Returns false when it does not apply; the caller then restores the original as an ordinary step.
-   */
-  const rewindOpenSession = useCallback((levels: OpenGroupLevel[]): boolean => {
-    const level = levels.at(-1);
-    const record = level?.session?.step;
-    if (!level || !record) return false;
-    const rewound = rewindOpenStep(historyRef.current, historyIndexRef.current, record);
-    if (!rewound) return false;
-    restoreMembership(historyRef.current[historyIndexRef.current], "undo");
-    const entry = rewound.entries[rewound.index];
-    const kept = new Set(rewound.entries.map((candidate) => candidate.fingerprint));
-    historyRef.current.forEach((candidate) => { if (!kept.has(candidate.fingerprint)) openGroupHistoryRef.current.delete(candidate.fingerprint); });
-    const outer = levels.slice(0, -1);
-    openGroupHistoryRef.current.set(entry.fingerprint, outer);
-    const nextShapes = (entry.shapes ?? []).map(canonicalizeShape);
-    const nextSelection = nextShapes.some((shape) => shape.id === level.original.id) ? [level.original.id] : (entry.selectedIds ?? []).filter((id) => nextShapes.some((shape) => shape.id === id));
-    const nextNotes = normalizeNotes(entry.notes);
-    const nextWorkplane = normalizePlacementWorkplane(entry.placementWorkplane);
-    const nextElevation = Math.abs(nextWorkplane.normal.x) < 1e-6 && Math.abs(nextWorkplane.normal.y - 1) < 1e-6 && Math.abs(nextWorkplane.normal.z) < 1e-6 ? nextWorkplane.origin.y : 0;
-    historyRef.current = rewound.entries;
-    historyIndexRef.current = rewound.index;
-    shapesRef.current = nextShapes;
-    selectedIdsRef.current = nextSelection;
-    notesRef.current = nextNotes;
-    placementWorkplaneRef.current = nextWorkplane;
-    placementElevationRef.current = nextElevation;
-    keyRunRef.current = null;
-    setHistory(rewound.entries);
-    setHistoryIndex(rewound.index);
-    setShapes(nextShapes);
-    setOpenGroupLevels(outer);
-    setNotes(nextNotes);
-    setSelectedIds(nextSelection);
-    setPlacementWorkplane(nextWorkplane);
-    setPlacementElevation(nextElevation);
-    syncProjectShapes(nextShapes);
-    return true;
-  }, [restoreMembership, setOpenGroupLevels, syncProjectShapes]);
-
   /** The group as it was when it was opened, back in its place: Cancel, and (native, Build 0122) Done on a session that changed nothing. */
   const restoreOriginalSession = useCallback((say: (name: string) => string): OpenGroupOutcome => {
     const levels = openGroupsRef.current;
     const session = levels.at(-1)!;
     const message = say(displayShapeName(session.original));
-    // Native: no step was added since the open step: take it out of the history (the document is then exactly as before; nothing to undo).
-    if (nativeDocument && rewindOpenSession(levels)) return { ok: true, message, groupId: session.original.id };
+    // Native (Build 0123): the outermost level ends the session; the document's history and state come back exactly as they were before the group opened.
+    if (nativeDocument && levels.length === 1 && endGroupSession("restore", session.original.id)) return { ok: true, message, groupId: session.original.id };
     const parts = new Set(session.childIds);
     // The group comes back under its own id, which the level around it still lists - and its notes as they were.
     if (!historyViewStateRef.current) notesRef.current = notesPutBack(notesRef.current, session.notes);
@@ -12877,7 +12950,7 @@ export function LayerlingEditor({
       message,
     );
     return { ok: true, message, groupId: session.original.id };
-  }, [commitOpenGroupTransition, nativeDocument, rewindOpenSession]);
+  }, [commitOpenGroupTransition, endGroupSession, nativeDocument]);
 
   const cancelOpenGroup = useCallback((): OpenGroupOutcome => {
     const levels = openGroupsRef.current;
@@ -12968,12 +13041,14 @@ export function LayerlingEditor({
         regrouped.id,
         message,
       );
+      // Build 0123: the outermost level closed: the whole session is ONE step of the document.
+      if (nativeDocument && openGroupsRef.current.length === 0) endGroupSession("done");
       return { ok: true, message, groupId: regrouped.id };
     } finally {
       openGroupBusyRef.current = false;
       setOpenGroupBusy(false);
     }
-  }, [commitNotes, commitOpenGroupTransition, endOpenGroupLevelsWithoutStep, nativeDocument, openSessionUnchanged, refuseOpenGroupStep, rebuildGroupFromParts, restoreOriginalSession]);
+  }, [commitNotes, commitOpenGroupTransition, endGroupSession, endOpenGroupLevelsWithoutStep, nativeDocument, openSessionUnchanged, refuseOpenGroupStep, rebuildGroupFromParts, restoreOriginalSession]);
 
   /** Why a part cannot go into or out of a group from the object list right now, or null (Discussion #1338). */
   const groupPartsStepRefused = useCallback((): string | null => {
@@ -13236,6 +13311,12 @@ export function LayerlingEditor({
     const pending = groupsToKeepParts(before, shapes);
     if (pending.length) void rebuildKeepingParts(pending);
   }, [historyViewState, projectInteractionActive, rebuildKeepingParts, shapes]);
+
+  // Build 0123: a session history never outlives the levels it belongs to. Normal paths end it themselves (Done, Cancel, unchanged); this is the net under any other
+  // way the last level can disappear: the document's history comes back with one entry for the state as it is.
+  useEffect(() => {
+    if (!openGroups.length && groupSessionRef.current) endGroupSession("done");
+  }, [endGroupSession, openGroups]);
 
   // Undo past an opening brings that group back, and deleting every part leaves
   // nothing to close: in both cases that level is over, with every level inside it.
@@ -14198,6 +14279,10 @@ export function LayerlingEditor({
    * (#246 - a file to share without its history, or a design to start the undo steps over).
    */
   const clearHistory = useCallback(() => {
+    if (groupSessionRef.current) {
+      setNotice(t("status.historyViewInGroupSession"));
+      return 0;
+    }
     if (projectInteractionActiveRef.current) {
       setNotice(t("status.finishBeforeHistory"));
       return 0;
@@ -14222,6 +14307,10 @@ export function LayerlingEditor({
    * one before it. Returns how many states went.
    */
   const deleteHistorySteps = useCallback((indices: readonly number[]) => {
+    if (groupSessionRef.current) {
+      setNotice(t("status.historyViewInGroupSession"));
+      return 0;
+    }
     if (projectInteractionActiveRef.current) {
       setNotice(t("status.finishBeforeHistory"));
       return 0;
@@ -14263,6 +14352,12 @@ export function LayerlingEditor({
         return mcpSceneSnapshot(params.includeRawShapes === true);
       }
 
+      // Build 0123: inside a group editing session the history is the session's own; the document's (stashed) history is not reachable and nothing here may change it.
+      const inGroupSession = Boolean(groupSessionRef.current);
+      if (inGroupSession && (command.action === "clear_history" || command.action === "delete_history_steps" || command.action === "restore_from_history"
+        || (command.action === "set_history_view" && (params.open === true || params.index !== undefined)))) {
+        throw new Error("A group is open for editing: the history is the editing session's own, and the document's history cannot be changed or viewed until the group is finished or cancelled (Done or Cancel on the group bar).");
+      }
       const historyResult = historyViewMcpCommand(command.action, params, {
         entries: () => historyRef.current,
         current: () => historyIndexRef.current,
@@ -14277,7 +14372,11 @@ export function LayerlingEditor({
         openGroups: openGroupCount,
         summary: mcpShapeSummary,
       });
-      if (historyResult !== undefined) return historyResult;
+      if (historyResult !== undefined) {
+        return inGroupSession && historyResult && typeof historyResult === "object"
+          ? { ...(historyResult as Record<string, unknown>), historyScope: "group-editing-session", historyScopeNote: "These states are the group editing session's own history (the first state is the moment the group was opened). The document's history is kept apart and comes back when the group is finished or cancelled." }
+          : historyResult;
+      }
 
       // The files kept with the design (#820): the same checks as the attachments panel, see projectAttachmentsMcp.ts.
       const attachmentResult = await attachmentMcpCommand(command.action, params, {

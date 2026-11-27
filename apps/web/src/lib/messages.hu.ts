@@ -1940,6 +1940,7 @@ export const MESSAGES_HU: Partial<Record<MessageKey, string>> = {
   "status.historyViewClosed": "Vissza a jelenlegi állapotnál",
   "status.historyViewBlocksEdits": "A terv módosítása előtt zárd be az előzménynézetet",
   "status.historyViewEmpty": "Még nincs mire visszatekinteni",
+  "status.historyViewInGroupSession": "Finish or cancel the group you are editing first: Undo and Redo work on its steps, and the History view comes back afterwards",
   "status.finishBeforeHistory": "A visszatekintés előtt fejezd be az aktuális műveletet",
   "status.historyProjectCreating": "Projekt létrehozása ebből az állapotból…",
   "status.historyProjectCreateFailed": "Ebből az állapotból nem sikerült projektet létrehozni",

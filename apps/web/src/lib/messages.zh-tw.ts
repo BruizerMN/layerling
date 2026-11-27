@@ -2218,6 +2218,7 @@ export const MESSAGES_ZH_TW: Partial<Record<MessageKey, string>> = {
   "status.historyViewClosed": "已回到目前狀態",
   "status.historyViewBlocksEdits": "變更設計前請關閉歷史記錄視圖",
   "status.historyViewEmpty": "目前尚無可回看的內容",
+  "status.historyViewInGroupSession": "Finish or cancel the group you are editing first: Undo and Redo work on its steps, and the History view comes back afterwards",
   "status.finishBeforeHistory": "請先完成目前的動作再回看",
   "status.historyProjectCreating": "正在從此狀態建立專案…",
   "status.historyProjectCreateFailed": "無法從此狀態建立專案",

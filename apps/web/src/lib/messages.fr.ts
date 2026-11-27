@@ -2252,6 +2252,7 @@ export const MESSAGES_FR: Partial<Record<MessageKey, string>> = {
   "status.historyViewClosed": "Retour à l'état actuel",
   "status.historyViewBlocksEdits": "Fermez la vue historique avant de modifier la conception",
   "status.historyViewEmpty": "Rien à redire pour l'instant",
+  "status.historyViewInGroupSession": "Finish or cancel the group you are editing first: Undo and Redo work on its steps, and the History view comes back afterwards",
   "status.finishBeforeHistory": "Terminez l'action en cours avant de regarder en arrière",
   "status.historyProjectCreating": "Créer un projet à partir de cet état…",
   "status.historyProjectCreateFailed": "Impossible de créer un projet à partir de cet état",

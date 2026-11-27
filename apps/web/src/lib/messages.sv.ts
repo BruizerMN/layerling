@@ -2259,6 +2259,7 @@ export const MESSAGES_SV: Partial<Record<MessageKey, string>> = {
   "status.historyViewClosed": "Tillbaka vid det nuvarande tillståndet",
   "status.historyViewBlocksEdits": "Stäng historikvyn innan du ändrar designen",
   "status.historyViewEmpty": "Inget att titta tillbaka på än",
+  "status.historyViewInGroupSession": "Finish or cancel the group you are editing first: Undo and Redo work on its steps, and the History view comes back afterwards",
   "status.finishBeforeHistory": "Slutför den pågående åtgärden innan du tittar tillbaka",
   "status.historyProjectCreating": "Skapar ett projekt från det här tillståndet…",
   "status.historyProjectCreateFailed": "Det gick inte att skapa ett projekt från det här tillståndet",

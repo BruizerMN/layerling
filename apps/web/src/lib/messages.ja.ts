@@ -2249,6 +2249,7 @@ export const MESSAGES_JA: Partial<Record<MessageKey, string>> = {
   "status.historyViewClosed": "現在の状態にもどりました",
   "status.historyViewBlocksEdits": "デザインを変更する前に履歴表示を閉じてください",
   "status.historyViewEmpty": "まだ振り返る履歴がありません",
+  "status.historyViewInGroupSession": "Finish or cancel the group you are editing first: Undo and Redo work on its steps, and the History view comes back afterwards",
   "status.finishBeforeHistory": "履歴を見る前に現在の操作を終了してください",
   "status.historyProjectCreating": "この状態からプロジェクトを作成しています…",
   "status.historyProjectCreateFailed": "この状態からプロジェクトを作成できませんでした",

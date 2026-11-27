@@ -2822,6 +2822,7 @@ export const MESSAGES_DA: Partial<Record<MessageKey, string>> = {
   "status.historyViewClosed": "Tilbage ved den aktuelle tilstand",
   "status.historyViewBlocksEdits": "Luk historikvisningen før du ændrer designet",
   "status.historyViewEmpty": "Intet at se tilbage på endnu",
+  "status.historyViewInGroupSession": "Finish or cancel the group you are editing first: Undo and Redo work on its steps, and the History view comes back afterwards",
   "status.finishBeforeHistory": "Afslut den aktuelle handling før du ser tilbage",
   "status.historyProjectCreating": "Opretter et projekt fra denne tilstand …",
   "status.historyProjectCreateFailed": "Kunne ikke oprette et projekt fra denne tilstand",

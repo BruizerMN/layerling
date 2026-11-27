@@ -2384,6 +2384,7 @@ export const MESSAGES_CS: Record<MessageKey, string> = {
   "status.historyViewClosed": "Návrat k aktuálnímu stavu",
   "status.historyViewBlocksEdits": "Před úpravou projektu zavřete pohled historie",
   "status.historyViewEmpty": "Zatím není žádný dřívější stav",
+  "status.historyViewInGroupSession": "Finish or cancel the group you are editing first: Undo and Redo work on its steps, and the History view comes back afterwards",
   "status.finishBeforeHistory": "Před prohlížením historie dokončete aktuální akci",
   "status.historyProjectCreating": "Vytváření projektu z tohoto stavu…",
   "status.historyProjectCreateFailed": "Projekt z tohoto stavu se nepodařilo vytvořit",

@@ -2259,6 +2259,7 @@ export const MESSAGES_RU: Partial<Record<MessageKey, string>> = {
   "status.historyViewClosed": "Возврат к текущему состоянию",
   "status.historyViewBlocksEdits": "Закройте просмотр истории, прежде чем изменять проект",
   "status.historyViewEmpty": "Пока нечего просматривать",
+  "status.historyViewInGroupSession": "Finish or cancel the group you are editing first: Undo and Redo work on its steps, and the History view comes back afterwards",
   "status.finishBeforeHistory": "Завершите текущее действие перед просмотром истории",
   "status.historyProjectCreating": "Создание проекта из этого состояния…",
   "status.historyProjectCreateFailed": "Не удалось создать проект из этого состояния",

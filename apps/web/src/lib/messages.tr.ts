@@ -1392,6 +1392,7 @@ export const MESSAGES_TR: Partial<Record<MessageKey, string>> = {
   "status.historyViewClosed": "Güncel duruma dönüldü",
   "status.historyViewBlocksEdits": "Tasarımı değiştirmeden önce geçmiş görünümünü kapat",
   "status.historyViewEmpty": "Henüz geriye bakılacak bir şey yok",
+  "status.historyViewInGroupSession": "Finish or cancel the group you are editing first: Undo and Redo work on its steps, and the History view comes back afterwards",
   "status.finishBeforeHistory": "Geriye bakmadan önce geçerli işlemi bitir",
   "status.historyProjectCreating": "Bu durumdan bir proje oluşturuluyor…",
   "status.historyProjectCreateFailed": "Bu durumdan proje oluşturulamadı",

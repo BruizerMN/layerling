@@ -2263,6 +2263,7 @@ export const MESSAGES_AR: Partial<Record<MessageKey, string>> = {
   "status.historyViewClosed": "العودة إلى الحالة الحالية",
   "status.historyViewBlocksEdits": "أغلق عرض السجل قبل تغيير التصميم",
   "status.historyViewEmpty": "لا يوجد ما يُعرض من الماضي بعد",
+  "status.historyViewInGroupSession": "Finish or cancel the group you are editing first: Undo and Redo work on its steps, and the History view comes back afterwards",
   "status.finishBeforeHistory": "أنهِ الإجراء الحالي قبل عرض ما مضى",
   "status.historyProjectCreating": "جارٍ إنشاء مشروع من هذه الحالة…",
   "status.historyProjectCreateFailed": "تعذر إنشاء مشروع من هذه الحالة",

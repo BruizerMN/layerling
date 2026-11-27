@@ -2264,6 +2264,7 @@ export const MESSAGES_DE: Record<MessageKey, string> = {
   "status.historyViewClosed": "Wieder beim aktuellen Stand",
   "status.historyViewBlocksEdits": "Schließe erst die Verlaufsansicht, bevor du den Entwurf änderst",
   "status.historyViewEmpty": "Noch nichts zum Zurückschauen",
+  "status.historyViewInGroupSession": "Finish or cancel the group you are editing first: Undo and Redo work on its steps, and the History view comes back afterwards",
   "status.finishBeforeHistory": "Beende erst die laufende Aktion, bevor du zurückschaust",
   "status.historyProjectCreating": "Projekt aus diesem Stand wird angelegt…",
   "status.historyProjectCreateFailed": "Aus diesem Stand konnte kein Projekt angelegt werden",
