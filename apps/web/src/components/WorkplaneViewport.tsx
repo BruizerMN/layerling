@@ -13,7 +13,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { boxEdgeTargets, edgeSnapGuide, objectSnapOffset, shiftSnapBox, snapResizeEdge, type EdgeSnapTarget, type ObjectSnapGuide, type SnapBox } from "@/lib/objectSnap";
 import { dragReach } from "@/lib/dragReach";
 import { useMovablePanel, type MovablePanelOptions } from "@/lib/useMovablePanel";
-import { computeSectionPlaneVector, DEFAULT_SECTION_SETTINGS, getSectionBounds, SECTION_AXES_SHOWN, sectionAxisLetter, sectionAxisVector, sectionFineWindow, sectionFrameFromView, sectionFrameFromWorkplane, sectionPlacementWorkplane, sectionPointFromFrame, sectionPointToFrame, type SectionFrame, type SectionOrientation, type SectionPlaneAxis, type SectionPlaneSettings } from "@/lib/sectionView";
+import { computeSectionPlaneVector, DEFAULT_SECTION_SETTINGS, getSectionBounds, SECTION_AXES_SHOWN, sectionAxisFromLetter, sectionAxisLetter, sectionAxisVector, sectionFineWindow, sectionFrameFromView, sectionFrameFromWorkplane, sectionPlacementWorkplane, sectionPointFromFrame, sectionPointToFrame, type SectionFrame, type SectionOrientation, type SectionPlaneAxis, type SectionPlaneSettings } from "@/lib/sectionView";
 import { projectSectionPoint, type SectionBody, type SectionLoop, type SectionPoint } from "@/lib/sectionSvg";
 import { normalizeSectionCutFace, SECTION_CUT_FACES, sectionCapMesh, sectionHatchSpacing, sectionHatchTexture, sectionHatchTurned, sectionHatchUvs, type SectionCutFace } from "@/lib/sectionCaps";
 import { sectionMeasurement, sectionPointToWorld, snapSectionPoint, type SectionSnap } from "@/lib/sectionMeasure";
@@ -44,7 +44,8 @@ import { ViewScrollbarsIcon } from "@/components/ViewScrollbarsIcon";
 import { readViewScrollbars, storeViewScrollbars } from "@/lib/viewScroll";
 import { openSecondViewWindow, SecondViewWindow, useSecondViewSupported } from "@/components/workplane/SecondViewWindow";
 import { isNativeAppearance } from "@/lib/appTheme";
-import { registerViewCommands, type ViewBarState, type ViewCommand } from "@/lib/viewCommands";
+import { registerViewCommands, type SectionViewState, type ViewBarState, type ViewCommand } from "@/lib/viewCommands";
+import type { CommandValue } from "@/lib/commandValues";
 import { publishViewBarState, requestHostAction } from "@/lib/host/nativeUi";
 import { starSettingsForSize } from "@/lib/starGeometry";
 import { carriedOntoFace } from "@/lib/carryOntoFace";
@@ -6669,6 +6670,7 @@ export function WorkplaneViewport({
     if (next) {
       onCancelCruise?.();
       setProtractorActive(false);
+      setSectionMeasureMode(false);   // Build 0103
     }
     cornerRulerModeRef.current = next;
     setCornerRulerMode(next);
@@ -8425,6 +8427,7 @@ export function WorkplaneViewport({
     setTapeToolsOpen(next);
     if (next) {
       setSectionViewOpen(false);
+      setSectionMeasureMode(false);   // Build 0103
       setProtractorActive(false);
     }
     setTapeActive(false);
@@ -8438,6 +8441,7 @@ export function WorkplaneViewport({
     if (splitActiveRef.current) return;
     setTapeHidden(false);
     leaveTapeSubModes();
+    setSectionMeasureMode(false);   // Build 0103
     setTapeActive(true);
     onWorkplaneModeChange(false);
     onCancelCruise?.();
@@ -8464,6 +8468,7 @@ export function WorkplaneViewport({
     setTapeMoveMode(false);
     tapeDeleteModeRef.current = true;
     setTapeDeleteMode(true);
+    setSectionMeasureMode(false);   // Build 0103
     onWorkplaneModeChange(false);
     onCancelCruise?.();
   }, [onCancelCruise, onWorkplaneModeChange, setTapeActive, setTapeHidden]);
@@ -8476,6 +8481,7 @@ export function WorkplaneViewport({
     setTapeDeleteMode(false);
     tapeMoveModeRef.current = true;
     setTapeMoveMode(true);
+    setSectionMeasureMode(false);   // Build 0103
     onWorkplaneModeChange(false);
     onCancelCruise?.();
     onSelectShape(null);
@@ -9002,6 +9008,7 @@ export function WorkplaneViewport({
   const engageTape = () => {
     if (splitActiveRef.current || tapeToolsOpen) return;
     setSectionViewOpen(false);
+    setSectionMeasureMode(false);   // Build 0103: one measuring tool takes the viewport's clicks, also when the Section palette stays open beside the Measure popover
     setProtractorActive(false);
     cornerRulerModeRef.current = false;
     setCornerRulerMode(false);
@@ -9016,8 +9023,18 @@ export function WorkplaneViewport({
     setCornerRulerMode(false);
     setProtractorActive(false);
   };
-  const viewCommandRunRef = useRef<(command: ViewCommand) => void>(() => undefined);
-  viewCommandRunRef.current = (command) => {
+  // Build 0103: Section Measure is armed through the same exclusivity as the other measuring tools: arming it puts the tape, corner ruler and protractor (and a placing tool) down.
+  const armSectionMeasure = (on: boolean) => {
+    if (on && !sectionSettingsRef.current.enabled) return;
+    if (on) {
+      endMeasuring();
+      onWorkplaneModeChange(false);
+      onCancelCruise?.();
+    }
+    setSectionMeasureMode(on);
+  };
+  const viewCommandRunRef = useRef<(command: ViewCommand, value?: CommandValue) => void>(() => undefined);
+  viewCommandRunRef.current = (command, value) => {
     // Tools that the bar's own button disables while the Split tool is active.
     if (splitActiveRef.current && (command === "workplane.place" || command === "measure.tape" || command === "measure.cornerRuler" || command === "measure.protractor")) return;
     // The tool panels (tape, protractor, section) are drawn inside the bar: a folded bar is unfolded first, so choosing one from the menu shows its panel.
@@ -9056,13 +9073,51 @@ export function WorkplaneViewport({
       case "measure.protractor.faces": if (!protractorOpenRef.current) openProtractor(); chooseProtractorKind("faces"); break;
       case "measure.protractor.clear": clearProtractor(); break;
       case "measure.end": endMeasuring(); break;
-      case "measure.section": toggleSectionView(); break;
+      case "measure.section": if (isNativeAppearance() && requestHostAction("showSectionView")) break; toggleSectionView(); break;   // Build 0103: the Mac app opens the native popover instead of the legacy panel
       case "measure.note": onNoteTool?.(); break;
+      // Build 0103: the native Section View popover. Each calls the function the legacy panel's control calls (one source of truth); the cut itself is page state, never saved, never an undo step.
+      case "section.toggle": handleToggleSectionEnabled(!sectionSettingsRef.current.enabled); break;
+      case "section.orientation.world": handleSelectSectionOrientation("world"); break;
+      case "section.orientation.workplane": handleSelectSectionOrientation("workplane"); break;
+      case "section.orientation.view": handleSelectSectionOrientation("view"); break;
+      case "section.axis.x": handleSelectSectionAxis(sectionAxisFromLetter("X")); break;
+      case "section.axis.y": handleSelectSectionAxis(sectionAxisFromLetter("Y")); break;
+      case "section.axis.z": handleSelectSectionAxis(sectionAxisFromLetter("Z")); break;
+      case "section.flip": handleToggleSectionFlip(); break;
+      case "section.center": handleResetSectionToCenter(); break;
+      case "section.cutFace.hatch": changeSectionCutFace("hatch"); break;
+      case "section.cutFace.fill": changeSectionCutFace("fill"); break;
+      case "section.cutFace.open": changeSectionCutFace("open"); break;
+      case "section.showPlane": handleToggleShowSectionPlane(!sectionSettingsRef.current.showPlane); break;
+      case "section.position": {
+        // A typed length in the document's display unit; the Y cut counts towards the back like the position fields (#182). Like the legacy field, a typed value is not clamped to the slider's span.
+        if (!value || value.kind !== "length" || !Number.isFinite(value.number) || !sectionSettingsRef.current.enabled) break;
+        const sign = sectionSettingsRef.current.axis === "z" ? -1 : 1;
+        handleSectionOffsetChange(sign * displayToMillimeters(value.number, workspaceRef.current));
+        break;
+      }
+      case "section.measure": armSectionMeasure(!sectionMeasureModeRef.current); break;
+      case "section.workplane":
+        if (!sectionSettingsRef.current.enabled) break;
+        onSetPlacementWorkplane(sectionPlacementWorkplane(sectionSettingsRef.current), "shape");   // the workplane lies on the cut (#154)
+        onWorkplaneModeChange(false);
+        break;
+      case "section.sketch":
+        if (!sectionSettingsRef.current.enabled || !onSketchFromSection) break;
+        if (sectionMeasureModeRef.current) setSectionMeasureMode(false);
+        onSketchFromSection(sectionSettingsRef.current);
+        break;
+      case "section.exportSvg": {
+        const settings = sectionSettingsRef.current;
+        if (settings.enabled) onExportSectionSvg?.(settings.axis, settings.offset, settings.frame ?? null);   // the engine builds the SVG; the host's save panel takes it (the existing download path)
+        break;
+      }
+      case "section.popoverClosed": setSectionMeasureMode(false); break;   // the controls are gone: no measuring is left armed; the cut stays
       default: break;
     }
   };
   useEffect(() => {
-    registerViewCommands({ kind: "geometry", run: (command) => viewCommandRunRef.current(command) });
+    registerViewCommands({ kind: "geometry", run: (command, value) => viewCommandRunRef.current(command, value) });
     return () => registerViewCommands(null);
   }, []);
   const faceWorkplaneForMenu = !placementWorkplaneIsBase(placementWorkplane);
@@ -9106,8 +9161,40 @@ export function WorkplaneViewport({
     return { "savedView.go.1": Boolean(views[0]), "savedView.go.2": Boolean(views[1]), "savedView.go.3": Boolean(views[2]), "savedView.go.4": Boolean(views[3]) } as const;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedViewsTick, projectId]);
+  // Build 0103: the Section View's settings for the native popover (display units; the page owns bounds and conversion).
+  const sectionReport = useMemo<SectionViewState>(() => {
+    const bounds = getSectionBounds(shapes, sectionSettings.axis, workspace.width, workspace.depth, sectionSettings.frame ?? null);
+    const fine = sectionFineWindow(bounds);
+    const sign = sectionSettings.axis === "z" ? -1 : 1;
+    const shownLength = (mm: number) => Math.round(millimetersToDisplay(mm, workspace) * 1000) / 1000 || 0;
+    return {
+      enabled: sectionSettings.enabled,
+      orientation: sectionSettings.orientation ?? "world",
+      axis: sectionAxisLetter(sectionSettings.axis),
+      flipped: sectionSettings.flipped,
+      showPlane: sectionSettings.showPlane,
+      cutFace: sectionCutFace,
+      measureArmed: sectionMeasureMode && sectionSettings.enabled,
+      measureReadout: sectionMeasureMode && sectionMeasureResult
+        ? {
+            main: `${sectionMeasureResult.circle === "diameter" ? "Ø " : sectionMeasureResult.circle === "radius" ? "R " : ""}${formatMeasure(sectionMeasureResult.distance, workspace.accuracy)} ${lengthDisplayUnit(workspace).label}`,
+            detail: sectionMeasureDeltas(sectionMeasureResult, sectionSettings.axis, workspace.accuracy),
+          }
+        : null,
+      position: {
+        value: shownLength(sign * sectionSettings.offset),
+        min: shownLength(sign > 0 ? bounds.min : -bounds.max),
+        max: shownLength(sign > 0 ? bounds.max : -bounds.min),
+        step: millimetersToDisplay(bounds.step, workspace),
+        fineSpan: millimetersToDisplay(fine.span, workspace),
+        unit: lengthDisplayUnit(workspace).label,
+      },
+      canSketch: Boolean(onSketchFromSection),
+    };
+  }, [shapes, workspace, sectionSettings, sectionCutFace, sectionMeasureMode, sectionMeasureResult, onSketchFromSection]);
   const viewBarState = useMemo<ViewBarState>(() => ({
     kind: "geometry",
+    section: sectionReport,
     enabled: {
       "camera.home": true, "camera.focusSelection": true, "camera.zoomIn": true, "camera.zoomOut": true,
       "camera.projection": true, "camera.scrollbars": true, "workplane.visible": true, "camera.dimensions": true,
@@ -9129,7 +9216,7 @@ export function WorkplaneViewport({
       "measure.protractor.points": protractorOpen && protractorKind === "points", "measure.protractor.faces": protractorOpen && protractorKind === "faces",
       "measure.section": sectionViewOpen || sectionSettings.enabled, "measure.note": noteMode, "view.notes": notesVisible,
     },
-  }), [dimensionsHidden, savedViewFlags, noteCount, notesVisible, tapeMode, tapeMoveMode, tapeDeleteMode, tapeWholeEdges, tapeModel.hidden, tapeModel.segments.length, tapeModel.points.length, protractorKind, cubeRect, splitActive, faceWorkplaneForMenu, onToggleWorkplaneHidden, onNoteTool, onToggleNotes, orthographicView, viewScrollbarsOn, workplaneLayerHidden, workplaneMode, workplaneHidden, tapeToolsOpen, cornerRulerMode, protractorOpen, sectionViewOpen, sectionSettings.enabled, noteMode]);
+  }), [dimensionsHidden, savedViewFlags, noteCount, notesVisible, tapeMode, tapeMoveMode, tapeDeleteMode, tapeWholeEdges, tapeModel.hidden, tapeModel.segments.length, tapeModel.points.length, protractorKind, cubeRect, splitActive, faceWorkplaneForMenu, onToggleWorkplaneHidden, onNoteTool, onToggleNotes, orthographicView, viewScrollbarsOn, workplaneLayerHidden, workplaneMode, workplaneHidden, tapeToolsOpen, cornerRulerMode, protractorOpen, sectionViewOpen, sectionSettings.enabled, noteMode, sectionReport]);
   useEffect(() => { publishViewBarState(viewBarState); }, [viewBarState]);
   useEffect(() => () => publishViewBarState(null), []);
 
@@ -9386,7 +9473,7 @@ export function WorkplaneViewport({
                 title={t("camera.sectionView")}
                 aria-expanded={sectionViewOpen}
                 aria-controls="section-tool-popover"
-                onClick={toggleSectionView}
+                onClick={isNativeAppearance() ? () => requestHostAction("showSectionView") : toggleSectionView}   // Build 0103: the Mac app has the native Section View popover
               >
                 <Slice size={23} strokeWidth={2.15} aria-hidden="true" />
               </button>

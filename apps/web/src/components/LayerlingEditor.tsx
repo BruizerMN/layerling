@@ -312,6 +312,7 @@ import { escapeWasHandled } from "@/lib/escapeHandled";
 import { handleSketchEditorKey } from "@/lib/sketchEditorKeys";
 import { sketchEscapeAction } from "@/lib/sketchEscape";
 import { isMeasurePopoverOpen } from "@/lib/measurePopover";
+import { isSectionPopoverOpen } from "@/lib/sectionPopover";
 import { booleanAutomationScene } from "@/lib/editorAutomation";
 import { debugShapeSummary, mcpPivotRequest, compactShapeSummary, mcpGridfinityLabelFont, mcpShapeSummary, mcpSketchFillProfile, mcpTextFont } from "@/lib/editorMcpSummary";
 import { sweepAnchorFromParams, sweepPathFromParams, sweepSectionFromParams, sweepSketchProfile } from "@/lib/sweepSketch";
@@ -19435,6 +19436,8 @@ export function LayerlingEditor({
         // Build 0099: with the native Measure popover open, Escape belongs to the measuring tools and the popover (the tools' own handlers cancel an operation; with none active the key is left
         // unhandled and the host dismisses the popover): the editor neither puts other tools down nor clears the selection.
         if (isMeasurePopoverOpen()) return;
+        // Build 0103: the same for the ATTACHED Section View popover (an armed Section Measure is cancelled by its own handler before this point; the cut is never touched by Escape).
+        if (isSectionPopoverOpen()) return;
         // Erst das Werkzeug ablegen, dann die Auswahl - wer ein Werkzeug in der
         // Hand hat, meint mit Escape das Werkzeug.
         if (intersectPreviewIdsRef.current) {

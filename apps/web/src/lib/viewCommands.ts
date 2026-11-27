@@ -1,3 +1,5 @@
+import type { CommandValue } from "@/lib/commandValues";
+
 /**
  * Build 0095: the native "View Bar" menu's commands. The view bar's buttons keep working exactly as they did; this gives the same functions a second entry, the host's menus.
  *
@@ -31,6 +33,15 @@ export const VIEW_COMMANDS = [
   "camera.dimensions",
   "savedView.go.1", "savedView.go.2", "savedView.go.3", "savedView.go.4",
   "savedView.save.1", "savedView.save.2", "savedView.save.3", "savedView.save.4",
+  // Build 0103: the native Section View popover. Names only, except "section.position", which carries a typed `length` value (lib/commandValues.ts) in the document's display unit. Each runs the
+  // function the legacy panel's control ran; the popover's own state reports (attached shown, detached, closed) are the three "section.popover..." commands.
+  "section.toggle",
+  "section.orientation.world", "section.orientation.workplane", "section.orientation.view",
+  "section.axis.x", "section.axis.y", "section.axis.z", "section.flip",
+  "section.position", "section.center",
+  "section.cutFace.hatch", "section.cutFace.fill", "section.cutFace.open", "section.showPlane",
+  "section.measure", "section.workplane", "section.sketch", "section.exportSvg",
+  "section.popoverOpened", "section.popoverDetached", "section.popoverClosed",
 ] as const;
 export type ViewCommand = (typeof VIEW_COMMANDS)[number];
 
@@ -54,11 +65,32 @@ export interface ViewBarState {
    * The host pins its camera strip under it. It changes only when the layout does, never while the camera turns (the rectangle is the cube's box, not its rotating faces).
    */
   cube?: { x: number; y: number; width: number; height: number } | null;
+  /** Build 0103 (3D only): the Section View's settings for the native popover. Positions are in the document's DISPLAY unit; the page owns the bounds and the conversion. */
+  section?: SectionViewState | null;
+}
+
+/** Build 0103: what the native Section View popover shows (all of it is the page's state; nothing is stored by the host). */
+export interface SectionViewState {
+  enabled: boolean;
+  orientation: "world" | "workplane" | "view";
+  /** The axis as the position fields name it (X width, Y depth, Z height). */
+  axis: "X" | "Y" | "Z";
+  flipped: boolean;
+  showPlane: boolean;
+  cutFace: "hatch" | "fill" | "open";
+  /** Section Measure is armed (viewport clicks measure on the cut). */
+  measureArmed: boolean;
+  /** The page's formatted reading of the last measurement on the cut (null: none yet). */
+  measureReadout: { main: string; detail: string } | null;
+  /** The cut's position along the axis and what the sliders may span, in the display unit named by `unit`; `fineSpan` is the half-width of the fine slider's window. */
+  position: { value: number; min: number; max: number; step: number; fineSpan: number; unit: string };
+  /** "Sketch from Cut" can run now. */
+  canSketch: boolean;
 }
 
 export interface ViewCommandController {
   kind: "geometry" | "sketch";
-  run: (command: ViewCommand) => void;
+  run: (command: ViewCommand, value?: CommandValue) => void;
 }
 
 let controller: ViewCommandController | null = null;
@@ -69,8 +101,9 @@ export function registerViewCommands(next: ViewCommandController | null) {
 }
 
 /** Runs a command in the mounted view. False when no view is mounted that can take it (the command is then ignored). */
-export function runViewCommand(command: ViewCommand): boolean {
+export function runViewCommand(command: ViewCommand, value?: CommandValue): boolean {
   if (!controller) return false;
-  controller.run(command);
+  if (value === undefined) controller.run(command);
+  else controller.run(command, value);
   return true;
 }

@@ -63,15 +63,17 @@ describe("View Bar commands (Build 0095)", () => {
     for (const [command, call] of [
       ["camera.home", "resetView()"], ["camera.zoomIn", "zoomCamera(ZOOM_STEP_IN)"], ["camera.projection", "toggleProjection()"],
       ["workplane.place", "togglePlacementWorkplane()"], ["workplane.lookOnto", "lookOntoWorkplane()"],
-      ["measure.tape", "toggleTapeTools()"], ["measure.cornerRuler", "toggleCornerRulerTool()"], ["measure.protractor", "toggleProtractor()"], ["measure.section", "toggleSectionView()"],
+      ["measure.tape", "toggleTapeTools()"], ["measure.cornerRuler", "toggleCornerRulerTool()"], ["measure.protractor", "toggleProtractor()"],
     ]) expect(viewport.includes(`case "${command}": ${call}`), command).toBe(true);
+    // Build 0103: in the Mac app the menu command opens the native Section View popover instead of the legacy panel.
+    expect(viewport).toContain("case \"measure.section\": if (isNativeAppearance() && requestHostAction(\"showSectionView\")) break; toggleSectionView(); break;");
     expect(viewport).toContain("useSecondViewSupported() && !isNativeAppearance()");
     const sketch = readFileSync("apps/web/src/components/SketchWorkspace.tsx", "utf8");
     for (const [command, call] of [["camera.home", "resetView()"], ["camera.zoomOut", "zoomByButton(ZOOM_STEP_OUT)"], ["measure.tape", "onMeasureTool()"], ["sketch.measurements", "toggleMeasurements()"]]) {
       expect(sketch.includes(`case "${command}": ${call}`), command).toBe(true);
     }
     const toolbar = readFileSync("apps/web/src/components/workplane/SecondaryToolbar.tsx", "utf8");
-    expect(toolbar).toContain("isViewCommand(command)) runViewCommand(command)");
+    expect(toolbar).toContain("isViewCommand(command)) runViewCommand(command, value)");   // Build 0103: the typed value rides along
   });
 });
 

@@ -2,6 +2,8 @@
 
 import { isViewCommand, runViewCommand } from "@/lib/viewCommands";
 import { setMeasurePopoverOpen } from "@/lib/measurePopover";
+import { setSectionPopoverOpen } from "@/lib/sectionPopover";
+import type { CommandValue } from "@/lib/commandValues";
 import { GuideHelpLink } from "@/components/GuideHelpLink";
 import { RibbonIconOr, RibbonToolIcon } from "@/components/RibbonIcon";
 import { ribbonIconKey } from "@/lib/host/ribbonIcons";
@@ -992,13 +994,18 @@ export function SecondaryToolbar({
       file: sketching ? null : { import: !historyViewActive, export: true, attachments: true, insertDesigns: !historyViewActive && !presentationActive },
     });
   }, [nativeChrome, toolbarMode, historyViewActive, focusMode, ribbonPinned, inspectorVisible, textFocus, presentationActive, presentationStandby, sketchCanUndo, sketchCanRedo, sketchHasSelection, sketchHasClipboard, canUndo, canRedo, canModifySelection, hasSelection, hasClipboard, canHistoryView, hiddenShapeCount, selectionHidden, outlinerOpen, noteCount, notesVisible, overhangsVisible, overhangAngle]);
-  const nativeCommandRef = useRef<(command: string) => void>(() => undefined);
-  nativeCommandRef.current = (command) => {
+  const nativeCommandRef = useRef<(command: string, value?: CommandValue) => void>(() => undefined);
+  nativeCommandRef.current = (command, value) => {
     // Build 0099: the host's Measure popover closed (any reason, Presentation Mode too): the page puts every measuring operation down, existing measurements untouched.
     if (command === "measure.popoverClosed") { setMeasurePopoverOpen(false); runViewCommand("measure.end"); return; }
+    // Build 0103: the host's Section View popover closed (any reason): an armed Section Measure is put down; the CUT stays (dismissing the controls never deactivates it). Detached: Escape is the
+    // editor's again (the palette stays open).
+    if (command === "section.popoverClosed") { setSectionPopoverOpen(false); runViewCommand("section.popoverClosed"); return; }
+    if (command === "section.popoverDetached") { setSectionPopoverOpen(false); return; }
     // Presentation Mode is read-only: the only commands it takes from the host are to leave and to toggle Standby.
     if (presentationActive && command !== "presentation.exit" && command !== "presentation.standby") return;
     if (command === "measure.popoverOpened") { setMeasurePopoverOpen(true); return; }
+    if (command === "section.popoverOpened") { setSectionPopoverOpen(true); return; }
     if (command === "presentation.standby") { if (presentationActive) onPresentationStandby?.(); return; }
     if (command === "presentation.enter") { if (toolbarMode === "geometry") onPresentationEnter?.(); return; }
     if (command === "presentation.exit") { onPresentationExit?.(); return; }
@@ -1034,7 +1041,7 @@ export function SecondaryToolbar({
       case "shortcuts": onShortcuts(); break;
       case "interactiveHelp": onInteractiveHelp(); break;
       // Build 0095: the host's View Bar menu. The mounted view (3D viewport or sketch workspace) runs the very function its view bar button runs.
-      default: if (isViewCommand(command)) runViewCommand(command); break;
+      default: if (isViewCommand(command)) runViewCommand(command, value); break;
       case "settings.saveStartView":
       case "settings.resetStartView":
       case "settings.makeFitTest":
@@ -1047,7 +1054,7 @@ export function SecondaryToolbar({
     const onWindowCommand = (event: Event) => nativeCommandRef.current(String((event as CustomEvent<string>).detail));
     window.addEventListener("layerling:ui-command", onWindowCommand);
     const off = subscribeNativeUiEvents((event) => {
-      if (event.type === "ui.command") nativeCommandRef.current(event.payload.command);
+      if (event.type === "ui.command") nativeCommandRef.current(event.payload.command, event.payload.value);
     });
     return () => {
       window.removeEventListener("layerling:ui-command", onWindowCommand);

@@ -64,6 +64,7 @@ export interface NativeMenuItem {
 }
 /** Commands a host menu can send to a document page (`ui.command`). */
 import { VIEW_COMMANDS } from "@/lib/viewCommands";
+import { isValueCommand, validateCommandValue, type CommandValue } from "@/lib/commandValues";
 
 export const UI_COMMANDS = ["mode.geometry", "mode.sketch", "focusMode.toggle", "ribbonPin.toggle", "search", "guide", "whatsNew", "shortcuts", "interactiveHelp", "inspector.toggle", "edit.undo", "edit.redo", "edit.history", "edit.cut", "edit.copy", "edit.paste", "edit.duplicate", "edit.delete", "edit.deselectAll", "view.objectList", "view.hideSelected", "view.unhideAll", "view.hideOthers", "view.visualGroupsOnly", "view.notes", "view.overhangs", "file.import", "file.export", "file.attachments", "presentation.enter", "presentation.exit", "presentation.standby", "settings.saveStartView", "settings.resetStartView", "settings.makeFitTest", ...VIEW_COMMANDS] as const;
 export type UiCommand = (typeof UI_COMMANDS)[number];
@@ -267,7 +268,7 @@ export interface UiActionRequest {
   session: string;
   type: "ui.action";
   protocol: number;
-  payload: { documentId: string; action: "openSettings" | "openDocumentSettings" | "enterPresentation" | "showMeasureTape" | "showMeasureCornerRuler" | "showMeasureProtractor" | "confirmClearMeasurements" };
+  payload: { documentId: string; action: "openSettings" | "openDocumentSettings" | "enterPresentation" | "showMeasureTape" | "showMeasureCornerRuler" | "showMeasureProtractor" | "confirmClearMeasurements" | "showSectionView" };
 }
 /** Build 0003 (`ui.v1`): the document's own settings, for its Document Settings window. Sent only while that window is watching. */
 export interface SettingsStateRequest {
@@ -385,7 +386,7 @@ export type HostEvent =
   /** The native file name changed (first save, Save As, Finder rename); it is authoritative. */
   | { session: string; protocol: number; id: string; type: "document.renamed"; payload: { documentId: string; fileName: string } }
   /** Build 0003 (`ui.v1`): a menu command for this document page. */
-  | { session: string; protocol: number; id: string; type: "ui.command"; payload: { documentId: string; command: UiCommand } }
+  | { session: string; protocol: number; id: string; type: "ui.command"; payload: { documentId: string; command: UiCommand; value?: CommandValue } }
   /** Build 0003 (`ui.v1`): the Document Settings window changed these document settings; the page applies them like its own settings window did. */
   | { session: string; protocol: number; id: string; type: "settings.apply"; payload: { documentId: string; workspace: Record<string, unknown>; snap: string | null } }
   /** Build 0007 (`ui.menu.v1`): how a native menu ended. `key` null: dismissed without a choice. */
@@ -482,9 +483,15 @@ export function parseHostEvent(value: unknown): HostEvent | { invalid: string } 
     return { ...base, type: "document.save", payload: { documentId, saveId, uploadToken: value.payload.uploadToken, fileName: typeof value.payload.fileName === "string" ? value.payload.fileName : null, reason: typeof value.payload.reason === "string" ? value.payload.reason : "save" } };
   }
   if (value.type === "ui.command") {
-    return isText(documentId) && typeof value.payload.command === "string" && (UI_COMMANDS as readonly string[]).includes(value.payload.command)
-      ? { ...base, type: "ui.command", payload: { documentId, command: value.payload.command as UiCommand } }
-      : { invalid: "ui.command needs documentId and a known command" };
+    if (!(isText(documentId) && typeof value.payload.command === "string" && (UI_COMMANDS as readonly string[]).includes(value.payload.command))) return { invalid: "ui.command needs documentId and a known command" };
+    const command = value.payload.command as UiCommand;
+    // Build 0103: a command that takes a typed value must carry a valid one; every other command must carry none.
+    if (isValueCommand(command)) {
+      const typed = validateCommandValue(command, value.payload.value);
+      return typed ? { ...base, type: "ui.command", payload: { documentId, command, value: typed } } : { invalid: `ui.command ${command} needs a valid typed value` };
+    }
+    if (value.payload.value !== undefined) return { invalid: `ui.command ${command} takes no value` };
+    return { ...base, type: "ui.command", payload: { documentId, command } };
   }
   if (value.type === "settings.apply") {
     return isText(documentId) && isRecord(value.payload.workspace)

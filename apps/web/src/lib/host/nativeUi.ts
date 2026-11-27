@@ -91,7 +91,7 @@ export function publishUiState(incoming: NativeUiState) {
 }
 
 /** Asks the host to open one of its windows. */
-export function requestHostAction(action: "openSettings" | "openDocumentSettings" | "enterPresentation" | "showMeasureTape" | "showMeasureCornerRuler" | "showMeasureProtractor" | "confirmClearMeasurements") {
+export function requestHostAction(action: "openSettings" | "openDocumentSettings" | "enterPresentation" | "showMeasureTape" | "showMeasureCornerRuler" | "showMeasureProtractor" | "confirmClearMeasurements" | "showSectionView") {
   const bridge = getHostBridge();
   if (!documentId || !bridge?.supportsUi()) return false;
   void bridge.sendUi("ui.action", { documentId, action });
