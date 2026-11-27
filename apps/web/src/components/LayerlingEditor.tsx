@@ -171,6 +171,8 @@ import { historyStepText } from "@/lib/historyStepText";
 import { historyViewMcpCommand } from "./workplane/historyViewMcp";
 import { attachmentsFingerprint } from "@/lib/projectAttachments";
 import { nativeVisualGroupsAvailable, nativeVisualGroupsWatching, onNativeVisualGroupsInvoke, onNativeVisualGroupsWatch, publishVisualGroupsState, requestVisualGroupChooser, requestVisualGroupPick, type VisualGroupsInvoke } from "@/lib/host/nativeVisualGroups";
+import { nativeObjectsWatching, onNativeObjectsInvoke, onNativeObjectsWatch, publishObjectRows, publishObjectSelection } from "@/lib/host/nativeObjects";
+import { buildObjectRows, objectRowName } from "@/lib/objectsSnapshot";
 import { existingGroupId, visualGroupsMenuFits, visualGroupsOutline, visualGroupsPaletteState, type ChooserGroup } from "@/lib/visualGroupsSnapshot";
 import { EMPTY_VISUAL_GROUPS, applyMerge, showOnlyGroupedObjects, setGroupLocked, toggleObjectLocked, findVisualGroup, focusGroupVisibility, moveItemsToGroup, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, copyPairs, mergePickCandidates, moveObjectsToGroup, placeDerivedObjects, placeReplacementObjects, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
 import { ATTACHMENT_MCP_READ_ACTIONS, attachmentMcpCommand, attachmentMcpList } from "@/lib/projectAttachmentsMcp";
@@ -19183,6 +19185,39 @@ export function LayerlingEditor({
     if (!nativeDocument) return;
     return onNativeVisualGroupsInvoke((command) => visualGroupsInvokeRef.current(command));
   }, [nativeDocument]);
+
+  // ---- Objects Sidebar (native app only, capability objects.v1): the hierarchy and the selection are published while the host's Objects tab is visible ----
+  // Three costs kept apart (lib/objectsSnapshot.ts, lib/host/nativeObjects.ts): a new STRUCTURE sends the tree, changed row PROPERTIES send only those rows, and a SELECTION
+  // change sends the ids only. The hierarchy is debounced and read from the refs (a drag changes the shapes every frame); the selection is not touched by any of that.
+  const [objectsWatching, setObjectsWatching] = useState(() => nativeObjectsWatching());
+  useEffect(() => {
+    if (!nativeDocument) return;
+    return onNativeObjectsWatch(setObjectsWatching);
+  }, [nativeDocument]);
+  useEffect(() => {
+    if (!objectsWatching) return;
+    const timer = window.setTimeout(() => {
+      publishObjectRows(buildObjectRows(shapesRef.current, (shape) => objectRowName(shape, displayShapeName, (key) => t(key as MessageKey))), historyViewStateRef.current !== null);
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [objectsWatching, shapes, historyViewState, openGroups]);
+  useEffect(() => {
+    if (!objectsWatching) return;
+    publishObjectSelection(historyViewState ? [] : selectedIds);
+  }, [objectsWatching, selectedIds, historyViewState]);
+  useEffect(() => {
+    if (!nativeDocument) return;
+    return onNativeObjectsInvoke((command) => {
+      if (historyViewStateRef.current) return;
+      if (command.op === "select") {
+        const live = liveObjectIds(shapesRef.current);
+        selectShape(command.ids.filter((id) => live.has(id)), command.mode);
+      } else {
+        // As a click on a part in the object list: the part's group opens with that part selected (it says why itself when it cannot).
+        openGroupPartForEditing(command.groupId, command.partId);
+      }
+    });
+  }, [nativeDocument, selectShape, openGroupPartForEditing]);
 
   // A selection made by the user on the workplane brings the Inspector's Object tab to the front (Build 0031). Selection changed any other way (the object list,
   // commands, undo) does not touch the tab, and neither does a click that selects nothing.

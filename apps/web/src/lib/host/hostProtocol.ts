@@ -38,6 +38,14 @@ export const RIBBON_CAPABILITY = "ribbon.v1";
  * out what the palette asks for (`visualGroups.invoke`). The editor stays the only source of truth.
  */
 export const VISUAL_GROUPS_CAPABILITY = "visualGroups.v1";
+/**
+ * Objects Sidebar (additive, needs `ui.v1`; Build 0114): the host draws the document's object hierarchy natively (an NSOutlineView). Three page -> host messages with
+ * three different costs, so ordinary selection never retransmits the hierarchy: `objects.tree` (the whole hierarchy: only when its STRUCTURE changed or on a watch
+ * restart), `objects.patch` (changed ROW PROPERTIES of an unchanged structure: names, hidden, locked, ... by id) and `objects.selection` (the selected ids only). The host
+ * says whether anyone looks (`objects.watch`) and asks for changes with `objects.invoke`. The editor stays the only source of truth.
+ */
+export const OBJECTS_CAPABILITY = "objects.v1";
+export const OBJECTS_OPS = ["select", "openGroupPart"] as const;
 export const VISUAL_GROUPS_OPS = ["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign", "pickResult", "move", "focusGroup", "renameObject", "lockGroup", "toggleObjectLock"] as const;
 /**
  * Insert Layerling files (additive, needs `ui.v1`; Build 0070): the host owns the menu command and the file panel; the editor owns the import. The host sends
@@ -222,6 +230,30 @@ export interface RibbonStateRequest {
   protocol: number;
   payload: { documentId: string; state: { mode: "geometry" | "sketch"; groups: Array<{ id: string; label: string; kind: "menu" | "button" | "buttons"; tools: Array<{ id: string; label: string; enabled: boolean; active: boolean; hint: string | null; shortcut: string | null; icon: string; toggle?: boolean; prominent?: boolean; separatorBefore?: boolean }> }> } };
 }
+/** `objects.v1`: the whole object hierarchy (`rows`, nested through `items`), tagged with a revision the later messages refer to. */
+export interface ObjectsTreeRequest {
+  id: string;
+  session: string;
+  type: "objects.tree";
+  protocol: number;
+  payload: { documentId: string; rev: number; readOnly: boolean; rows: unknown[] };
+}
+/** `objects.v1`: changed properties of rows that exist (the structure is the one of revision `baseRev`); `rev` is the new revision. */
+export interface ObjectsPatchRequest {
+  id: string;
+  session: string;
+  type: "objects.patch";
+  protocol: number;
+  payload: { documentId: string; baseRev: number; rev: number; rows: unknown[] };
+}
+/** `objects.v1`: the selected object ids, in selection order, for the hierarchy of revision `rev`. */
+export interface ObjectsSelectionRequest {
+  id: string;
+  session: string;
+  type: "objects.selection";
+  protocol: number;
+  payload: { documentId: string; rev: number; ids: string[] };
+}
 /** `visualGroups.v1`: what the palette shows (groups with their aggregate eye, members with name and own hidden flag, the selected members). Sent on change only. */
 export interface VisualGroupsStateRequest {
   id: string;
@@ -320,6 +352,9 @@ export interface SaveFailedRequest {
 }
 export type HostRequest =
   | RibbonStateRequest
+  | ObjectsTreeRequest
+  | ObjectsPatchRequest
+  | ObjectsSelectionRequest
   | VisualGroupsStateRequest
   | VisualGroupsChooseRequest
   | VisualGroupsPickRequest
@@ -397,6 +432,10 @@ export type HostEvent =
   | { session: string; protocol: number; id: string; type: "ribbon.invoke"; payload: { documentId: string; toolId: string } }
   /** Prototype (`ribbon.v1`): the host's native toolbar is on or off for this document. */
   | { session: string; protocol: number; id: string; type: "ribbon.native"; payload: { documentId: string; enabled: boolean } }
+  /** `objects.v1`: the Objects Sidebar asks for this; the page checks it and uses its own functions. */
+  | { session: string; protocol: number; id: string; type: "objects.invoke"; payload: { documentId: string; op: string; args: Record<string, unknown> } }
+  /** `objects.v1`: the Objects tab is visible (the page publishes `objects.tree`, `objects.patch`, `objects.selection`) or not. Turning it on makes the page send the whole hierarchy again. */
+  | { session: string; protocol: number; id: string; type: "objects.watch"; payload: { documentId: string; watching: boolean } }
   /** `visualGroups.v1`: the palette asks for this; the page checks it and uses its own functions. */
   | { session: string; protocol: number; id: string; type: "visualGroups.invoke"; payload: { documentId: string; op: string; args: Record<string, unknown> } }
   /** `visualGroups.v1`: the palette is open (the page publishes `visualGroups.state`) or closed. */
@@ -513,6 +552,14 @@ export function parseHostEvent(value: unknown): HostEvent | { invalid: string } 
   }
   if (value.type === "ribbon.native") {
     return isText(documentId) && typeof value.payload.enabled === "boolean" ? { ...base, type: "ribbon.native", payload: { documentId, enabled: value.payload.enabled } } : { invalid: "ribbon.native needs documentId and enabled" };
+  }
+  if (value.type === "objects.invoke") {
+    return isText(documentId) && typeof value.payload.op === "string" && (OBJECTS_OPS as readonly string[]).includes(value.payload.op) && isRecord(value.payload.args)
+      ? { ...base, type: "objects.invoke", payload: { documentId, op: value.payload.op, args: value.payload.args } }
+      : { invalid: "objects.invoke needs documentId, a known op and args" };
+  }
+  if (value.type === "objects.watch") {
+    return isText(documentId) && typeof value.payload.watching === "boolean" ? { ...base, type: "objects.watch", payload: { documentId, watching: value.payload.watching } } : { invalid: "objects.watch needs documentId and watching" };
   }
   if (value.type === "visualGroups.invoke") {
     return isText(documentId) && typeof value.payload.op === "string" && (VISUAL_GROUPS_OPS as readonly string[]).includes(value.payload.op) && isRecord(value.payload.args)
