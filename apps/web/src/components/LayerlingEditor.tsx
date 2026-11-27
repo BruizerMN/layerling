@@ -172,7 +172,7 @@ import { historyViewMcpCommand } from "./workplane/historyViewMcp";
 import { attachmentsFingerprint } from "@/lib/projectAttachments";
 import { nativeVisualGroupsAvailable, nativeVisualGroupsWatching, onNativeVisualGroupsInvoke, onNativeVisualGroupsWatch, publishVisualGroupsState, requestVisualGroupChooser, requestVisualGroupPick, type VisualGroupsInvoke } from "@/lib/host/nativeVisualGroups";
 import { nativeObjectsWatching, onNativeObjectsInvoke, onNativeObjectsWatch, publishObjectFocus, publishObjectRows, publishObjectSelection } from "@/lib/host/nativeObjects";
-import { nestedFocusCard, resolveNestedFocus, type NestedFocusPath } from "@/lib/objectsFocus";
+import { nestedFocusCard, replaceNestedShape, resolveNestedFocus, type NestedFocusPath } from "@/lib/objectsFocus";
 import { buildObjectRows, objectRowName } from "@/lib/objectsSnapshot";
 import { replaceAtFirst } from "@/lib/openGroupParts";
 import { existingGroupId, visualGroupsMenuFits, visualGroupsOutline, visualGroupsPaletteState, type ChooserGroup } from "@/lib/visualGroupsSnapshot";
@@ -233,7 +233,7 @@ import { ensureLylFileWritable, forgetLylFile, forgetStlFile, linkedLylFile, lin
 import { addFileBackup, allowBackupFolder, fileBackupsOfDesign, listFileBackups, OPEN_FILE_BACKUPS_EVENT, readFileBackupBytes, readFileBackupSettings } from "@/lib/fileBackups";
 import { backupFileBeforeOverwrite, takeEditorBackupReminder } from "@/components/workplane/fileBackupEditor";
 import { copyNamePatterns, shapeNamesIn, withCopyName } from "@/lib/shapeCopyName";
-import { clipboardShape, displayShapeName, hasOwnShapeName, iconTagAsset, qrCodeAsset, makeShapeFromAsset, nameTagAsset, sbcBoardAsset, shapeAssetLabel, toolbarShapeAssets } from "@/lib/shapeCatalog";
+import { clipboardShape, displayShapeName, hasOwnShapeName, renamedShapeName, iconTagAsset, qrCodeAsset, makeShapeFromAsset, nameTagAsset, sbcBoardAsset, shapeAssetLabel, toolbarShapeAssets } from "@/lib/shapeCatalog";
 import { storeRecentShape } from "@/lib/shapeLibrarySections";
 import { PORT_PRESET_ORDER, PORT_PRESETS, portPresetSize, type PortPreset } from "@/lib/portGeometry";
 import { WASHER_SIZE_ORDER, isWasherSize, washerTubeFields } from "@/lib/washerSizes";
@@ -19215,6 +19215,29 @@ export function LayerlingEditor({
       groupId = outcome.partIds?.[index] ?? "";
     }
   }, [openGroupForEditing]);
+  // Property edits on an object inside a CLOSED group (Build 0117): only its name and its shape lock, which are metadata of the part. They leave the group's own geometry (a baked mesh the
+  // group carries) untouched, commit as one Undo step, and keep the selection, the focus and the open groups. The engine's own validation applies: a shape-locked part keeps its name
+  // (commitShapes refuses with its notice), and a padlocked object cannot take the shape lock. Hiding such an object is deliberately NOT offered: a group that carries its mesh is drawn
+  // from that mesh, so the flag would change nothing visible until the group is rebuilt (group-editing mechanics).
+  const updateNestedShape = useCallback((path: NestedFocusPath, patch: { name?: string; shapeLocked?: boolean }): boolean => {
+    if (historyViewStateRef.current) return false;
+    const target = resolveNestedFocus(shapesRef.current, path, (shape) => displayShapeName(shape), restoreGroupedChildren);
+    if (!target) return false;
+    if (patch.shapeLocked === true && target.stored.locked) {
+      setNotice(t("status.objectLocked"));
+      return false;
+    }
+    const next = replaceNestedShape(shapesRef.current, path, (part) => {
+      const updated: WorkplaneShape = { ...part };
+      if (patch.name !== undefined) updated.name = patch.name;
+      if (patch.shapeLocked === true) updated.shapeLocked = true;
+      else if (patch.shapeLocked === false) delete updated.shapeLocked;
+      return updated;
+    });
+    if (!next) return false;
+    commitShapes(next, selectedIdsRef.current, patch.shapeLocked === undefined ? undefined : patch.shapeLocked ? t("status.shapeLockOn") : t("status.shapeLockOff"));
+    return true;
+  }, [commitShapes, setNotice]);
   const [objectsWatching, setObjectsWatching] = useState(() => nativeObjectsWatching());
   const [objectsTick, setObjectsTick] = useState(0);
   useEffect(() => {
@@ -19227,7 +19250,7 @@ export function LayerlingEditor({
   useEffect(() => {
     if (!objectsWatching) return;
     const timer = window.setTimeout(() => {
-      publishObjectRows(buildObjectRows(shapesRef.current, (shape) => objectRowName(shape, displayShapeName, (key) => t(key as MessageKey)), openGroupsRef.current), historyViewStateRef.current !== null);
+      publishObjectRows(buildObjectRows(shapesRef.current, (shape) => objectRowName(shape, displayShapeName, (key) => t(key as MessageKey)), openGroupsRef.current, hasOwnShapeName), historyViewStateRef.current !== null);
     }, 60);
     return () => window.clearTimeout(timer);
   }, [objectsWatching, objectsTick, shapes, historyViewState, openGroups]);
@@ -19253,6 +19276,33 @@ export function LayerlingEditor({
         } finally {
           nestedFocusEstablishingRef.current = false;
         }
+      } else if (command.op === "rename") {
+        // The same operations as the Inspector's Name field: `renameShapeById` for a live object, `updateNestedShape` for one inside a closed group. Unchanged names make no Undo step.
+        const where = command.target;
+        if ("id" in where) {
+          const shape = shapesRef.current.find((entry) => entry.id === where.id);
+          const name = shape ? renamedShapeName(shape, command.name) : undefined;
+          if (shape && name !== undefined) renameShapeById(shape.id, name);
+        } else {
+          const found = resolveNestedFocus(shapesRef.current, where, (shape) => displayShapeName(shape), restoreGroupedChildren);
+          const name = found ? renamedShapeName(found.stored, command.name) : undefined;
+          if (name !== undefined) updateNestedShape(where, { name });
+        }
+      } else if (command.op === "setHidden") {
+        const shape = shapesRef.current.find((entry) => entry.id === command.id);
+        if (shape && Boolean(shape.hidden) !== command.value) toggleShapeHiddenById(shape.id, true);
+      } else if (command.op === "setLocked") {
+        const shape = shapesRef.current.find((entry) => entry.id === command.id);
+        if (shape && Boolean(shape.locked) !== command.value) toggleShapeLockById(shape.id);
+      } else if (command.op === "setShapeLocked") {
+        const where = command.target;
+        if ("id" in where) {
+          const shape = shapesRef.current.find((entry) => entry.id === where.id);
+          if (shape && Boolean(shape.shapeLocked) !== command.value) toggleShapeLockOfShapeById(shape.id);
+        } else {
+          const found = resolveNestedFocus(shapesRef.current, where, (shape) => displayShapeName(shape), restoreGroupedChildren);
+          if (found && Boolean(found.stored.shapeLocked) !== command.value) updateNestedShape(where, { shapeLocked: command.value });
+        }
       } else if (command.op === "openGroup") {
         // The explicit "Edit Group" button: opens the group, and the groups around it on the way when it is nested (one Undo step). A refusal says why itself.
         openGroupAlongPath(command.rootId, command.indices, true);
@@ -19262,7 +19312,7 @@ export function LayerlingEditor({
         cancelOpenGroup();
       }
     });
-  }, [nativeDocument, selectShape, openGroupAlongPath, finishOpenGroup, cancelOpenGroup]);
+  }, [nativeDocument, selectShape, openGroupAlongPath, finishOpenGroup, cancelOpenGroup, renameShapeById, toggleShapeHiddenById, toggleShapeLockById, toggleShapeLockOfShapeById, updateNestedShape]);
 
   // The focused object, resolved against the current shapes (it follows a group that moves, and ends when its path stops existing: it is never redirected to another object).
   const nestedFocusTarget = useMemo(
@@ -19280,12 +19330,19 @@ export function LayerlingEditor({
   const editNestedFocusGroup = useCallback(() => {
     if (nestedFocusPath) openGroupAlongPath(nestedFocusPath.rootId, nestedFocusPath.indices, false);
   }, [nestedFocusPath, openGroupAlongPath]);
+  // The Object tab's Name field for an object inside a closed group: the same operation as the sidebar's inline rename.
+  const renameNestedFocus = useCallback((draft: string) => {
+    if (!nestedFocusPath) return;
+    const found = resolveNestedFocus(shapesRef.current, nestedFocusPath, (shape) => displayShapeName(shape), restoreGroupedChildren);
+    const name = found ? renamedShapeName(found.stored, draft) : undefined;
+    if (name !== undefined) updateNestedShape(nestedFocusPath, { name });
+  }, [nestedFocusPath, updateNestedShape]);
   const nestedFocusView = useMemo(() => {
     if (!nestedFocusTarget) return null;
     const { placed, placement, rowId } = nestedFocusTarget;
     const key = [rowId, placement, placed.x, placed.z, placed.elevation ?? 0, placed.height, placed.width, placed.depth, placed.size, placed.rotation, placed.rotationX ?? 0, placed.rotationZ ?? 0, placed.hole ? 1 : 0].join("|");
-    return { key, shape: placed, placement, card: nestedFocusCard(nestedFocusTarget, displayShapeName(nestedFocusTarget.stored)), onEditGroup: editNestedFocusGroup };
-  }, [nestedFocusTarget, editNestedFocusGroup]);
+    return { key, shape: placed, placement, card: nestedFocusCard(nestedFocusTarget, displayShapeName(nestedFocusTarget.stored)), onRename: renameNestedFocus, onEditGroup: editNestedFocusGroup };
+  }, [nestedFocusTarget, editNestedFocusGroup, renameNestedFocus]);
 
   // A selection made by the user on the workplane brings the Inspector's Object tab to the front (Build 0031). Selection changed any other way (the object list,
   // commands, undo) does not touch the tab, and neither does a click that selects nothing.

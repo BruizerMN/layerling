@@ -11,11 +11,26 @@ import { diffObjects, flattenObjectRows, type ObjectRow, type ObjectsFlat } from
 export type ObjectsInvoke =
   | { op: "select"; ids: string[]; mode: "replace" | "toggle" }
   | { op: "focus"; rootId: string; indices: number[] }
+  | { op: "rename"; target: ObjectTarget; name: string }
+  | { op: "setHidden"; id: string; value: boolean }
+  | { op: "setLocked"; id: string; value: boolean }
+  | { op: "setShapeLocked"; target: ObjectTarget; value: boolean }
   | { op: "openGroup"; rootId: string; indices: number[] }
   | { op: "finishGroup" }
   | { op: "cancelGroup" };
 
+/** An object the host's row action is for: a live object (by id), or one inside a closed group (by path: the live group it starts at and the position of each next object inside the one before). */
+export type ObjectTarget = { id: string } | { rootId: string; indices: number[] };
 const MAX_SELECT_IDS = 100_000;
+const MAX_NAME_LENGTH = 1_000;
+
+function parseTarget(args: Record<string, unknown>): ObjectTarget | null {
+  if (isText(args.id)) return { id: args.id };
+  if (isText(args.rootId) && Array.isArray(args.indices) && args.indices.length >= 1 && args.indices.length <= 64 && args.indices.every((n) => Number.isInteger(n) && (n as number) >= 0)) {
+    return { rootId: args.rootId, indices: args.indices as number[] };
+  }
+  return null;
+}
 let watching = false;
 let lastFlat: ObjectsFlat | null = null;
 let lastReadOnly = false;
@@ -43,6 +58,17 @@ export function parseObjectsInvoke(op: string, args: Record<string, unknown>): O
       return isText(args.rootId) && Array.isArray(args.indices) && args.indices.length >= 1 && args.indices.length <= 64 && args.indices.every((n) => Number.isInteger(n) && (n as number) >= 0)
         ? { op, rootId: args.rootId, indices: args.indices as number[] }
         : null;
+    case "rename": {
+      const target = parseTarget(args);
+      return target && typeof args.name === "string" && args.name.length <= MAX_NAME_LENGTH ? { op, target, name: args.name } : null;
+    }
+    case "setHidden":
+    case "setLocked":
+      return isText(args.id) && typeof args.value === "boolean" ? { op, id: args.id, value: args.value } : null;
+    case "setShapeLocked": {
+      const target = parseTarget(args);
+      return target && typeof args.value === "boolean" ? { op, target, value: args.value } : null;
+    }
     case "openGroup":
       // `rootId`: the group on the workplane (or a part of a group being edited) at the start of the path; `indices`: for a nested group, the position of each next group inside the one before.
       return isText(args.rootId) && Array.isArray(args.indices) && args.indices.length <= 64 && args.indices.every((n) => Number.isInteger(n) && (n as number) >= 0)

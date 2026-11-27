@@ -126,7 +126,7 @@ import { TAPE_SCENE_AXIS, tapeLengthMcpRefusal, type TapeAxis, type TapeLengthTy
 import { tapeAxisSpans, tapeDeltaAxes } from "@/lib/tapeLabels";
 import { TapeLengthField, type TapeLengthFieldValue } from "@/components/workplane/TapeLengthField";
 import { syncHistoryPickHighlight, syncPickHighlight, syncPickHighlightObjects } from "@/components/workplane/historyPickHighlight";
-import { NestedFocusCard } from "@/components/workplane/NestedFocusCard";
+import { NestedFocusInspector } from "@/components/workplane/NestedFocusInspector";
 import type { NestedFocusCardData, NestedFocusPlacement } from "@/lib/objectsFocus";
 import { orbitViewBy, panViewBy } from "@/lib/viewArrowKeys";
 import { useViewportKeyboardHooks } from "@/components/workplane/viewportKeyboard";
@@ -245,7 +245,7 @@ type WorkplaneViewportProps = {
    * its own: the object's own geometry where it can be built, else its nominal bounding box; nothing when `placement` is "none") and the Object tab shows the read-only card. `key` changes when
    * what is drawn changes.
    */
-  nestedFocus?: { key: string; shape: WorkplaneShape; placement: NestedFocusPlacement; card: NestedFocusCardData; onEditGroup?: () => void } | null;
+  nestedFocus?: { key: string; shape: WorkplaneShape; placement: NestedFocusPlacement; card: NestedFocusCardData; onRename?: (name: string) => void; onEditGroup?: () => void } | null;
   /** The place a row of the clearance check stands for: a line with the gap, or the middle of an overlap; the camera goes there. */
   clearanceMark?: ClearanceMark | null;
   /** The print check's thin walls, painted red on the bodies, and the place its Show brings the camera to. */
@@ -10110,7 +10110,7 @@ export function WorkplaneViewport({
       {/* Native app: the Inspector is the docked panel (visibility is the user's: View > Show/Hide Inspector), never a panel that follows the selection. */}
       {inspectorDock.enabled
         ? inspectorDock.element
-          ? createPortal(shapeInspectorNode ?? selectionInspectorNode ?? (nestedFocus ? <NestedFocusCard card={nestedFocus.card} onEditGroup={nestedFocus.onEditGroup} /> : <InspectorEmpty toolActive={Boolean(selectedShape) || selectedIds.length > 1} />), inspectorDock.element)
+          ? createPortal(shapeInspectorNode ?? selectionInspectorNode ?? (nestedFocus ? <NestedFocusInspector card={nestedFocus.card} onRename={nestedFocus.onRename} onEditGroup={nestedFocus.onEditGroup} /> : <InspectorEmpty toolActive={Boolean(selectedShape) || selectedIds.length > 1} />), inspectorDock.element)
           : null
         : <>{shapeInspectorNode}{selectionInspectorNode}</>}
 

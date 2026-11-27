@@ -63,6 +63,28 @@ describe("objects.v1 diff: the three costs", () => {
   });
 });
 
+describe("objects.v1 own names (Sort named objects A-Z)", () => {
+  it("marks the objects somebody named, in the rows and in nested rows", () => {
+    const own = (s: WorkplaneShape) => Boolean(s.name);
+    const list = [shape("a", { name: "Lid" }), shape("g", { groupedShapes: [shape("p1", { name: "Window" }), shape("p2")] }), shape("b")];
+    const rows = buildObjectRows(list, nameOf, [], own)!;
+    expect(rows[0].ownName).toBe(true);
+    expect(rows[1]).not.toHaveProperty("ownName");
+    expect(rows[1].items?.[0].ownName).toBe(true);
+    expect(rows[1].items?.[1]).not.toHaveProperty("ownName");
+    expect(rows[2]).not.toHaveProperty("ownName");
+  });
+  it("a rename is a property change: only that row is patched", () => {
+    const own = (s: WorkplaneShape) => Boolean(s.name);
+    const fill = Array.from({ length: 10 }, (_, i) => shape(`x${i}`));
+    const before = flattenObjectRows(buildObjectRows([shape("a"), ...fill], nameOf, [], own)!);
+    const after = flattenObjectRows(buildObjectRows([shape("a", { name: "Lid" }), ...fill], nameOf, [], own)!);
+    const diff = diffObjects(before, after);
+    expect(diff.kind).toBe("patch");
+    if (diff.kind === "patch") expect(diff.rows.map((r) => r.id)).toEqual(["a"]);
+  });
+});
+
 describe("objects.v1 hierarchy while a group is being edited", () => {
   const level = (id: string, childIds: string[], extra: Record<string, unknown> = {}) => ({ original: shape(id, { groupedShapes: [shape("x")], ...extra }), childIds });
   it("shows the group at its place, marked editing, with its live parts under it", () => {
@@ -111,7 +133,6 @@ describe("objects.v1 protocol", () => {
     expect(parseObjectsInvoke("finishGroup", {})).toEqual({ op: "finishGroup" });
     expect(parseObjectsInvoke("cancelGroup", {})).toEqual({ op: "cancelGroup" });
     expect(parseObjectsInvoke("openGroupPart", { groupId: "g", partId: "p" })).toBeNull();   // clicking a row never enters group editing (0115)
-    expect(parseObjectsInvoke("rename", { id: "a", name: "x" })).toBeNull();
   });
   it("parses the host's objects events and rejects malformed ones", () => {
     const base = { session: "s", protocol: 3, id: "e1" };

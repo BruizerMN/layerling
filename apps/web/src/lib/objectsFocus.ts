@@ -77,9 +77,39 @@ export function resolveNestedFocus(
   return null;
 }
 
+/**
+ * The shapes with the object at `path` replaced by `update(object)`: the groups on the way are copied (never mutated), everything else is shared. Null when the path does not exist.
+ * Used for the property edits the engine takes safely on an object inside a closed group (its name, its shape lock), which are metadata of the part and leave the group's own
+ * geometry (a baked mesh the group carries) untouched.
+ */
+export function replaceNestedShape(shapes: readonly WorkplaneShape[], path: NestedFocusPath, update: (shape: WorkplaneShape) => WorkplaneShape): WorkplaneShape[] | null {
+  const at = shapes.findIndex((shape) => shape.id === path.rootId);
+  if (at < 0 || path.indices.length === 0) return null;
+  const replaceIn = (group: WorkplaneShape, step: number): WorkplaneShape | null => {
+    const children = group.groupedShapes;
+    const index = path.indices[step];
+    const child = children?.[index];
+    if (!children || !child) return null;
+    let replacement: WorkplaneShape | null;
+    if (step === path.indices.length - 1) replacement = update(child);
+    else replacement = child.groupedShapes?.length ? replaceIn(child, step + 1) : null;
+    if (!replacement) return null;
+    const next = [...children];
+    next[index] = replacement;
+    return { ...group, groupedShapes: next };
+  };
+  const replaced = replaceIn(shapes[at], 0);
+  if (!replaced) return null;
+  const result = [...shapes];
+  result[at] = replaced;
+  return result;
+}
+
 /** What the compact read-only Inspector card shows. */
 export interface NestedFocusCardData {
   name: string;
+  /** A group (or bundle) rather than an ordinary object: the section reads "Group Info". */
+  isGroup: boolean;
   kind: string;
   hole: boolean;
   color: string | null;
@@ -96,6 +126,7 @@ export function nestedFocusCard(target: NestedFocusTarget, displayName: string):
   const { placed, stored } = target;
   return {
     name: displayName,
+    isGroup: Boolean(stored.groupedShapes?.length),
     kind: stored.kind,
     hole: Boolean(stored.hole),
     color: typeof stored.color === "string" && stored.color ? stored.color : null,

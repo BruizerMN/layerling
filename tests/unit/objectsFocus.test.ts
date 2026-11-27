@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nestedFocusCard, resolveNestedFocus } from "@/lib/objectsFocus";
+import { nestedFocusCard, replaceNestedShape, resolveNestedFocus } from "@/lib/objectsFocus";
 import { buildObjectRows } from "@/lib/objectsSnapshot";
 import { parseObjectsInvoke } from "@/lib/host/nativeObjects";
 import type { WorkplaneShape } from "@/types/layerling";
@@ -80,5 +80,55 @@ describe("nested focus: the card and the protocol", () => {
     expect(parseObjectsInvoke("focus", { rootId: "g", indices: [] })).toBeNull();
     expect(parseObjectsInvoke("focus", { rootId: "g", indices: [-1] })).toBeNull();
     expect(parseObjectsInvoke("focus", { indices: [0] })).toBeNull();
+  });
+});
+
+describe("nested property edits (Build 0117): replaceNestedShape", () => {
+  const path = { rootId: "g0", indices: [1, 1, 0] };
+  it("replaces only the object at the path, copying the groups on the way and sharing everything else", () => {
+    const next = replaceNestedShape(doc, path, (part) => ({ ...part, name: "Renamed" }))!;
+    expect(next).not.toBe(doc);
+    const leafOf = (shapes: WorkplaneShape[]) => shapes[1].groupedShapes![1].groupedShapes![1].groupedShapes![0];
+    expect(leafOf(next).name).toBe("Renamed");
+    expect(leafOf(doc as WorkplaneShape[]).name).toBe("Window");   // the original is untouched
+    expect(next[0]).toBe(doc[0]);                                   // other top-level shapes are the very same objects
+    expect(next[2]).toBe(doc[2]);
+    expect(next[1]).not.toBe(doc[1]);                               // the groups on the way are copies
+    expect(next[1].groupedShapes![0]).toBe(doc[1].groupedShapes![0]);   // siblings are shared
+    expect(next[1].groupedShapes![1].groupedShapes![0]).toBe(doc[1].groupedShapes![1].groupedShapes![0]);
+  });
+  it("keeps the order of everything and the baked mesh of the groups", () => {
+    const meshed = [shape("g", { importedMesh: { id: "baked" }, groupedShapes: [shape("a"), shape("b")] })];
+    const next = replaceNestedShape(meshed, { rootId: "g", indices: [1] }, (part) => ({ ...part, shapeLocked: true }))!;
+    expect(next.map((s) => s.id)).toEqual(["g"]);
+    expect(next[0].groupedShapes!.map((s) => s.id)).toEqual(["a", "b"]);
+    expect((next[0] as unknown as { importedMesh: unknown }).importedMesh).toBe((meshed[0] as unknown as { importedMesh: unknown }).importedMesh);
+    expect(next[0].groupedShapes![1].shapeLocked).toBe(true);
+    expect(next[0].groupedShapes![0].shapeLocked).toBeUndefined();
+  });
+  it("returns null for a path that does not exist", () => {
+    expect(replaceNestedShape(doc, { rootId: "g0", indices: [9] }, (s) => s)).toBeNull();
+    expect(replaceNestedShape(doc, { rootId: "g0", indices: [0, 0] }, (s) => s)).toBeNull();   // "a" is not a group
+    expect(replaceNestedShape(doc, { rootId: "nope", indices: [0] }, (s) => s)).toBeNull();
+    expect(replaceNestedShape(doc, { rootId: "g0", indices: [] }, (s) => s)).toBeNull();
+  });
+  it("the card says whether the object is a group", () => {
+    const t = resolveNestedFocus(doc, { rootId: "g0", indices: [1] }, nameOf, restore)!;
+    expect(nestedFocusCard(t, "Inner").isGroup).toBe(true);
+    expect(nestedFocusCard(resolveNestedFocus(doc, { rootId: "g0", indices: [0] }, nameOf, restore)!, "a").isGroup).toBe(false);
+  });
+  it("the row actions are ops with sound targets and values", () => {
+    expect(parseObjectsInvoke("rename", { id: "a", name: "New" })).toEqual({ op: "rename", target: { id: "a" }, name: "New" });
+    expect(parseObjectsInvoke("rename", { rootId: "g", indices: [1, 0], name: "" })).toEqual({ op: "rename", target: { rootId: "g", indices: [1, 0] }, name: "" });
+    expect(parseObjectsInvoke("rename", { name: "x" })).toBeNull();
+    expect(parseObjectsInvoke("rename", { id: "a", name: 5 })).toBeNull();
+    expect(parseObjectsInvoke("rename", { id: "a", name: "x".repeat(1001) })).toBeNull();
+    expect(parseObjectsInvoke("setHidden", { id: "a", value: true })).toEqual({ op: "setHidden", id: "a", value: true });
+    expect(parseObjectsInvoke("setHidden", { rootId: "g", indices: [0], value: true })).toBeNull();   // hiding inside a closed group is not offered
+    expect(parseObjectsInvoke("setLocked", { id: "a", value: false })).toEqual({ op: "setLocked", id: "a", value: false });
+    expect(parseObjectsInvoke("setLocked", { rootId: "g", indices: [0], value: true })).toBeNull();   // no ordinary lock on nested objects
+    expect(parseObjectsInvoke("setShapeLocked", { id: "a", value: true })).toEqual({ op: "setShapeLocked", target: { id: "a" }, value: true });
+    expect(parseObjectsInvoke("setShapeLocked", { rootId: "g", indices: [0, 1], value: true })).toEqual({ op: "setShapeLocked", target: { rootId: "g", indices: [0, 1] }, value: true });
+    expect(parseObjectsInvoke("setShapeLocked", { id: "a" })).toBeNull();
   });
 });

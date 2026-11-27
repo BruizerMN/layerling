@@ -26,6 +26,8 @@ export interface ObjectProps {
   color?: string;
   /** Present on a group or bundle: which. */
   group?: "group" | "bundle";
+  /** The object carries a name somebody gave it (not the editor's default name): what "Sort named objects A-Z" puts first. */
+  ownName?: true;
   /** A group that is open for editing: it keeps its place in the hierarchy, marked, with its live parts (which the engine can select) as its items. */
   editing?: true;
 }
@@ -63,7 +65,7 @@ export interface OpenLevelInfo {
  * edited its parts stand loose in the editor's list, in the group's place (see `replaceAtFirst`), and here they are shown under the group's own row, marked `editing`, so the
  * hierarchy does not change shape while it is edited.
  */
-export function buildObjectRows(shapes: readonly WorkplaneShape[], nameOf: (shape: WorkplaneShape) => string, openLevels: readonly OpenLevelInfo[] = []): ObjectRow[] | null {
+export function buildObjectRows(shapes: readonly WorkplaneShape[], nameOf: (shape: WorkplaneShape) => string, openLevels: readonly OpenLevelInfo[] = [], hasOwnName?: (shape: WorkplaneShape) => boolean): ObjectRow[] | null {
   let count = 0;
   const flags = (row: ObjectRow, shape: WorkplaneShape) => {
     if (shape.hole) row.hole = true;
@@ -71,6 +73,7 @@ export function buildObjectRows(shapes: readonly WorkplaneShape[], nameOf: (shap
     if (shape.locked) row.locked = true;
     if (shape.shapeLocked) row.shapeLocked = true;
     if (typeof shape.color === "string" && shape.color) row.color = shape.color;
+    if (hasOwnName?.(shape)) row.ownName = true;
   };
   const build = (list: readonly WorkplaneShape[], depth: number, parentId: string): ObjectRow[] | null => {
     if (depth > OBJECTS_MAX_DEPTH) return null;

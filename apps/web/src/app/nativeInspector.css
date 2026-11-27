@@ -836,15 +836,13 @@ html[data-native-app="on"] .native-inspector-dock .name-tag-more { color: var(--
 .native-inspector-dock .inspector-palette-toggle:hover { color: var(--insp-fg); }
 .native-inspector-dock .inspector-palette-arrow { width: 10px; font-size: 9px; }
 
-/* ---- Objects Sidebar navigational focus (Build 0116): the compact read-only card for an object inside a closed group ---- */
-.native-inspector-panel > .shape-inspector.nested-focus-card { flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px !important; overflow-y: auto; }
-.nested-focus-card .nested-focus-head { display: flex; align-items: center; gap: 10px; color: var(--insp-muted); }
-.nested-focus-card .nested-focus-name { display: block; color: var(--insp-fg); font-size: 13px; font-weight: 600; }
-.nested-focus-card .nested-focus-path { color: var(--insp-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
-.nested-focus-card .nested-focus-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 11px; }
-.nested-focus-card .nested-focus-facts dt { color: var(--insp-muted); }
-.nested-focus-card .nested-focus-facts dd { margin: 0; color: var(--insp-fg); display: flex; align-items: center; gap: 6px; }
-.nested-focus-card .nested-focus-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--insp-line); }
-.nested-focus-card .nested-focus-note { margin: 0; color: var(--insp-muted); font-size: 11px; line-height: 1.35; }
-.nested-focus-card .nested-focus-edit { align-self: flex-start; padding: 4px 12px; font-size: 11px; color: var(--insp-fg); background: transparent; border: 1px solid var(--insp-field-line); border-radius: 5px; cursor: default; }
-.nested-focus-card .nested-focus-edit:hover { background: var(--insp-hover); }
+/* ---- Objects Sidebar navigational focus (Builds 0116/0117): the Object tab for an object inside a closed group: General (Name) and an Object Info / Group Info section ---- */
+.native-inspector-panel > .shape-inspector.nested-focus-inspector { flex: 1 1 auto; overflow-y: auto; }
+.nested-focus-inspector .nested-focus-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; margin: 0; padding: 10px 16px 4px; font-size: 11px; }
+.nested-focus-inspector .nested-focus-facts dt { color: var(--insp-muted); }
+.nested-focus-inspector .nested-focus-facts dd { margin: 0; color: var(--insp-fg); display: flex; align-items: center; gap: 6px; min-width: 0; }
+.nested-focus-inspector .nested-focus-path { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.nested-focus-inspector .nested-focus-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--insp-line); flex: none; }
+.nested-focus-inspector .nested-focus-note { margin: 0; padding: 6px 16px; color: var(--insp-muted); font-size: 11px; line-height: 1.35; }
+.nested-focus-inspector .nested-focus-edit { margin: 6px 16px 12px; padding: 4px 12px; font-size: 11px; color: var(--insp-fg); background: transparent; border: 1px solid var(--insp-field-line); border-radius: 5px; cursor: default; }
+.nested-focus-inspector .nested-focus-edit:hover { background: var(--insp-hover); }
