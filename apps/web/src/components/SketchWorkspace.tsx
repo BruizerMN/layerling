@@ -163,6 +163,8 @@ type SketchWorkspaceProps = {
   notesVisible?: boolean;
   noteCount?: number;
   onNoteTool?: () => void;
+  /** Build 0107: hosted in the Mac app: the legacy view bar is not rendered. */
+  hideViewBar?: boolean;
   onToggleNotes?: () => void;
   /** Puts a note on the spot and gives its id, or null when there is no room for another. */
   onAddNote?: (spot: { x: number; z: number }) => string | null;
@@ -822,6 +824,7 @@ export function SketchWorkspace({
   notesVisible = true,
   noteCount = 0,
   onNoteTool,
+  hideViewBar = false,
   onToggleNotes,
   onAddNote,
   onUpdateNote,
@@ -2465,6 +2468,8 @@ export function SketchWorkspace({
         <div className="sketch-mode-badge">{operation === "revolve" ? t("sketch.modeBadgeRevolve") : operation === "sweep" ? t("sketch.modeBadgeSweep") : t("sketch.modeBadge")}</div>
       )}
       {operation === "revolve" ? <SketchRevolvePreview positions={revolvePreviewPositions} /> : null}
+      {/* Build 0107: suppressed in the Mac app (see WorkplaneViewport). */}
+      {hideViewBar ? null : (
       <div
         ref={cameraBarMove.panelRef}
         className={`camera-controls sketch-camera-controls ${cameraBarCollapsed ? "collapsed" : ""} ${cameraBarMove.dragging ? "moving" : ""}`}
@@ -2543,6 +2548,7 @@ export function SketchWorkspace({
         ) : null}
         </>)}
       </div>
+      )}
       <section ref={wrapRef} className="sketch-plate-wrap" aria-label="2D sketch plate">
         <svg
           ref={svgRef}

@@ -318,6 +318,8 @@ type WorkplaneViewportProps = {
   notesVisible?: boolean;
   /** The note buttons of the camera bar: put a note, show or hide them all (Stefan, 31.10.2026: they moved here from Manage). */
   onNoteTool?: () => void;
+  /** Build 0107: hosted in the Mac app: the legacy view bar and its handle are not rendered (nothing is reserved or clickable). */
+  hideViewBar?: boolean;
   onToggleNotes?: () => void;
   noteCount?: number;
   /** Tint faces red that overhang more steeply than workspace.overhangAngle. */
@@ -1710,6 +1712,7 @@ export function WorkplaneViewport({
   notes = EMPTY_NOTES,
   notesVisible = true,
   onNoteTool,
+  hideViewBar = false,
   onToggleNotes,
   noteCount = 0,
   showOverhangs = false,
@@ -9230,6 +9233,8 @@ export function WorkplaneViewport({
       {shapes.length === 0 && !pickOnly && !hideEmptyHint ? <p className="workplane-empty-hint">{t("editor.emptyHint")}</p> : null}
       {secondViewWindow ? <SecondViewWindow popup={secondViewWindow} threeRef={threeRef} projectId={projectId} getSelectedIds={getSelectedIds} onClosed={closeSecondView} /> : null}
 
+      {/* Build 0107: the Mac app retires the view bar (its functions live in the native toolbar, menus, cube strip and footer); the browser edition keeps it. Only the rendering is suppressed: the state, commands and hooks below stay. */}
+      {hideViewBar ? null : (
       <div
         ref={cameraBarMove.panelRef}
         className={`camera-controls ${cameraControlsCollapsed ? "collapsed" : ""} ${cameraBarMove.dragging ? "moving" : ""}`}
@@ -9827,6 +9832,7 @@ export function WorkplaneViewport({
           </>
         )}
       </div>
+      )}
 
       <section className={`workplane-wrap ${noteMode ? "note-mode" : ""} ${workplaneMode ? "placing-workplane" : ""} ${splitActive ? "split-mode" : ""} ${splitHandleState ? `split-handle-${splitHandleState}` : ""} ${splitSurfacePick ? "split-picking" : ""} ${splitSurfacePick && splitPickOverFace ? "split-pick-over-face" : ""} ${cruiseAsset || carryIds?.length ? "cruising" : ""} ${tapeMode ? "tape-mode" : ""} ${tapeDeleteMode ? "tape-delete-mode" : ""} ${tapeMoveMode ? "tape-move-mode" : ""} ${cornerRulerMode ? "corner-ruler-mode" : ""} ${protractorOpen ? "protractor-mode" : ""} ${pivotPickMode || layFlatPickMode || mateFacePick || matePointPick?.picking || cadFacePick || paintPick || surfaceRegionDrawing ? "pivot-pick-mode" : ""} ${modifierActive ? "modifier-edge-pick" : ""} ${sectionMeasureMode && sectionSettings.enabled ? "section-measure-mode" : ""} ${workspace.dimensionAxisColors ? "dimension-axis-colors" : ""}`} aria-label={t("aria.workplane")}>
         <div className="workplane-plane">

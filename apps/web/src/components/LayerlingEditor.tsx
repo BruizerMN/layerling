@@ -20426,6 +20426,7 @@ export function LayerlingEditor({
         ) : null}
         {toolbarMode === "sketch" && sketchActive ? (
           <SketchWorkspace
+            hideViewBar={Boolean(nativeDocument)}
             profile={sketchProfile}
             operation={sketchOperation}
             onOperationChange={switchSketchOperation}
@@ -20529,6 +20530,7 @@ export function LayerlingEditor({
           />
         ) : (
           <WorkplaneViewport
+          hideViewBar={Boolean(nativeDocument)}
           frameOnOpenRef={frameOnOpenRef}
           hideEmptyHint={Boolean(nativeDocument)}
           presentation={presentationMode}
@@ -21501,7 +21503,7 @@ export function LayerlingEditor({
       {whatsNewOpen ? <WhatsNewWindow onClose={() => setWhatsNewOpen(false)} /> : null}
       {interactiveHelp ? <InteractiveHelp onExit={toggleInteractiveHelp} /> : null}
       {viewedAttachment ? <AttachmentViewer attachment={viewedAttachment} onClose={() => setViewedAttachmentId(null)} /> : null}
-      {guideOpen ? <GuideModal sharedStore={sharedProjectsEnabled} sketchMode={toolbarMode === "sketch"} onClose={() => setGuideOpen(false)} /> : null}
+      {guideOpen ? <GuideModal nativeApp={Boolean(nativeDocument)} sharedStore={sharedProjectsEnabled} sketchMode={toolbarMode === "sketch"} onClose={() => setGuideOpen(false)} /> : null}
       {backupsOpen ? (
         <FileBackupsDialog
           scope={{ projectId: projectInfoRef.current.projectId ?? null, fileHandle: linkedLylFile(projectInfoRef.current.projectId ?? ""), name: projectName }}

@@ -8,6 +8,7 @@ import { guideHref, type GuideChapter } from "@/lib/guideLinks";
 import { t, type MessageKey } from "@/lib/i18n";
 import { useLanguage } from "@/lib/useLanguage";
 import { LAYERLING_VIDEOS } from "@/lib/layerlingVideos";
+import { NATIVE_GUIDE_LINES } from "@/lib/nativeGuideLines";
 
 /**
  * The short version of the manual, in the same shell as the shortcut list:
@@ -121,7 +122,7 @@ function sketchGuideSections(): GuideSection[] {
   ];
 }
 
-export function GuideModal({ onClose, sharedStore = false, sketchMode = false }: { onClose: () => void; sharedStore?: boolean; sketchMode?: boolean }) {
+export function GuideModal({ onClose, sharedStore = false, sketchMode = false, nativeApp = false }: { onClose: () => void; sharedStore?: boolean; sketchMode?: boolean; nativeApp?: boolean }) {
   const language = useLanguage();
   const sections = sketchMode ? sketchGuideSections() : guideSections(sharedStore);
   // Moved by its title bar like every panel, and remembered where it stood.
@@ -181,9 +182,12 @@ export function GuideModal({ onClose, sharedStore = false, sketchMode = false }:
                     <GuideHelpLink chapter={section.chapter} />
                   </h3>
                   <ul>
-                    {section.lines.map((line) => (
-                      <li key={line}>{t(line)}</li>
-                    ))}
+                    {section.lines.map((line) => {
+                      // Build 0107: the Mac app has no view bar; its lines read differently there (English only).
+                      const native = nativeApp && language === "en" ? NATIVE_GUIDE_LINES[line] : undefined;
+                      if (native === null) return null;
+                      return <li key={line}>{native ?? t(line)}</li>;
+                    })}
                   </ul>
                 </section>
               ))}
