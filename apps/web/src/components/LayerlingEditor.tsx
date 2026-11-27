@@ -19190,9 +19190,13 @@ export function LayerlingEditor({
   // Three costs kept apart (lib/objectsSnapshot.ts, lib/host/nativeObjects.ts): a new STRUCTURE sends the tree, changed row PROPERTIES send only those rows, and a SELECTION
   // change sends the ids only. The hierarchy is debounced and read from the refs (a drag changes the shapes every frame); the selection is not touched by any of that.
   const [objectsWatching, setObjectsWatching] = useState(() => nativeObjectsWatching());
+  const [objectsTick, setObjectsTick] = useState(0);
   useEffect(() => {
     if (!nativeDocument) return;
-    return onNativeObjectsWatch(setObjectsWatching);
+    return onNativeObjectsWatch((on) => {
+      setObjectsWatching(on);
+      if (on) setObjectsTick((tick) => tick + 1); // also a resync while already watching
+    });
   }, [nativeDocument]);
   useEffect(() => {
     if (!objectsWatching) return;
@@ -19200,11 +19204,11 @@ export function LayerlingEditor({
       publishObjectRows(buildObjectRows(shapesRef.current, (shape) => objectRowName(shape, displayShapeName, (key) => t(key as MessageKey))), historyViewStateRef.current !== null);
     }, 60);
     return () => window.clearTimeout(timer);
-  }, [objectsWatching, shapes, historyViewState, openGroups]);
+  }, [objectsWatching, objectsTick, shapes, historyViewState, openGroups]);
   useEffect(() => {
     if (!objectsWatching) return;
     publishObjectSelection(historyViewState ? [] : selectedIds);
-  }, [objectsWatching, selectedIds, historyViewState]);
+  }, [objectsWatching, objectsTick, selectedIds, historyViewState]);
   useEffect(() => {
     if (!nativeDocument) return;
     return onNativeObjectsInvoke((command) => {

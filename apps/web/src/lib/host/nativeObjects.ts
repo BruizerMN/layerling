@@ -41,7 +41,8 @@ export function parseObjectsInvoke(op: string, args: Record<string, unknown>): O
 }
 
 function setWatching(on: boolean) {
-  if (watching === on) return;
+  // `watch: true` while already watching is a RESYNC (the host missed a message): the same as a tab that has just become visible.
+  if (watching === on && !on) return;
   watching = on;
   // A tab that has just become visible needs everything again: the hierarchy and the selection.
   lastFlat = null;
