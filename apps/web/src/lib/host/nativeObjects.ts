@@ -10,7 +10,9 @@ import { diffObjects, flattenObjectRows, type ObjectRow, type ObjectsFlat } from
  */
 export type ObjectsInvoke =
   | { op: "select"; ids: string[]; mode: "replace" | "toggle" }
-  | { op: "openGroupPart"; groupId: string; partId: string };
+  | { op: "openGroup"; rootId: string; indices: number[] }
+  | { op: "finishGroup" }
+  | { op: "cancelGroup" };
 
 const MAX_SELECT_IDS = 100_000;
 let watching = false;
@@ -33,8 +35,14 @@ export function parseObjectsInvoke(op: string, args: Record<string, unknown>): O
       return Array.isArray(args.ids) && args.ids.length <= MAX_SELECT_IDS && args.ids.every(isText) && (args.mode === "replace" || args.mode === "toggle")
         ? { op, ids: args.ids as string[], mode: args.mode }
         : null;
-    case "openGroupPart":
-      return isText(args.groupId) && isText(args.partId) ? { op, groupId: args.groupId, partId: args.partId } : null;
+    case "openGroup":
+      // `rootId`: the group on the workplane (or a part of a group being edited) at the start of the path; `indices`: for a nested group, the position of each next group inside the one before.
+      return isText(args.rootId) && Array.isArray(args.indices) && args.indices.length <= 64 && args.indices.every((n) => Number.isInteger(n) && (n as number) >= 0)
+        ? { op, rootId: args.rootId, indices: args.indices as number[] }
+        : null;
+    case "finishGroup":
+    case "cancelGroup":
+      return { op };
     default:
       return null;
   }

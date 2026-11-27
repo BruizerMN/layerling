@@ -45,7 +45,7 @@ export const VISUAL_GROUPS_CAPABILITY = "visualGroups.v1";
  * says whether anyone looks (`objects.watch`) and asks for changes with `objects.invoke`. The editor stays the only source of truth.
  */
 export const OBJECTS_CAPABILITY = "objects.v1";
-export const OBJECTS_OPS = ["select", "openGroupPart"] as const;
+export const OBJECTS_OPS = ["select", "openGroup", "finishGroup", "cancelGroup"] as const;
 export const VISUAL_GROUPS_OPS = ["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign", "pickResult", "move", "focusGroup", "renameObject", "lockGroup", "toggleObjectLock"] as const;
 /**
  * Insert Layerling files (additive, needs `ui.v1`; Build 0070): the host owns the menu command and the file panel; the editor owns the import. The host sends

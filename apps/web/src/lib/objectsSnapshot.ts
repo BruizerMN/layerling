@@ -26,6 +26,8 @@ export interface ObjectProps {
   color?: string;
   /** Present on a group or bundle: which. */
   group?: "group" | "bundle";
+  /** A group that is open for editing: it keeps its place in the hierarchy, marked, with its live parts (which the engine can select) as its items. */
+  editing?: true;
 }
 export interface ObjectRow extends ObjectProps {
   items?: ObjectRow[];
@@ -45,33 +47,76 @@ export function objectRowName(shape: WorkplaneShape, displayName: (shape: Workpl
   return translate(`shape.${shape.kind}`) || shape.kind;
 }
 
-/** The hierarchy, or null when it is beyond the bounds (the host then shows no outline rather than a partial one). */
-export function buildObjectRows(shapes: readonly WorkplaneShape[], nameOf: (shape: WorkplaneShape) => string): ObjectRow[] | null {
+/** A group being edited: the group as it was, and the ids of its loose parts (the editor's `OpenGroupLevel`). Levels run outermost first. */
+export interface OpenLevelInfo {
+  original: WorkplaneShape;
+  childIds: readonly string[];
+}
+
+/**
+ * The hierarchy, or null when it is beyond the bounds (the host then shows no outline rather than a partial one). Groups open for editing keep their place: while a group is
+ * edited its parts stand loose in the editor's list, in the group's place (see `replaceAtFirst`), and here they are shown under the group's own row, marked `editing`, so the
+ * hierarchy does not change shape while it is edited.
+ */
+export function buildObjectRows(shapes: readonly WorkplaneShape[], nameOf: (shape: WorkplaneShape) => string, openLevels: readonly OpenLevelInfo[] = []): ObjectRow[] | null {
   let count = 0;
+  const flags = (row: ObjectRow, shape: WorkplaneShape) => {
+    if (shape.hole) row.hole = true;
+    if (shape.hidden) row.hidden = true;
+    if (shape.locked) row.locked = true;
+    if (shape.shapeLocked) row.shapeLocked = true;
+    if (typeof shape.color === "string" && shape.color) row.color = shape.color;
+  };
   const build = (list: readonly WorkplaneShape[], depth: number, parentId: string): ObjectRow[] | null => {
     if (depth > OBJECTS_MAX_DEPTH) return null;
     const rows: ObjectRow[] = [];
     for (let index = 0; index < list.length; index += 1) {
-      const shape = list[index];
-      if (++count > OBJECTS_MAX_ROWS) return null;
-      // A part inside a group may carry no id of its own; it still needs a stable one for the host's outline.
-      const row: ObjectRow = { id: shape.id || `${parentId}#${index}`, name: nameOf(shape), kind: shape.kind };
-      if (shape.hole) row.hole = true;
-      if (shape.hidden) row.hidden = true;
-      if (shape.locked) row.locked = true;
-      if (shape.shapeLocked) row.shapeLocked = true;
-      if (typeof shape.color === "string" && shape.color) row.color = shape.color;
-      if (shape.groupedShapes?.length) {
-        row.group = shape.groupOperation === "bundle" ? "bundle" : "group";
-        const items = build(shape.groupedShapes, depth + 1, row.id);
-        if (!items) return null;
-        row.items = items;
-      }
+      const row = one(list[index], depth, parentId, index);
+      if (!row) return null;
       rows.push(row);
     }
     return rows;
   };
-  return build(shapes, 1, "");
+  const one = (shape: WorkplaneShape, depth: number, parentId: string, index: number): ObjectRow | null => {
+    if (++count > OBJECTS_MAX_ROWS || depth > OBJECTS_MAX_DEPTH) return null;
+    // A part inside a group may carry no id of its own; it still needs a stable one for the host's outline.
+    const row: ObjectRow = { id: shape.id || `${parentId}#${index}`, name: nameOf(shape), kind: shape.kind };
+    flags(row, shape);
+    if (shape.groupedShapes?.length) {
+      row.group = shape.groupOperation === "bundle" ? "bundle" : "group";
+      const items = build(shape.groupedShapes, depth + 1, row.id);
+      if (!items) return null;
+      row.items = items;
+    }
+    return row;
+  };
+  if (openLevels.length === 0) return build(shapes, 1, "");
+
+  // Groups being edited: walk the list in its own order; a part of level k stands under the rows of the groups of levels 0..k, which appear where their first part stands.
+  const levelOf = new Map<string, number>();
+  openLevels.forEach((level, index) => level.childIds.forEach((id) => levelOf.set(id, index)));
+  const editingRows: Array<ObjectRow | null> = openLevels.map(() => null);
+  const root: ObjectRow[] = [];
+  for (const shape of shapes) {
+    const level = levelOf.get(shape.id) ?? -1;
+    let container = root;
+    for (let k = 0; k <= level; k += 1) {
+      let editing = editingRows[k];
+      if (!editing) {
+        const original = openLevels[k].original;
+        if (++count > OBJECTS_MAX_ROWS || k + 1 > OBJECTS_MAX_DEPTH) return null;
+        editing = { id: original.id, name: nameOf(original), kind: original.kind, group: original.groupOperation === "bundle" ? "bundle" : "group", editing: true, items: [] };
+        flags(editing, original);
+        editingRows[k] = editing;
+        container.push(editing);
+      }
+      container = editing.items as ObjectRow[];
+    }
+    const row = one(shape, level + 2, "", container.length);
+    if (!row) return null;
+    container.push(row);
+  }
+  return root;
 }
 
 /** A hierarchy reduced to what the three costs compare: the structure as one string, and each row's properties as one string by id. */
@@ -89,7 +134,8 @@ export function flattenObjectRows(rows: readonly ObjectRow[]): ObjectsFlat {
   const walk = (list: readonly ObjectRow[]) => {
     for (const row of list) {
       const { items, ...own } = row;
-      parts.push(row.id);
+      // Opening or closing a group changes what its descendants are (selectable or not), so it is a change of structure, never a patch.
+      parts.push(row.editing ? `${row.id}\u0003` : row.id);
       props.set(row.id, JSON.stringify(own));
       byId.set(row.id, own);
       if (items) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canEditGroupAtLevel, openGroupLevelsStillOpen, trackOpenGroupLevels, trackOpenGroupParts } from "@/lib/openGroupParts";
+import { canEditGroupAtLevel, openGroupLevelsStillOpen, replaceAtFirst, trackOpenGroupLevels, trackOpenGroupParts } from "@/lib/openGroupParts";
 
 const shapes = (...ids: string[]) => ids.map((id) => ({ id }));
 
@@ -113,5 +113,30 @@ describe("which groups can be edited", () => {
     expect(canEditGroupAtLevel(levels, "g2")).toBe(true);
     expect(canEditGroupAtLevel(levels, "g1")).toBe(false);
     expect(canEditGroupAtLevel(levels, "elsewhere")).toBe(false);
+  });
+});
+
+describe("replaceAtFirst: group editing keeps the user's order", () => {
+  const ids = (list: { id: string }[]) => list.map((s) => s.id);
+  const o = (...names: string[]) => names.map((id) => ({ id }));
+  it("opening puts the parts where the group stood", () => {
+    expect(ids(replaceAtFirst(o("a", "g", "z"), ["g"], o("p1", "p2")))).toEqual(["a", "p1", "p2", "z"]);
+  });
+  it("Done and Cancel put the group where its first part stands", () => {
+    expect(ids(replaceAtFirst(o("a", "p1", "p2", "z"), ["p1", "p2"], o("g")))).toEqual(["a", "g", "z"]);
+    expect(ids(replaceAtFirst(o("a", "p1", "m", "p2", "z"), ["p1", "p2"], o("g")))).toEqual(["a", "g", "m", "z"]);
+  });
+  it("open then Done or Cancel returns exactly the original order", () => {
+    const before = o("a", "b", "g", "c", "d");
+    const opened = replaceAtFirst(before, ["g"], o("p1", "p2", "p3"));
+    expect(ids(replaceAtFirst(opened, ["p1", "p2", "p3"], o("g")))).toEqual(ids(before));
+  });
+  it("a shape added while the group is open stays where it was added, and nothing else moves", () => {
+    const opened = replaceAtFirst(o("a", "g", "c"), ["g"], o("p1", "p2"));
+    const withNew = [...opened, ...o("new")];
+    expect(ids(replaceAtFirst(withNew, ["p1", "p2"], o("g")))).toEqual(["a", "g", "c", "new"]);
+  });
+  it("appends when none of the replaced ones is in the list", () => {
+    expect(ids(replaceAtFirst(o("a", "b"), ["x"], o("g")))).toEqual(["a", "b", "g"]);
   });
 });

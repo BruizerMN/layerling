@@ -63,13 +63,54 @@ describe("objects.v1 diff: the three costs", () => {
   });
 });
 
+describe("objects.v1 hierarchy while a group is being edited", () => {
+  const level = (id: string, childIds: string[], extra: Record<string, unknown> = {}) => ({ original: shape(id, { groupedShapes: [shape("x")], ...extra }), childIds });
+  it("shows the group at its place, marked editing, with its live parts under it", () => {
+    // the editor's list: a, then the group's parts where the group stood, then z
+    const rows = buildObjectRows([shape("a"), shape("p1"), shape("p2", { hole: true }), shape("z")], nameOf, [level("g", ["p1", "p2"])])!;
+    expect(rows.map((r) => r.id)).toEqual(["a", "g", "z"]);
+    expect(rows[1].editing).toBe(true);
+    expect(rows[1].group).toBe("group");
+    expect(rows[1].items?.map((r) => r.id)).toEqual(["p1", "p2"]);
+    expect(rows[1].items?.[1].hole).toBe(true);
+    expect(rows[0]).not.toHaveProperty("editing");
+  });
+  it("nests an open group inside an open group, and keeps closed groups closed", () => {
+    const closed = shape("c", { groupedShapes: [shape("c1")] });
+    const rows = buildObjectRows([shape("a"), shape("q1"), shape("q2"), closed, shape("z")], nameOf, [level("g", ["inner", "closed-sibling", "c"]), level("inner", ["q1", "q2"], { groupOperation: "bundle" })])!;
+    expect(rows.map((r) => r.id)).toEqual(["a", "g", "z"]);
+    const g = rows[1];
+    expect(g.items?.map((r) => r.id)).toEqual(["inner", "c"]);
+    expect(g.items?.[0]).toMatchObject({ id: "inner", editing: true, group: "bundle" });
+    expect(g.items?.[0].items?.map((r) => r.id)).toEqual(["q1", "q2"]);
+    expect(g.items?.[1].items?.map((r) => r.id)).toEqual(["c1"]);
+    expect(g.items?.[1]).not.toHaveProperty("editing");
+  });
+  it("changes nothing when no group is open", () => {
+    const list = [shape("a"), shape("b", { groupedShapes: [shape("c")] })];
+    expect(buildObjectRows(list, nameOf, [])).toEqual(buildObjectRows(list, nameOf));
+  });
+  it("the editing flag is a property: a patch can carry it, and an open/close is a structure change", () => {
+    const closed = flattenObjectRows(buildObjectRows([shape("a"), shape("g", { groupedShapes: [shape("p1"), shape("p2")] })], nameOf)!);
+    const open = flattenObjectRows(buildObjectRows([shape("a"), shape("p1"), shape("p2")], nameOf, [level("g", ["p1", "p2"])])!);
+    expect(diffObjects(closed, open).kind).toBe("tree");
+  });
+});
+
 describe("objects.v1 protocol", () => {
   it("accepts only the known invoke ops with sound arguments", () => {
     expect(parseObjectsInvoke("select", { ids: ["a", "b"], mode: "replace" })).toEqual({ op: "select", ids: ["a", "b"], mode: "replace" });
     expect(parseObjectsInvoke("select", { ids: ["a", ""], mode: "replace" })).toBeNull();
     expect(parseObjectsInvoke("select", { ids: ["a"], mode: "add" })).toBeNull();
-    expect(parseObjectsInvoke("openGroupPart", { groupId: "g", partId: "p" })).toEqual({ op: "openGroupPart", groupId: "g", partId: "p" });
-    expect(parseObjectsInvoke("openGroupPart", { groupId: "g" })).toBeNull();
+    expect(parseObjectsInvoke("openGroup", { rootId: "g", indices: [] })).toEqual({ op: "openGroup", rootId: "g", indices: [] });
+    expect(parseObjectsInvoke("openGroup", { rootId: "g", indices: [2, 0, 1] })).toEqual({ op: "openGroup", rootId: "g", indices: [2, 0, 1] });
+    expect(parseObjectsInvoke("openGroup", { rootId: "g", indices: [-1] })).toBeNull();
+    expect(parseObjectsInvoke("openGroup", { rootId: "g", indices: [1.5] })).toBeNull();
+    expect(parseObjectsInvoke("openGroup", { rootId: "", indices: [] })).toBeNull();
+    expect(parseObjectsInvoke("openGroup", { indices: [] })).toBeNull();
+    expect(parseObjectsInvoke("finishGroup", {})).toEqual({ op: "finishGroup" });
+    expect(parseObjectsInvoke("cancelGroup", {})).toEqual({ op: "cancelGroup" });
+    expect(parseObjectsInvoke("openGroupPart", { groupId: "g", partId: "p" })).toBeNull();   // clicking a row never enters group editing (0115)
     expect(parseObjectsInvoke("rename", { id: "a", name: "x" })).toBeNull();
   });
   it("parses the host's objects events and rejects malformed ones", () => {

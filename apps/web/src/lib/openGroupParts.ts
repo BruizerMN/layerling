@@ -8,6 +8,19 @@ import type { WorkplaneNote, WorkplaneShape } from "@/types/layerling";
  */
 export type OpenGroupLevel = { original: WorkplaneShape; childIds: string[]; notes: WorkplaneNote[] };
 
+/**
+ * The list with `replacedIds` taken out and `replacement` put where the first of them stood (at the end if none is in the list). Opening a group puts its parts in the
+ * group's place, and Done and Cancel put the group back where its first part stands: the user's order is never rearranged by group editing.
+ */
+export function replaceAtFirst<T extends { id: string }>(shapes: readonly T[], replacedIds: Iterable<string>, replacement: readonly T[]): T[] {
+  const replaced = new Set(replacedIds);
+  const at = shapes.findIndex((shape) => replaced.has(shape.id));
+  const rest = shapes.filter((shape) => !replaced.has(shape.id));
+  if (at < 0) return [...rest, ...replacement];
+  // `at` counts the replaced ones before it too, but none stand before the first, so it is also the index in `rest`.
+  return [...rest.slice(0, at), ...replacement, ...rest.slice(at)];
+}
+
 export function mcpOpenGroupSummary(level: OpenGroupLevel) {
   return { groupId: level.original.id, name: displayShapeName(level.original), partIds: level.childIds };
 }

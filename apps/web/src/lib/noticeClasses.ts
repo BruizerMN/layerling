@@ -262,6 +262,9 @@ export const NOTICE_ERROR_KEYS: readonly string[] = [
 ];
 
 export const NOTICE_INFO_KEYS: readonly string[] = [
+  "status.groupOpened",
+  "status.groupOpenCancelled",
+  "status.groupClosed",
   "attachments.removed",
   "attachments.unchanged",
   "camera.savedViewEmpty",

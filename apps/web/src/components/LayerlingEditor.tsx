@@ -173,6 +173,7 @@ import { attachmentsFingerprint } from "@/lib/projectAttachments";
 import { nativeVisualGroupsAvailable, nativeVisualGroupsWatching, onNativeVisualGroupsInvoke, onNativeVisualGroupsWatch, publishVisualGroupsState, requestVisualGroupChooser, requestVisualGroupPick, type VisualGroupsInvoke } from "@/lib/host/nativeVisualGroups";
 import { nativeObjectsWatching, onNativeObjectsInvoke, onNativeObjectsWatch, publishObjectRows, publishObjectSelection } from "@/lib/host/nativeObjects";
 import { buildObjectRows, objectRowName } from "@/lib/objectsSnapshot";
+import { replaceAtFirst } from "@/lib/openGroupParts";
 import { existingGroupId, visualGroupsMenuFits, visualGroupsOutline, visualGroupsPaletteState, type ChooserGroup } from "@/lib/visualGroupsSnapshot";
 import { EMPTY_VISUAL_GROUPS, applyMerge, showOnlyGroupedObjects, setGroupLocked, toggleObjectLocked, findVisualGroup, focusGroupVisibility, moveItemsToGroup, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, copyPairs, mergePickCandidates, moveObjectsToGroup, placeDerivedObjects, placeReplacementObjects, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
 import { ATTACHMENT_MCP_READ_ACTIONS, attachmentMcpCommand, attachmentMcpList } from "@/lib/projectAttachmentsMcp";
@@ -12711,18 +12712,19 @@ export function LayerlingEditor({
   }, [setOpenGroupLevels]);
 
   /** Opening and closing a level are not edits of the level around it: nothing to track. */
-  const commitOpenGroupTransition = useCallback((levels: OpenGroupLevel[], next: WorkplaneShape[], selection: string | string[], message: string) => {
+  const commitOpenGroupTransition = useCallback((levels: OpenGroupLevel[], next: WorkplaneShape[], selection: string | string[], message: string, amendNewest = false) => {
     setOpenGroupLevels(levels);
     openGroupTransitionRef.current = true;
     try {
-      commitShapes(next, selection, message);
+      commitShapes(next, selection, message, undefined, amendNewest);
     } finally {
       openGroupTransitionRef.current = false;
     }
   }, [commitShapes, setOpenGroupLevels]);
 
   // `selectPart`: the index of the one part to select, a click on it in the object list (Discussion #1316); else all.
-  const openGroupForEditing = useCallback((id: string, selectPart?: number): OpenGroupOutcome => {
+  // `amendNewest`: this step joins the one before in Undo (opening a nested group takes several steps; they are one).
+  const openGroupForEditing = useCallback((id: string, selectPart?: number, amendNewest = false): OpenGroupOutcome => {
     if (openGroupBusyRef.current) return refuseOpenGroupStep(t("group.busy"));
     const levels = openGroupsRef.current;
     const innermost = levels.at(-1);
@@ -12737,12 +12739,14 @@ export function LayerlingEditor({
     const message = t("status.groupOpened", { name: displayShapeName(group) });
     commitOpenGroupTransition(
       [...levels, { original: group, childIds, notes: notesPinnedTo(notesRef.current, group) }],
-      [...shapesRef.current.filter((shape) => shape.id !== group.id), ...parts],
+      // The native app keeps the user's order: the parts stand where the group stood. (The browser edition keeps its own behaviour: the parts go to the end.)
+      nativeDocument ? replaceAtFirst(shapesRef.current, [group.id], parts) : [...shapesRef.current.filter((shape) => shape.id !== group.id), ...parts],
       selectPart !== undefined && childIds[selectPart] ? [childIds[selectPart]] : childIds,
       message,
+      amendNewest,
     );
     return { ok: true, message, partIds: childIds };
-  }, [commitOpenGroupTransition, refuseOpenGroupStep]);
+  }, [commitOpenGroupTransition, nativeDocument, refuseOpenGroupStep]);
 
   // A click on a part in the object list opens its group and selects that part (Discussion #1316).
   const openGroupPartForEditing = useCallback((groupId: string, partId: string) => {
@@ -12763,12 +12767,12 @@ export function LayerlingEditor({
     if (!historyViewStateRef.current) notesRef.current = notesPutBack(notesRef.current, session.notes);
     commitOpenGroupTransition(
       levels.slice(0, -1),
-      [...shapesRef.current.filter((shape) => !parts.has(shape.id)), session.original],
+      nativeDocument ? replaceAtFirst(shapesRef.current, parts, [session.original]) : [...shapesRef.current.filter((shape) => !parts.has(shape.id)), session.original],
       session.original.id,
       message,
     );
     return { ok: true, message, groupId: session.original.id };
-  }, [commitOpenGroupTransition, refuseOpenGroupStep]);
+  }, [commitOpenGroupTransition, nativeDocument, refuseOpenGroupStep]);
 
   /**
    * A group built again from these parts, as Done builds an opened one: the same group, not a new one - its id stays,
@@ -12866,7 +12870,7 @@ export function LayerlingEditor({
       const message = result.mergeWarning || t("status.groupClosed", { name: displayShapeName(regrouped) });
       commitOpenGroupTransition(
         openGroupsRef.current.slice(0, -1),
-        [...shapesRef.current.filter((shape) => !partIds.has(shape.id)), regrouped],
+        nativeDocument ? replaceAtFirst(shapesRef.current, partIds, [regrouped]) : [...shapesRef.current.filter((shape) => !partIds.has(shape.id)), regrouped],
         regrouped.id,
         message,
       );
@@ -12875,7 +12879,7 @@ export function LayerlingEditor({
       openGroupBusyRef.current = false;
       setOpenGroupBusy(false);
     }
-  }, [commitNotes, commitOpenGroupTransition, endOpenGroupLevelsWithoutStep, refuseOpenGroupStep, rebuildGroupFromParts]);
+  }, [commitNotes, commitOpenGroupTransition, endOpenGroupLevelsWithoutStep, nativeDocument, refuseOpenGroupStep, rebuildGroupFromParts]);
 
   /** Why a part cannot go into or out of a group from the object list right now, or null (Discussion #1338). */
   const groupPartsStepRefused = useCallback((): string | null => {
@@ -19201,7 +19205,7 @@ export function LayerlingEditor({
   useEffect(() => {
     if (!objectsWatching) return;
     const timer = window.setTimeout(() => {
-      publishObjectRows(buildObjectRows(shapesRef.current, (shape) => objectRowName(shape, displayShapeName, (key) => t(key as MessageKey))), historyViewStateRef.current !== null);
+      publishObjectRows(buildObjectRows(shapesRef.current, (shape) => objectRowName(shape, displayShapeName, (key) => t(key as MessageKey)), openGroupsRef.current), historyViewStateRef.current !== null);
     }, 60);
     return () => window.clearTimeout(timer);
   }, [objectsWatching, objectsTick, shapes, historyViewState, openGroups]);
@@ -19216,12 +19220,24 @@ export function LayerlingEditor({
       if (command.op === "select") {
         const live = liveObjectIds(shapesRef.current);
         selectShape(command.ids.filter((id) => live.has(id)), command.mode);
+      } else if (command.op === "openGroup") {
+        // The explicit "Edit Group" button: opens the group, and the groups around it on the way when it is nested (one Undo step). A refusal says why itself.
+        let groupId = command.rootId;
+        for (let step = 0; step <= command.indices.length; step += 1) {
+          const group = shapesRef.current.find((shape) => shape.id === groupId);
+          const index = command.indices[step];
+          if (!group?.groupedShapes?.length || (index !== undefined && !group.groupedShapes[index]?.groupedShapes?.length)) return;
+          const outcome = openGroupForEditing(groupId, index, step > 0);
+          if (!outcome.ok || index === undefined) return;
+          groupId = outcome.partIds?.[index] ?? "";
+        }
+      } else if (command.op === "finishGroup") {
+        void finishOpenGroup();
       } else {
-        // As a click on a part in the object list: the part's group opens with that part selected (it says why itself when it cannot).
-        openGroupPartForEditing(command.groupId, command.partId);
+        cancelOpenGroup();
       }
     });
-  }, [nativeDocument, selectShape, openGroupPartForEditing]);
+  }, [nativeDocument, selectShape, openGroupForEditing, finishOpenGroup, cancelOpenGroup]);
 
   // A selection made by the user on the workplane brings the Inspector's Object tab to the front (Build 0031). Selection changed any other way (the object list,
   // commands, undo) does not touch the tab, and neither does a click that selects nothing.

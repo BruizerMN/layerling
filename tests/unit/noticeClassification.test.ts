@@ -33,6 +33,25 @@ describe("notice classes the native app depends on", () => {
     expect(errors.has("status.shapeLockHeld") || !info.has("status.shapeLockHeld")).toBe(true);
   });
 
+  it("entering, finishing and cancelling group editing are information: the native app raises no modal for them (Build 0115)", () => {
+    for (const key of ["status.groupOpened", "status.groupClosed", "status.groupOpenCancelled"]) {
+      expect(info.has(key), key).toBe(true);
+      expect(errors.has(key), key).toBe(false);
+    }
+    noteNoticeText("status.groupOpened", "Editing \"Group\"");
+    noteNoticeText("status.groupOpenCancelled", "\"Group\" back unchanged");
+    noteNoticeText("status.groupClosed", "Rebuilt \"Group\"");
+    for (const text of ["Editing \"Group\"", "\"Group\" back unchanged", "Rebuilt \"Group\""]) expect(noticeIsError(text), text).toBe(false);
+  });
+
+  it("genuine group refusals and warnings are still shown", () => {
+    for (const key of ["group.busy", "group.finishOpenFirst", "status.groupChanged", "status.groupPartsShrunk", "status.groupStretchedInstead"]) {
+      expect(info.has(key), key).toBe(false);
+    }
+    noteNoticeText("group.finishOpenFirst", "Only groups inside \"Pedestal\" can be edited now");
+    expect(noticeIsError("Only groups inside \"Pedestal\" can be edited now")).toBe(true);
+  });
+
   it("no key is in both lists", () => {
     for (const key of errors) expect(info.has(key), key).toBe(false);
   });
