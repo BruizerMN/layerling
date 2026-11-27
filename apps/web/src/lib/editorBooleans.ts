@@ -31,8 +31,22 @@ import { pointInDrillPoint, shapeDrillPointAngle } from "@/lib/drillPoint";
 import { tubeBeforeEdgeTreatments } from "@/lib/edgeTreatmentHistory";
 import { type Vec3, type MeshData, type Cuboid, type ShapeUpdatePatch, type ManifoldSolid, CUTTER_PADDING, CUTTER_LATERAL_PADDING, POINT_TOLERANCE, CUTTER_RESIDUAL_INSET, MIN_SHAPE_DIMENSION, IMPORTED_FALLBACK_BOOLEAN_TRIANGLE_LIMIT, COPLANAR_BOOLEAN_RESCUE_DEGREES, cleanModelDimension, getManifoldRuntime, transformMesh, meshForShape, groupedContentMesh, deformFrameOf, appendMeshData, formatTriangleCount, shapeAabb, boundsForShapesOfVertices, boundsForCuboids, meshAabb, geometryFromMeshData, positionsFromGeometryDrawRange, boundsForPositions, positionsDifferFromMeshData, geometryDiffersFromMeshData, positionsBoundaryEdges, meshDataPositions, midpoint, localGroupBounds } from "@/lib/editorMeshCore";
 
+/**
+ * How a group's body was made (Build 0122). `degraded` is set when the result is not the intended reconstruction: the cut was made by the fallback that
+ * leaves the cut face open, or solids that should be merged were only laid together. A hole-only group is laid together by design (not degraded).
+ */
+export type GroupBuildQuality = {
+  path: "plain" | "box-cut" | "kernel-cut" | "kernel-union" | "clear-hole" | "holes-concat" | "open-cut-fallback" | "unmerged-concat" | "other";
+  degraded?: string;
+};
+
+/** Options of a group build. `clearHoles`: holes that touch no solid are a success (the body is the solids alone, the holes stay among the parts) instead of a failed cut (Build 0122, native Done). */
+export type GroupBuildOptions = { clearHoles?: boolean };
+
 export type GroupBuildResult = {
   group: WorkplaneShape | null;
+  /** Build 0122: how the body was made; absent when there is no group. */
+  quality?: GroupBuildQuality;
   booleanSelection: WorkplaneShape[];
   hasSolid: boolean;
   hasHole: boolean;
@@ -3173,7 +3187,35 @@ function withMulticolorGroupsOpened(selection: WorkplaneShape[]): WorkplaneShape
   });
 }
 
-export async function buildGroupedShapeFromSelection(selected: WorkplaneShape[], triangleLimit: number): Promise<GroupBuildResult> {
+/**
+ * Holes that touch no solid. True only when the kernel can build every operand as a valid solid and the solids and the holes do not overlap in volume: a failed
+ * cut (an operand that is not a closed solid, a cut that did not happen although the shapes overlap) is NOT this case and stays a failure.
+ * Then the group is the solids alone as one body, the holes remain among its parts where they are (their position may be intended).
+ */
+async function groupWhenHolesClearSolids(booleanSelection: WorkplaneShape[], groupable: WorkplaneShape[], triangleLimit: number): Promise<WorkplaneShape | null> {
+  const solids = booleanSelection.filter((shape) => !shape.hole && !shape.locked);
+  const holes = booleanSelection.filter((shape) => shape.hole);
+  if (solids.length === 0 || holes.length === 0) return null;
+  const created: ManifoldSolid[] = [];
+  try {
+    const runtime = await getManifoldRuntime();
+    const solidUnion = shapesToManifoldUnion(runtime, solids, created, false);
+    const holeUnion = shapesToManifoldUnion(runtime, holes, created, false);
+    if (!solidUnion || !holeUnion) return null;
+    const overlap = solidUnion.intersect(holeUnion);
+    created.push(overlap);
+    if (overlap.status() !== "NoError") return null;
+    if (overlap.volume() > Math.max(1e-9, 1e-9 * Math.min(solidUnion.volume(), holeUnion.volume()))) return null;
+    if (solids.length >= 2) return await manifoldUnionMeshShape(solids, triangleLimit, groupable);
+    return meshPositionsToGroupShape(solids, solids, meshDataPositions(mergedSolidMeshData(solids)), "grouped-clear-hole", groupable);
+  } catch {
+    return null;
+  } finally {
+    Array.from(new Set(created)).forEach(disposeManifold);
+  }
+}
+
+export async function buildGroupedShapeFromSelection(selected: WorkplaneShape[], triangleLimit: number, options: GroupBuildOptions = {}): Promise<GroupBuildResult> {
   takeHoleFillTally();
   // What the group carries as its parts; the cut itself is made from what was selected.
   const groupable = withMulticolorGroupsOpened(selected);
@@ -3194,7 +3236,10 @@ export async function buildGroupedShapeFromSelection(selected: WorkplaneShape[],
   const cleanBoxGroup = !bundleCutGroup && canUseBoxBoolean(boxBooleanSelection) ? boxedBooleanMeshShape(boxBooleanSelection, groupable) : null;
   const manifoldCutGroup = hasSolid && hasHole ? bundleCutGroup ?? await manifoldBooleanMeshShape(booleanSelection, triangleLimit, { requireImported: false }, groupable) : null;
   const manifoldImportedMerge = hasImportedMesh && hasSolid && !hasHole ? await manifoldUnionMeshShape(booleanSelection, triangleLimit, groupable) : null;
-  const exactImportedGroup = hasImportedMesh && hasSolid && hasHole ? manifoldCutGroup ?? importedBooleanMeshShape(booleanSelection, groupable) : null;
+  const clearHoleGroup = options.clearHoles && hasImportedMesh && hasSolid && hasHole && !bundleCutGroup && !cleanBoxGroup && !manifoldCutGroup
+    ? await groupWhenHolesClearSolids(booleanSelection, groupable, triangleLimit)
+    : null;
+  const exactImportedGroup = hasImportedMesh && hasSolid && hasHole ? manifoldCutGroup ?? clearHoleGroup ?? importedBooleanMeshShape(booleanSelection, groupable) : null;
   const bakedImportedMerge = hasImportedMesh && !(hasSolid && hasHole) ? manifoldImportedMerge ?? mergedMeshShape(booleanSelection, groupable) : null;
   const built = hasSolid && hasHole
     ? cleanBoxGroup ??
@@ -3219,8 +3264,23 @@ export async function buildGroupedShapeFromSelection(selected: WorkplaneShape[],
     ? t("status.groupNotMerged", { triangles: formatTriangleCount(unmergedTriangles), limit: formatTriangleCount(triangleLimit) })
     : undefined;
   const holes = takeHoleFillTally();
+  let quality: GroupBuildQuality | undefined;
+  if (built) {
+    if (hasSolid && hasHole) {
+      if (built === cleanBoxGroup) quality = { path: "box-cut" };
+      else if (built === bundleCutGroup || built === manifoldCutGroup) quality = { path: "kernel-cut" };
+      else if (built === clearHoleGroup) quality = { path: "clear-hole" };
+      else if (hasImportedMesh && built === exactImportedGroup) quality = { path: "open-cut-fallback", degraded: "the cut could only be made by the fallback that leaves the cut face open" };
+      else quality = { path: "other" };
+    } else if (hasImportedMesh) {
+      if (built === manifoldImportedMerge) quality = { path: "kernel-union" };
+      else if (built === bakedImportedMerge) quality = hasSolid ? { path: "unmerged-concat", degraded: mergeWarning ? "the parts are laid together without being merged (above the triangle limit)" : "the solids could not be merged and are only laid together" } : { path: "holes-concat" };
+      else quality = { path: "other" };
+    } else quality = { path: "plain" };
+  }
   return {
     group,
+    ...(quality ? { quality } : {}),
     openGapEdges,
     mergeWarning,
     closedHoles: group ? holes.closed : 0,

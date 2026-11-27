@@ -51,6 +51,11 @@ export function reconstruct(original: WorkplaneShape, parts: WorkplaneShape[]) {
   return rebuildGroupFromParts(original, parts, { triangleLimit: TRIANGLE_LIMIT });
 }
 
+/** Production reconstruction as native Done runs it (Build 0122): strict. */
+export function reconstructStrict(original: WorkplaneShape, parts: WorkplaneShape[]) {
+  return rebuildGroupFromParts(original, parts, { triangleLimit: TRIANGLE_LIMIT, strict: true });
+}
+
 /** What the editor does when a group is opened and finished with nothing changed. */
 export async function openAndFinish(group: WorkplaneShape) {
   const parts = restoreGroupedChildren(group).map((part) => ({ ...part, locked: false }));

@@ -1,10 +1,13 @@
 import { buildGroupedShapeOffThread } from "@/lib/geometryWorker";
-import { buildHullShapeFromSelection, buildIntersectionShapeFromSelection, groupedShape } from "@/lib/editorBooleans";
+import { buildHullShapeFromSelection, buildIntersectionShapeFromSelection, disposeManifold, groupedShape, manifoldFromMeshData, type GroupBuildQuality } from "@/lib/editorBooleans";
+import { getManifoldRuntime, meshForShape } from "@/lib/editorMeshCore";
 import { buildSketchLoftFromSelection } from "@/lib/sketchLoft";
 import { carryShapePivot } from "@/lib/rotationPivot";
 import { groupMarksOf } from "@/lib/groupMarks";
+import { groupFinishProblemMessage } from "@/lib/groupFinishProblems";
 import { rebasePaintStrokes } from "@/lib/paintMesh";
 import { canPaintShape } from "@/lib/paint";
+import { displayShapeName } from "@/lib/shapeCatalog";
 import { canonicalizeShape, withHoleMode } from "@/lib/workplaneShapes";
 import { t } from "@/lib/i18n";
 import type { WorkplaneShape } from "@/types/layerling";
@@ -16,15 +19,45 @@ import type { WorkplaneShape } from "@/types/layerling";
  * Extracted unchanged from LayerlingEditor.tsx in Build 0121 so the model-integrity tests call the real function (tests/unit/groupIntegrity).
  * The rebuilt group is the same group, not a new one: its id stays, with its name, see-through, hidden, solid or hole, its own colour and its
  * pivot (#807); it also keeps what it does with its parts when it is resized (Discussion #526).
+ *
+ * Build 0122: `strict` (native Done) refuses a result that is not the intended reconstruction instead of accepting it, counts holes that touch no solid as a
+ * success, and names the object that is the problem. Without `strict` the behaviour is exactly that of Build 0121.
  */
 export type GroupReconstructionContext = {
   /** The boolean triangle limit in force (workspace setting). */
   triangleLimit: number;
   /** Stops the work when the scene changes under it (page only). */
   signal?: AbortSignal;
+  strict?: boolean;
 };
 
-export type GroupReconstruction = { group: WorkplaneShape; mergeWarning: string } | { group: null; failure: string };
+export type GroupReconstruction =
+  | { group: WorkplaneShape; mergeWarning: string; quality?: GroupBuildQuality }
+  | { group: null; failure: string };
+
+/** The parts whose mesh the kernel cannot take as a closed solid (an operand of a boolean that is not one). A part that is itself a group without a body is drawn from its own parts and is not checked here. */
+export async function partsThatAreNotClosedSolids(parts: readonly WorkplaneShape[]): Promise<string[]> {
+  let runtime;
+  try {
+    runtime = await getManifoldRuntime();
+  } catch {
+    return [];
+  }
+  const names: string[] = [];
+  for (const part of parts) {
+    if (part.groupedShapes?.length && !part.importedMesh) continue;
+    let solid;
+    try {
+      solid = manifoldFromMeshData(runtime, meshForShape(part));
+      if (solid.status() !== "NoError" || solid.numTri() < 1) names.push(displayShapeName(part));
+    } catch {
+      names.push(displayShapeName(part));
+    } finally {
+      if (solid) disposeManifold(solid);
+    }
+  }
+  return [...new Set(names)];
+}
 
 export async function rebuildGroupFromParts(original: WorkplaneShape, parts: WorkplaneShape[], context: GroupReconstructionContext): Promise<GroupReconstruction> {
   const operation = original.groupOperation === "intersection" || original.groupOperation === "hull" || original.groupOperation === "bundle" || original.groupOperation === "loft" ? original.groupOperation : "group";
@@ -36,9 +69,18 @@ export async function rebuildGroupFromParts(original: WorkplaneShape, parts: Wor
       ? await buildSketchLoftFromSelection(parts)
       : operation === "bundle"
       ? { group: groupedShape(parts) }
-      : await buildGroupedShapeOffThread(parts, context.triangleLimit, context.signal);
+      : await buildGroupedShapeOffThread(parts, context.triangleLimit, context.signal, { clearHoles: Boolean(context.strict) });
+  const quality: GroupBuildQuality | undefined = "quality" in result ? (result.quality as GroupBuildQuality | undefined) : undefined;
+  const name = displayShapeName(original);
   if (!result.group) {
-    return { group: null, failure: "failureNotice" in result && result.failureNotice ? result.failureNotice : t("status.groupChanged") };
+    const base = "failureNotice" in result && result.failureNotice ? result.failureNotice : t("status.groupChanged");
+    if (!context.strict) return { group: null, failure: base };
+    const objects = await partsThatAreNotClosedSolids(parts);
+    return { group: null, failure: objects.length ? groupFinishProblemMessage({ kind: "openMesh", group: name, objects }) : groupFinishProblemMessage({ kind: "cutFailed", group: name }) };
+  }
+  if (context.strict && quality?.degraded) {
+    const objects = await partsThatAreNotClosedSolids(parts);
+    return { group: null, failure: objects.length ? groupFinishProblemMessage({ kind: "openMesh", group: name, objects }) : groupFinishProblemMessage({ kind: "degraded", group: name, reason: quality.degraded }) };
   }
   // Its colour stays if it had been given one apart from its first part.
   const firstSolid = original.groupedShapes?.find((child) => !child.hole) ?? original.groupedShapes?.[0];
@@ -60,5 +102,5 @@ export async function rebuildGroupFromParts(original: WorkplaneShape, parts: Wor
   // The group's own paint (paint.ts) goes over to the group built again, where it lay in the world.
   if (original.paint?.length && canPaintShape(group)) group.paint = rebasePaintStrokes(original.paint, original, group);
   const mergeWarning = "mergeWarning" in result && typeof result.mergeWarning === "string" ? result.mergeWarning : "";
-  return { group, mergeWarning };
+  return { group, mergeWarning, ...(quality ? { quality } : {}) };
 }

@@ -1,6 +1,6 @@
 import { buildsDiffer, BUILD_ID, isBuildMessage, reportWorkerBuild } from "@/lib/buildStamp";
 import { checkClearance, type ClearanceOptions, type ClearanceResult } from "@/lib/clearanceCheck";
-import { buildGroupedShapeFromSelection, exportSolidVolume, faceReadJoins, faceReadPositions, previewSplitConnectors, splitShapeIfCrossed, splitShapesByPlane, type ExportSolidVolume, type RebuildStretchedGroup, type GroupBuildResult, type SplitConnectorPreview, type SplitShapesOutcome } from "@/lib/editorBooleans";
+import { buildGroupedShapeFromSelection, exportSolidVolume, faceReadJoins, faceReadPositions, previewSplitConnectors, splitShapeIfCrossed, splitShapesByPlane, type ExportSolidVolume, type RebuildStretchedGroup, type GroupBuildResult, type GroupBuildOptions, type SplitConnectorPreview, type SplitShapesOutcome } from "@/lib/editorBooleans";
 import { packValue, packedTransfer, unpackValue } from "@/lib/geometryTransfer";
 import { articulateShapes, type FlexiOptions, type FlexiShapesResult } from "@/lib/flexiJoints";
 import { lidForShapes, lidTopForShapes, type LidOptions, type LidShapeResult } from "@/lib/lidTool";
@@ -239,10 +239,10 @@ function containsKernelWork(shapes: readonly WorkplaneShape[]): boolean {
  * buildGroupedShapeFromSelection off the page. A selection without a hole or an imported mesh
  * is only put together, which is quicker done here than sent away.
  */
-export function buildGroupedShapeOffThread(selected: WorkplaneShape[], triangleLimit: number, signal?: AbortSignal): Promise<GroupBuildResult> {
-  const onPage = () => buildGroupedShapeFromSelection(selected, triangleLimit);
+export function buildGroupedShapeOffThread(selected: WorkplaneShape[], triangleLimit: number, signal?: AbortSignal, options: GroupBuildOptions = {}): Promise<GroupBuildResult> {
+  const onPage = () => buildGroupedShapeFromSelection(selected, triangleLimit, options);
   if (containsText(selected) || !containsKernelWork(selected)) return onPage();
-  return runGeometryTask<GroupBuildResult>("group", { selected, triangleLimit }, onPage, () => ({
+  return runGeometryTask<GroupBuildResult>("group", { selected, triangleLimit, options }, onPage, () => ({
     group: null,
     booleanSelection: [],
     hasSolid: false,

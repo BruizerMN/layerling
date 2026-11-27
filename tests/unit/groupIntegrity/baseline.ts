@@ -30,3 +30,10 @@ export const BODY_VOLUME_TOLERANCE = 5e-3;
 export const DIMENSION_TOLERANCE = 0.01;
 /** Untouched leaves are compared in the world after the group frame is removed and applied again: float noise only (observed 1.4e-14 mm for turned parts). */
 export const LEAF_TOLERANCE = 1e-9;
+
+/**
+ * Build 0122: groups the STRICT reconstruction (native Done after an edit) refuses: an operand that is not a closed solid (the 91 Round Roof groups of SAUD) or a body that could
+ * only be made by a degraded fallback (Foshay's open-cut groups). Every refusal must name an object. Ceilings; a repair of the meshes lowers them. The 4 SAUD groups whose hole
+ * touches nothing are NOT refusals any more (they succeed).
+ */
+export const KNOWN_STRICT_REFUSALS: Record<FixtureName, number> = { medium: 0, foshay: 53, saud: 91 };

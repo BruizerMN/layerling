@@ -40,8 +40,8 @@ self.onmessage = async (event: MessageEvent<GeometryWorkerRequest>) => {
     const args = unpackValue(request.payload, request.buffers, [], received);
     let result: unknown;
     if (request.task === "group") {
-      const { selected, triangleLimit } = args as { selected: WorkplaneShape[]; triangleLimit: number };
-      result = await buildGroupedShapeFromSelection(selected, triangleLimit);
+      const { selected, triangleLimit, options } = args as { selected: WorkplaneShape[]; triangleLimit: number; options?: { clearHoles?: boolean } };
+      result = await buildGroupedShapeFromSelection(selected, triangleLimit, options);
     } else if (request.task === "split") {
       const { shape, plane, connectors, stretch } = args as { shape: WorkplaneShape; plane: Pick<ModelSplitPlane, "axis" | "normal" | "position">; connectors?: SplitConnectorOptions; stretch?: number };
       result = await splitShapeIfCrossed(shape, plane, connectors, stretch);

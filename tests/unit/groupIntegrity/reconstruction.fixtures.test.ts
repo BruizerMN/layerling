@@ -2,8 +2,8 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { restoreGroupedChildren } from "@/lib/editorBooleans";
 import { derivedLocalId } from "@/lib/localIds";
 import type { WorkplaneShape } from "@/types/layerling";
-import { BODY_BBOX_TOLERANCE, BODY_VOLUME_TOLERANCE, DIMENSION_TOLERANCE, LEAF_TOLERANCE, KNOWN_BODY_EXCEEDANCES, KNOWN_FAILURE_MESSAGES, KNOWN_FRAME_SHIFTS, KNOWN_PROPERTY_DIFFS, KNOWN_REBUILD_FAILURES, type FixtureName } from "./baseline";
-import { assertKernelLive, compareGroups, editThroughChain, fixturePath, flatLeaves, flatNodes, loadFixture, maxVertexDeviation, openAndFinish, startKernel } from "./support";
+import { BODY_BBOX_TOLERANCE, BODY_VOLUME_TOLERANCE, DIMENSION_TOLERANCE, LEAF_TOLERANCE, KNOWN_BODY_EXCEEDANCES, KNOWN_FAILURE_MESSAGES, KNOWN_FRAME_SHIFTS, KNOWN_PROPERTY_DIFFS, KNOWN_REBUILD_FAILURES, KNOWN_STRICT_REFUSALS, type FixtureName } from "./baseline";
+import { assertKernelLive, compareGroups, editThroughChain, fixturePath, flatLeaves, flatNodes, loadFixture, maxVertexDeviation, openAndFinish, reconstructStrict, startKernel } from "./support";
 
 const kernel = vi.hoisted(() => ({ runtime: null as Promise<unknown> | null }));
 vi.mock("@/lib/editorMeshCore", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/editorMeshCore")>()), getManifoldRuntime: () => kernel.runtime }));
@@ -84,6 +84,26 @@ for (const name of NAMES) {
       expect(frameShifts, `groups whose frame or body box moved: ${shifted.slice(0, 12).join(" ")}`).toBeLessThanOrEqual(KNOWN_FRAME_SHIFTS[name]);
       if (FULL) expect(failures).toBeLessThanOrEqual(KNOWN_REBUILD_FAILURES[name]);
       console.info(`[integrity] ${name}: ${sample.length} of ${groups.length} groups checked; known rebuild failures ${failures}; known body exceedances ${bodyExceedances}; known frame shifts ${frameShifts}`);
+    }, 1_800_000);
+
+    it("strict reconstruction (native Done after an edit): never degraded, every refusal names the object, holes that touch nothing succeed", async () => {
+      const step = FULL ? 1 : Math.max(1, Math.floor(groups.length / 120));
+      const sample = groups.filter((_, index) => index % step === 0);
+      const problems: string[] = [];
+      let refused = 0;
+      for (const entry of sample) {
+        const parts = restoreGroupedChildren(entry.shape).map((part) => ({ ...part, locked: false }));
+        const result = await reconstructStrict(entry.shape, parts);
+        if (result.group) {
+          if ("quality" in result && result.quality?.degraded) problems.push(`${entry.top}:${entry.path.join(".")}: degraded result accepted: ${result.quality.degraded}`);
+          continue;
+        }
+        refused += 1;
+        if (!/^Cannot finish /.test(result.failure) || !/\u201C[^\u201D]+\u201D/.test(result.failure)) problems.push(`${entry.top}:${entry.path.join(".")}: refusal without a named object: ${result.failure.slice(0, 100)}`);
+      }
+      expect(problems, problems.join("\n")).toEqual([]);
+      if (FULL) expect(refused).toBeLessThanOrEqual(KNOWN_STRICT_REFUSALS[name]);
+      console.info(`[integrity] ${name}: strict refusals ${refused} of ${sample.length} groups`);
     }, 1_800_000);
 
     it("one deliberate change to a deeply nested leaf changes that leaf only", async () => {

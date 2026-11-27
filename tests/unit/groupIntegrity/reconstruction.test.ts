@@ -118,7 +118,7 @@ describe("known defects (Findings 1 and 2): required behaviour, not yet delivere
     expect(result.group!.groupedShapes!.every((part) => !part.hidden)).toBe(true);
   });
 
-  it.fails("KNOWN DEFECT D2e: an unchanged session restores the original group exactly, including its part ids (build 0122)", async () => {
+  it.fails("KNOWN DEFECT D2e: the RECONSTRUCTION of unchanged parts still regenerates part ids (the native editor no longer reconstructs an unchanged session since Build 0122: see sessionRestore.test.ts)", async () => {
     const group = await makeGroup(plainParts());
     const { result } = await openAndFinish(group);
     expect(result.group!.groupedShapes!.map((part) => part.id)).toEqual(group.groupedShapes!.map((part) => part.id));

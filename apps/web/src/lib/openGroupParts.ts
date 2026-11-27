@@ -1,4 +1,5 @@
 import { displayShapeName } from "@/lib/shapeCatalog";
+import type { OpenStepRecord } from "@/lib/historyRewind";
 import type { WorkplaneNote, WorkplaneShape } from "@/types/layerling";
 
 /**
@@ -6,7 +7,13 @@ import type { WorkplaneNote, WorkplaneShape } from "@/types/layerling";
  * and the notes pinned to it when it was opened, where they stood - cancelling
  * puts them back.
  */
-export type OpenGroupLevel = { original: WorkplaneShape; childIds: string[]; notes: WorkplaneNote[] };
+export type OpenGroupLevel = { original: WorkplaneShape; childIds: string[]; notes: WorkplaneNote[]; session?: OpenGroupSession };
+
+/**
+ * Build 0122 (native app): what the scene was right after this level opened, so finishing or cancelling can tell that nothing changed (the original comes back
+ * exactly, with no rebuild) and, when no step was added since, take the open step out of the history again.
+ */
+export type OpenGroupSession = { shapesFingerprint: string; notes: WorkplaneNote[]; step: OpenStepRecord };
 
 /**
  * The list with `replacedIds` taken out and `replacement` put where the first of them stood (at the end if none is in the list). Opening a group puts its parts in the

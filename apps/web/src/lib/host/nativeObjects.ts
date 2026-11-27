@@ -20,7 +20,9 @@ export type ObjectsInvoke =
   | { op: "takeOutOfGroup"; groupId: string; partId: string; beforeId: string | null; intoGroupId: string | null }
   | { op: "openGroup"; rootId: string; indices: number[] }
   | { op: "finishGroup" }
-  | { op: "cancelGroup" };
+  | { op: "cancelGroup" }
+  /** Build 0122: the host asked the person and they confirmed discarding the changes of the group being edited. */
+  | { op: "cancelGroupConfirmed" };
 
 /** An object the host's row action is for: a live object (by id), or one inside a closed group (by path: the live group it starts at and the position of each next object inside the one before). */
 export type ObjectTarget = { id: string } | { rootId: string; indices: number[] };
@@ -92,6 +94,7 @@ export function parseObjectsInvoke(op: string, args: Record<string, unknown>): O
         : null;
     case "finishGroup":
     case "cancelGroup":
+    case "cancelGroupConfirmed":
       return { op };
     default:
       return null;

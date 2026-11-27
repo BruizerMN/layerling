@@ -45,7 +45,7 @@ export const VISUAL_GROUPS_CAPABILITY = "visualGroups.v1";
  * says whether anyone looks (`objects.watch`) and asks for changes with `objects.invoke`. The editor stays the only source of truth.
  */
 export const OBJECTS_CAPABILITY = "objects.v1";
-export const OBJECTS_OPS = ["select", "focus", "rename", "setHidden", "setLocked", "setShapeLocked", "moveObjects", "addToGroup", "takeOutOfGroup", "openGroup", "finishGroup", "cancelGroup"] as const;
+export const OBJECTS_OPS = ["select", "focus", "rename", "setHidden", "setLocked", "setShapeLocked", "moveObjects", "addToGroup", "takeOutOfGroup", "openGroup", "finishGroup", "cancelGroup", "cancelGroupConfirmed"] as const;
 export const VISUAL_GROUPS_OPS = ["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign", "pickResult", "move", "focusGroup", "renameObject", "lockGroup", "toggleObjectLock"] as const;
 /**
  * Insert Layerling files (additive, needs `ui.v1`; Build 0070): the host owns the menu command and the file panel; the editor owns the import. The host sends
@@ -308,7 +308,7 @@ export interface UiActionRequest {
   session: string;
   type: "ui.action";
   protocol: number;
-  payload: { documentId: string; action: "openSettings" | "openDocumentSettings" | "enterPresentation" | "showMeasureTape" | "showMeasureCornerRuler" | "showMeasureProtractor" | "confirmClearMeasurements" | "showSectionView" };
+  payload: { documentId: string; action: "openSettings" | "openDocumentSettings" | "enterPresentation" | "showMeasureTape" | "showMeasureCornerRuler" | "showMeasureProtractor" | "confirmClearMeasurements" | "showSectionView" | "toggleObjectsTab" | "confirmCancelGroupEditing" };
 }
 /** Build 0003 (`ui.v1`): the document's own settings, for its Document Settings window. Sent only while that window is watching. */
 export interface SettingsStateRequest {
