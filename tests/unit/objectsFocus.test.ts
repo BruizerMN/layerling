@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { nestedFocusCard, replaceNestedShape, resolveNestedFocus } from "@/lib/objectsFocus";
 import { buildObjectRows } from "@/lib/objectsSnapshot";
 import { parseObjectsInvoke } from "@/lib/host/nativeObjects";
+import { moveShapesBefore } from "@/lib/objectListSearch";
 import type { WorkplaneShape } from "@/types/layerling";
 
 const shape = (id: string, extra: Record<string, unknown> = {}): WorkplaneShape => ({ id, kind: "box", color: "#ff0000", x: 0, z: 0, elevation: 0, width: 10, depth: 10, size: 10, height: 10, rotation: 0, ...extra }) as unknown as WorkplaneShape;
@@ -130,5 +131,45 @@ describe("nested property edits (Build 0117): replaceNestedShape", () => {
     expect(parseObjectsInvoke("setShapeLocked", { id: "a", value: true })).toEqual({ op: "setShapeLocked", target: { id: "a" }, value: true });
     expect(parseObjectsInvoke("setShapeLocked", { rootId: "g", indices: [0, 1], value: true })).toEqual({ op: "setShapeLocked", target: { rootId: "g", indices: [0, 1] }, value: true });
     expect(parseObjectsInvoke("setShapeLocked", { id: "a" })).toBeNull();
+  });
+});
+
+describe("Objects Sidebar drag-and-drop (Build 0118): ops and the multi-move", () => {
+  const ids = (list: readonly { id: string }[]) => list.map((s) => s.id);
+  const o = (...names: string[]) => names.map((id) => ({ id }));
+  it("moves several shapes together, keeping the order they already have", () => {
+    expect(ids(moveShapesBefore(o("a", "b", "c", "d", "e"), ["d", "b"], "a"))).toEqual(["b", "d", "a", "c", "e"]);
+    expect(ids(moveShapesBefore(o("a", "b", "c", "d", "e"), ["a", "c"], "e"))).toEqual(["b", "d", "a", "c", "e"]);
+    expect(ids(moveShapesBefore(o("a", "b", "c", "d"), ["a", "b"], null))).toEqual(["c", "d", "a", "b"]);
+  });
+  it("is the same array when nothing would change, so no Undo step is made", () => {
+    const list = o("a", "b", "c");
+    expect(moveShapesBefore(list, ["b"], "c")).toBe(list);          // already in front of c
+    expect(moveShapesBefore(list, ["a", "b"], "c")).toBe(list);
+    expect(moveShapesBefore(list, ["c"], null)).toBe(list);         // already last
+    expect(moveShapesBefore(list, ["b"], "b")).toBe(list);          // in front of itself
+    expect(moveShapesBefore(list, ["zzz"], "a")).toBe(list);        // unknown id
+    expect(moveShapesBefore(list, ["a"], "nope")).toBe(list);       // unknown target
+    expect(moveShapesBefore(list, [], "a")).toBe(list);
+  });
+  it("moves the very same shape objects (identity and properties untouched) and never duplicates or loses one", () => {
+    const list = [shape("a"), shape("b", { name: "Keep" }), shape("c")];
+    const next = moveShapesBefore(list, ["c"], "a");
+    expect(next).not.toBe(list);
+    expect(next.map((s) => s.id)).toEqual(["c", "a", "b"]);
+    for (const original of list) expect(next).toContain(original);
+    expect(next).toHaveLength(3);
+  });
+  it("the drag ops are parsed with sound arguments", () => {
+    expect(parseObjectsInvoke("moveObjects", { ids: ["a", "b"], beforeId: "c" })).toEqual({ op: "moveObjects", ids: ["a", "b"], beforeId: "c" });
+    expect(parseObjectsInvoke("moveObjects", { ids: ["a"], beforeId: null })).toEqual({ op: "moveObjects", ids: ["a"], beforeId: null });
+    expect(parseObjectsInvoke("moveObjects", { ids: ["a"] })).toEqual({ op: "moveObjects", ids: ["a"], beforeId: null });
+    expect(parseObjectsInvoke("moveObjects", { ids: [], beforeId: "c" })).toBeNull();
+    expect(parseObjectsInvoke("moveObjects", { ids: ["a", ""], beforeId: "c" })).toBeNull();
+    expect(parseObjectsInvoke("addToGroup", { ids: ["a"], groupId: "g" })).toEqual({ op: "addToGroup", ids: ["a"], groupId: "g" });
+    expect(parseObjectsInvoke("addToGroup", { ids: ["a"] })).toBeNull();
+    expect(parseObjectsInvoke("takeOutOfGroup", { groupId: "g", partId: "p", beforeId: "x" })).toEqual({ op: "takeOutOfGroup", groupId: "g", partId: "p", beforeId: "x", intoGroupId: null });
+    expect(parseObjectsInvoke("takeOutOfGroup", { groupId: "g", partId: "p", intoGroupId: "h" })).toEqual({ op: "takeOutOfGroup", groupId: "g", partId: "p", beforeId: null, intoGroupId: "h" });
+    expect(parseObjectsInvoke("takeOutOfGroup", { groupId: "g" })).toBeNull();
   });
 });

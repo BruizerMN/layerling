@@ -22,7 +22,7 @@ import type { AppThemePreference, ResolvedAppTheme } from "@/lib/appTheme";
 import { getLanguage, numberLocale, t, type MessageKey } from "@/lib/i18n";
 import { guideHref } from "@/lib/guideLinks";
 import { largeMeshWarningTriangles } from "@/lib/largeMeshes";
-import { isObjectListOrder, moveShapeBefore, sortObjectList } from "@/lib/objectListSearch";
+import { isObjectListOrder, moveShapeBefore, moveShapesBefore, sortObjectList } from "@/lib/objectListSearch";
 import { useLanguage } from "@/lib/useLanguage";
 import { loftShapePatch, normalizeLoftMiddles, type LoftMeasures } from "@/lib/loftGeometry";
 import { hingePartScope, hingeWorldParts } from "@/lib/hingeParts";
@@ -19303,6 +19303,30 @@ export function LayerlingEditor({
           const found = resolveNestedFocus(shapesRef.current, where, (shape) => displayShapeName(shape), restoreGroupedChildren);
           if (found && Boolean(found.stored.shapeLocked) !== command.value) updateNestedShape(where, { shapeLocked: command.value });
         }
+      } else if (command.op === "moveObjects") {
+        // Drag-and-drop reordering (Build 0118): only the design's own order changes, as ONE Undo step; geometry, ids and properties are untouched. Not while a group is being edited
+        // (the engine's rule for moving shapes between groups, and a part list reordered then would not become the group's own order: Done builds from the part list the group was opened with).
+        const refused = groupPartsStepRefused();
+        if (refused) {
+          setNotice(refused);
+          return;
+        }
+        const current = shapesRef.current;
+        const next = moveShapesBefore(current, command.ids, command.beforeId);
+        if (next === current) return;
+        const first = command.ids.length === 1 ? current.find((shape) => shape.id === command.ids[0]) : undefined;
+        commitShapes([...next], selectedIdsRef.current, first ? t("status.shapeMoved", { name: displayShapeName(first) }) : undefined);
+      } else if (command.op === "addToGroup") {
+        // The engine's own operation (the object list's drop on an expanded group): the group is built again with them, keeping its id, name and pivot; one Undo step; refused with its own
+        // message when a group is being edited, locked, or the objects cannot join.
+        void addShapesToGroup(command.ids, command.groupId);
+      } else if (command.op === "takeOutOfGroup") {
+        // One part of a group out of it (the engine's own operation); with `intoGroupId` the part goes straight into another group, the two steps joined into one Undo step as the object list does.
+        void (async () => {
+          const outcome = await takePartOutOfGroup(command.groupId, command.partId, command.intoGroupId ? null : command.beforeId);
+          const loose = outcome.ok ? outcome.partIds?.[0] : undefined;
+          if (command.intoGroupId && loose) await addShapesToGroup([loose], command.intoGroupId, true);
+        })();
       } else if (command.op === "openGroup") {
         // The explicit "Edit Group" button: opens the group, and the groups around it on the way when it is nested (one Undo step). A refusal says why itself.
         openGroupAlongPath(command.rootId, command.indices, true);
@@ -19312,7 +19336,7 @@ export function LayerlingEditor({
         cancelOpenGroup();
       }
     });
-  }, [nativeDocument, selectShape, openGroupAlongPath, finishOpenGroup, cancelOpenGroup, renameShapeById, toggleShapeHiddenById, toggleShapeLockById, toggleShapeLockOfShapeById, updateNestedShape]);
+  }, [nativeDocument, selectShape, openGroupAlongPath, finishOpenGroup, cancelOpenGroup, renameShapeById, toggleShapeHiddenById, toggleShapeLockById, toggleShapeLockOfShapeById, updateNestedShape, groupPartsStepRefused, commitShapes, addShapesToGroup, takePartOutOfGroup, setNotice]);
 
   // The focused object, resolved against the current shapes (it follows a group that moves, and ends when its path stops existing: it is never redirected to another object).
   const nestedFocusTarget = useMemo(

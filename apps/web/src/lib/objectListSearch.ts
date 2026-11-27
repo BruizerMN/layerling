@@ -58,6 +58,21 @@ export function sortObjectList<T>(
  * The shapes with one of them moved in front of another, or to the end when `beforeId` is null (#1233).
  * Returns the same array when nothing would change: an unknown id, or a shape put where it already stands.
  */
+/**
+ * The shapes with several of them moved together in front of another one (or to the end when `beforeId` is null), keeping the moved shapes in the order they already have in the list.
+ * Returns the same array when nothing would change: an unknown id, `beforeId` among the moved, or the shapes put where they already stand (Objects Sidebar drag-and-drop).
+ */
+export function moveShapesBefore<T extends { id: string }>(shapes: readonly T[], ids: readonly string[], beforeId: string | null): readonly T[] {
+  const wanted = new Set(ids);
+  const moved = shapes.filter((shape) => wanted.has(shape.id));
+  if (moved.length === 0 || moved.length !== wanted.size || (beforeId !== null && wanted.has(beforeId))) return shapes;
+  const rest = shapes.filter((shape) => !wanted.has(shape.id));
+  const at = beforeId === null ? rest.length : rest.findIndex((shape) => shape.id === beforeId);
+  if (at < 0) return shapes;
+  const next = [...rest.slice(0, at), ...moved, ...rest.slice(at)];
+  return next.every((shape, index) => shape === shapes[index]) ? shapes : next;
+}
+
 export function moveShapeBefore<T extends { id: string }>(shapes: readonly T[], id: string, beforeId: string | null): readonly T[] {
   const from = shapes.findIndex((shape) => shape.id === id);
   if (from < 0 || id === beforeId) return shapes;

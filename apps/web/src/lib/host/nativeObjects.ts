@@ -15,6 +15,9 @@ export type ObjectsInvoke =
   | { op: "setHidden"; id: string; value: boolean }
   | { op: "setLocked"; id: string; value: boolean }
   | { op: "setShapeLocked"; target: ObjectTarget; value: boolean }
+  | { op: "moveObjects"; ids: string[]; beforeId: string | null }
+  | { op: "addToGroup"; ids: string[]; groupId: string }
+  | { op: "takeOutOfGroup"; groupId: string; partId: string; beforeId: string | null; intoGroupId: string | null }
   | { op: "openGroup"; rootId: string; indices: number[] }
   | { op: "finishGroup" }
   | { op: "cancelGroup" };
@@ -23,6 +26,7 @@ export type ObjectsInvoke =
 export type ObjectTarget = { id: string } | { rootId: string; indices: number[] };
 const MAX_SELECT_IDS = 100_000;
 const MAX_NAME_LENGTH = 1_000;
+const MAX_MOVE_IDS = 10_000;
 
 function parseTarget(args: Record<string, unknown>): ObjectTarget | null {
   if (isText(args.id)) return { id: args.id };
@@ -69,6 +73,18 @@ export function parseObjectsInvoke(op: string, args: Record<string, unknown>): O
       const target = parseTarget(args);
       return target && typeof args.value === "boolean" ? { op, target, value: args.value } : null;
     }
+    // Drag-and-drop (Build 0118). Reordering: objects moved together in front of another (null: to the end) in the design's own order. Regrouping: the engine's own operations (the object list's).
+    case "moveObjects":
+      return Array.isArray(args.ids) && args.ids.length >= 1 && args.ids.length <= MAX_MOVE_IDS && args.ids.every(isText) && (args.beforeId === null || args.beforeId === undefined || isText(args.beforeId))
+        ? { op, ids: args.ids as string[], beforeId: isText(args.beforeId) ? args.beforeId : null }
+        : null;
+    case "addToGroup":
+      return Array.isArray(args.ids) && args.ids.length >= 1 && args.ids.length <= MAX_MOVE_IDS && args.ids.every(isText) && isText(args.groupId) ? { op, ids: args.ids as string[], groupId: args.groupId } : null;
+    case "takeOutOfGroup":
+      // One part of a group on the workplane, out of it: loose in front of `beforeId` (null: last), or, with `intoGroupId`, straight into another group (one Undo step).
+      return isText(args.groupId) && isText(args.partId) && (args.beforeId === null || args.beforeId === undefined || isText(args.beforeId)) && (args.intoGroupId === null || args.intoGroupId === undefined || isText(args.intoGroupId))
+        ? { op, groupId: args.groupId, partId: args.partId, beforeId: isText(args.beforeId) ? args.beforeId : null, intoGroupId: isText(args.intoGroupId) ? args.intoGroupId : null }
+        : null;
     case "openGroup":
       // `rootId`: the group on the workplane (or a part of a group being edited) at the start of the path; `indices`: for a nested group, the position of each next group inside the one before.
       return isText(args.rootId) && Array.isArray(args.indices) && args.indices.length <= 64 && args.indices.every((n) => Number.isInteger(n) && (n as number) >= 0)
