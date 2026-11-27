@@ -45,7 +45,7 @@ export const VISUAL_GROUPS_CAPABILITY = "visualGroups.v1";
  * says whether anyone looks (`objects.watch`) and asks for changes with `objects.invoke`. The editor stays the only source of truth.
  */
 export const OBJECTS_CAPABILITY = "objects.v1";
-export const OBJECTS_OPS = ["select", "openGroup", "finishGroup", "cancelGroup"] as const;
+export const OBJECTS_OPS = ["select", "focus", "openGroup", "finishGroup", "cancelGroup"] as const;
 export const VISUAL_GROUPS_OPS = ["create", "rename", "delete", "toggleGroup", "toggleObject", "removeObject", "select", "assign", "pickResult", "move", "focusGroup", "renameObject", "lockGroup", "toggleObjectLock"] as const;
 /**
  * Insert Layerling files (additive, needs `ui.v1`; Build 0070): the host owns the menu command and the file panel; the editor owns the import. The host sends
@@ -254,6 +254,14 @@ export interface ObjectsSelectionRequest {
   protocol: number;
   payload: { documentId: string; rev: number; ids: string[] };
 }
+/** `objects.v1` (Build 0116): the object the Objects Sidebar has navigational FOCUS on (inside a closed group; not an engine selection), or null. */
+export interface ObjectsFocusRequest {
+  id: string;
+  session: string;
+  type: "objects.focus";
+  protocol: number;
+  payload: { documentId: string; rev: number; id: string | null };
+}
 /** `visualGroups.v1`: what the palette shows (groups with their aggregate eye, members with name and own hidden flag, the selected members). Sent on change only. */
 export interface VisualGroupsStateRequest {
   id: string;
@@ -355,6 +363,7 @@ export type HostRequest =
   | ObjectsTreeRequest
   | ObjectsPatchRequest
   | ObjectsSelectionRequest
+  | ObjectsFocusRequest
   | VisualGroupsStateRequest
   | VisualGroupsChooseRequest
   | VisualGroupsPickRequest

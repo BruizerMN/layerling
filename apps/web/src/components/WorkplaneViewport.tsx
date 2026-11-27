@@ -125,7 +125,9 @@ import { axisLockedPoint, circleOfEdgePoints, perpendicularFootOnSegment, pointA
 import { TAPE_SCENE_AXIS, tapeLengthMcpRefusal, type TapeAxis, type TapeLengthTypedRefusal, type TapeMeasurementsAnswer, type TapeMeasurementsRequest } from "@/lib/tapeLengthEdit";
 import { tapeAxisSpans, tapeDeltaAxes } from "@/lib/tapeLabels";
 import { TapeLengthField, type TapeLengthFieldValue } from "@/components/workplane/TapeLengthField";
-import { syncHistoryPickHighlight, syncPickHighlight } from "@/components/workplane/historyPickHighlight";
+import { syncHistoryPickHighlight, syncPickHighlight, syncPickHighlightObjects } from "@/components/workplane/historyPickHighlight";
+import { NestedFocusCard } from "@/components/workplane/NestedFocusCard";
+import type { NestedFocusCardData, NestedFocusPlacement } from "@/lib/objectsFocus";
 import { orbitViewBy, panViewBy } from "@/lib/viewArrowKeys";
 import { useViewportKeyboardHooks } from "@/components/workplane/viewportKeyboard";
 import { useViewportDoubleClick } from "@/components/workplane/useViewportDoubleClick";
@@ -238,6 +240,12 @@ type WorkplaneViewportProps = {
   onShapeContextMenu?: (request: { shapeId: string | null; clientX: number; clientY: number; stackIds: string[]; inSelection?: boolean; facePoint?: { x: number; y: number; z: number } }) => void;
   /** Bodies marked with an outline that shows through what stands in front: the one a row of "Select other" points at (#804). */
   highlightIds?: readonly string[];
+  /**
+   * Objects Sidebar navigational focus (Build 0116): an object inside a closed group that the sidebar points at. Not a selection: the viewport only MARKS it (the pick highlight, in a layer of
+   * its own: the object's own geometry where it can be built, else its nominal bounding box; nothing when `placement` is "none") and the Object tab shows the read-only card. `key` changes when
+   * what is drawn changes.
+   */
+  nestedFocus?: { key: string; shape: WorkplaneShape; placement: NestedFocusPlacement; card: NestedFocusCardData; onEditGroup?: () => void } | null;
   /** The place a row of the clearance check stands for: a line with the gap, or the middle of an overlap; the camera goes there. */
   clearanceMark?: ClearanceMark | null;
   /** The print check's thin walls, painted red on the bodies, and the place its Show brings the camera to. */
@@ -1662,6 +1670,7 @@ export function WorkplaneViewport({
   onSelectShape,
   onShapeContextMenu,
   highlightIds,
+  nestedFocus,
   clearanceMark = null,
   printCheckView = null,
   onSetPlacementWorkplane,
@@ -6047,6 +6056,36 @@ export function WorkplaneViewport({
     if (!state) return;
     syncPickHighlight(state, highlightKey ? highlightKey.split("\0") : [], "menu-pick-highlight");
   }, [highlightKey, shapes]);
+  // Objects Sidebar navigational focus (Build 0116): the focused object is built for the marking only, in its own layer; the scene and the document are untouched.
+  const nestedFocusRef = useRef(nestedFocus);
+  nestedFocusRef.current = nestedFocus;
+  const nestedFocusKey = nestedFocus?.key ?? "";
+  useEffect(() => {
+    const state = threeRef.current;
+    if (!state) return;
+    const focus = nestedFocusRef.current;
+    let object: THREE.Object3D | null = null;
+    if (focus && focus.placement === "exact") {
+      const shape = focus.shape;
+      try {
+        const built = createShapeObject({ ...shape, hidden: false }, false, undefined, false);
+        built.updateWorldMatrix(true, true);
+        const box = new THREE.Box3().setFromObject(built);
+        if (!box.isEmpty() && Number.isFinite(box.min.x) && Number.isFinite(box.max.x)) object = built;
+      } catch {
+        object = null;
+      }
+      if (!object) {
+        // Its own geometry cannot be built here: its nominal bounding box (its width, depth and height, at its place and turn) stands for it.
+        const boxObject = new THREE.Group();
+        boxObject.position.set(shape.x, (shape.elevation ?? 0) + shape.height / 2, shape.z);
+        boxObject.rotation.set(THREE.MathUtils.degToRad(shape.rotationX ?? 0), THREE.MathUtils.degToRad(shape.rotation), THREE.MathUtils.degToRad(shape.rotationZ ?? 0));
+        boxObject.add(new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.01, shapeWidth(shape)), Math.max(0.01, shape.height), Math.max(0.01, shapeDepth(shape))), new THREE.MeshBasicMaterial()));
+        object = boxObject;
+      }
+    }
+    syncPickHighlightObjects(state, object ? [object] : [], "nested-focus-highlight");
+  }, [nestedFocusKey]);
   // A row of the clearance check clicked: the camera goes to its place, from the side the view looks from.
   const clearanceRequest = clearanceMark?.request ?? 0;
   useEffect(() => {
@@ -10071,7 +10110,7 @@ export function WorkplaneViewport({
       {/* Native app: the Inspector is the docked panel (visibility is the user's: View > Show/Hide Inspector), never a panel that follows the selection. */}
       {inspectorDock.enabled
         ? inspectorDock.element
-          ? createPortal(shapeInspectorNode ?? selectionInspectorNode ?? <InspectorEmpty toolActive={Boolean(selectedShape) || selectedIds.length > 1} />, inspectorDock.element)
+          ? createPortal(shapeInspectorNode ?? selectionInspectorNode ?? (nestedFocus ? <NestedFocusCard card={nestedFocus.card} onEditGroup={nestedFocus.onEditGroup} /> : <InspectorEmpty toolActive={Boolean(selectedShape) || selectedIds.length > 1} />), inspectorDock.element)
           : null
         : <>{shapeInspectorNode}{selectionInspectorNode}</>}
 

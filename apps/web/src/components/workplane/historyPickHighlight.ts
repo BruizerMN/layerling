@@ -31,6 +31,14 @@ export function syncHistoryPickHighlight(state: ThreeState, ids: readonly string
  * and the body a row of "Select other" points at (#804).
  */
 export function syncPickHighlight(state: ThreeState, ids: readonly string[], name: string) {
+  syncPickHighlightObjects(state, ids.flatMap((id) => { const object = findShapeObject(state, id); return object ? [object as THREE.Object3D] : []; }), name);
+}
+
+/**
+ * The same marking for objects that are not (or not only) shapes of the scene: the Objects Sidebar's navigational focus marks an object inside a closed group, which the scene does
+ * not hold on its own, with an object built for the purpose (its own layer, so it clears nothing else).
+ */
+export function syncPickHighlightObjects(state: ThreeState, objects: readonly THREE.Object3D[], name: string) {
   let layers = highlightLayers.get(state);
   if (!layers) {
     layers = new Map();
@@ -45,7 +53,7 @@ export function syncPickHighlight(state: ThreeState, ids: readonly string[], nam
   }
   clearLayer(layer);
 
-  if (ids.length > 0) {
+  if (objects.length > 0) {
     const tint = new THREE.MeshBasicMaterial({
       color: PICK_COLOR,
       transparent: true,
@@ -71,9 +79,7 @@ export function syncPickHighlight(state: ThreeState, ids: readonly string[], nam
     outline.resolution.set(Math.max(1, rect.width), Math.max(1, rect.height));
     layer.userData.materials = [tint, outline];
 
-    for (const id of ids) {
-      const object = findShapeObject(state, id);
-      if (!object) continue;
+    for (const object of objects) {
       object.updateWorldMatrix(true, true);
       object.traverse((child) => {
         if (!(child instanceof THREE.Mesh) || !child.visible) return;

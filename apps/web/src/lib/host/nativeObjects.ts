@@ -10,6 +10,7 @@ import { diffObjects, flattenObjectRows, type ObjectRow, type ObjectsFlat } from
  */
 export type ObjectsInvoke =
   | { op: "select"; ids: string[]; mode: "replace" | "toggle" }
+  | { op: "focus"; rootId: string; indices: number[] }
   | { op: "openGroup"; rootId: string; indices: number[] }
   | { op: "finishGroup" }
   | { op: "cancelGroup" };
@@ -21,6 +22,8 @@ let lastReadOnly = false;
 let rev = 0;
 let lastSelectionKey: string | null = null;
 let lastSelection: string[] = [];
+let lastFocusKey: string | null = null;
+let lastFocusId: string | null = null;
 const watchListeners = new Set<(on: boolean) => void>();
 const invokeListeners = new Set<(command: ObjectsInvoke) => void>();
 let offBridge: (() => void) | null = null;
@@ -34,6 +37,11 @@ export function parseObjectsInvoke(op: string, args: Record<string, unknown>): O
     case "select":
       return Array.isArray(args.ids) && args.ids.length <= MAX_SELECT_IDS && args.ids.every(isText) && (args.mode === "replace" || args.mode === "toggle")
         ? { op, ids: args.ids as string[], mode: args.mode }
+        : null;
+    case "focus":
+      // A click on an object inside a closed group: `rootId` is the live group the path starts at, `indices` the position of each next object inside the one before (never empty).
+      return isText(args.rootId) && Array.isArray(args.indices) && args.indices.length >= 1 && args.indices.length <= 64 && args.indices.every((n) => Number.isInteger(n) && (n as number) >= 0)
+        ? { op, rootId: args.rootId, indices: args.indices as number[] }
         : null;
     case "openGroup":
       // `rootId`: the group on the workplane (or a part of a group being edited) at the start of the path; `indices`: for a nested group, the position of each next group inside the one before.
@@ -55,6 +63,7 @@ function setWatching(on: boolean) {
   // A tab that has just become visible needs everything again: the hierarchy and the selection.
   lastFlat = null;
   lastSelectionKey = null;
+  lastFocusKey = null;
   watchListeners.forEach((listener) => listener(on));
 }
 
@@ -127,8 +136,25 @@ export function publishObjectRows(rows: readonly ObjectRow[] | null, readOnly: b
     return;
   }
   void bridge.sendUi("objects.tree", { documentId, rev, readOnly: readOnly || rows === null, rows: rows ?? [] });
-  // The host has just rebuilt its outline: tell it the selection again.
+  // The host has just rebuilt its outline: tell it the selection and the focus again.
   sendSelection(true);
+  sendFocus(true);
+}
+
+function sendFocus(force: boolean) {
+  const bridge = getHostBridge();
+  const documentId = nativeDocumentId();
+  if (!documentId || !bridge?.supportsObjects() || !watching) return;
+  const key = lastFocusId ?? "";
+  if (!force && key === lastFocusKey) return;
+  lastFocusKey = key;
+  void bridge.sendUi("objects.focus", { documentId, rev, id: lastFocusId });
+}
+
+/** Publishes the row the sidebar has navigational focus on (null: none) when it changed. Cheap and independent of the hierarchy and the selection. */
+export function publishObjectFocus(id: string | null) {
+  lastFocusId = id;
+  sendFocus(false);
 }
 
 /** Publishes the selected ids (in selection order) when they changed. Cheap: it never touches the hierarchy. */

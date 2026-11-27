@@ -171,7 +171,8 @@ import { historyStepText } from "@/lib/historyStepText";
 import { historyViewMcpCommand } from "./workplane/historyViewMcp";
 import { attachmentsFingerprint } from "@/lib/projectAttachments";
 import { nativeVisualGroupsAvailable, nativeVisualGroupsWatching, onNativeVisualGroupsInvoke, onNativeVisualGroupsWatch, publishVisualGroupsState, requestVisualGroupChooser, requestVisualGroupPick, type VisualGroupsInvoke } from "@/lib/host/nativeVisualGroups";
-import { nativeObjectsWatching, onNativeObjectsInvoke, onNativeObjectsWatch, publishObjectRows, publishObjectSelection } from "@/lib/host/nativeObjects";
+import { nativeObjectsWatching, onNativeObjectsInvoke, onNativeObjectsWatch, publishObjectFocus, publishObjectRows, publishObjectSelection } from "@/lib/host/nativeObjects";
+import { nestedFocusCard, resolveNestedFocus, type NestedFocusPath } from "@/lib/objectsFocus";
 import { buildObjectRows, objectRowName } from "@/lib/objectsSnapshot";
 import { replaceAtFirst } from "@/lib/openGroupParts";
 import { existingGroupId, visualGroupsMenuFits, visualGroupsOutline, visualGroupsPaletteState, type ChooserGroup } from "@/lib/visualGroupsSnapshot";
@@ -19123,7 +19124,12 @@ export function LayerlingEditor({
     [insertLylDesign, selectFiles],
   );
 
+  // Objects Sidebar navigational focus (Build 0116): an object inside a closed group that the sidebar points at. A page-only, unsaved state (a path): not a selection, no document change,
+  // no Undo step. Any selection command (a click in the Workspace, the sidebar, a command) ends it; establishing it is the one selection change that does not.
+  const [nestedFocusPath, setNestedFocusPath] = useState<NestedFocusPath | null>(null);
+  const nestedFocusEstablishingRef = useRef(false);
   const selectShape = useCallback((id: string | string[] | null, mode: "replace" | "toggle" = "replace") => {
+    if (!nestedFocusEstablishingRef.current) setNestedFocusPath(null);
     setSelectedIds((current) => {
       if (Array.isArray(id)) {
         const unique = id.filter((entry, index) => id.indexOf(entry) === index);
@@ -19193,6 +19199,22 @@ export function LayerlingEditor({
   // ---- Objects Sidebar (native app only, capability objects.v1): the hierarchy and the selection are published while the host's Objects tab is visible ----
   // Three costs kept apart (lib/objectsSnapshot.ts, lib/host/nativeObjects.ts): a new STRUCTURE sends the tree, changed row PROPERTIES send only those rows, and a SELECTION
   // change sends the ids only. The hierarchy is debounced and read from the refs (a drag changes the shapes every frame); the selection is not touched by any of that.
+  // Opens the groups along a path (Edit Group on a nested group, or the focused object's Edit Group): each next group is a part of the one opened before, whose ids are new at every open,
+  // so the path is by position. The steps join in one Undo step; a refusal (another group is being edited, a locked group, ...) says why itself and stops the rest.
+  // `openTarget`: also open the last group of the path (Edit Group on that group); otherwise the last step selects the object the path ends at.
+  const openGroupAlongPath = useCallback((rootId: string, indices: readonly number[], openTarget: boolean) => {
+    let groupId = rootId;
+    const steps = openTarget ? indices.length + 1 : indices.length;
+    for (let step = 0; step < steps; step += 1) {
+      const group = shapesRef.current.find((shape) => shape.id === groupId);
+      const index = indices[step];
+      if (!group?.groupedShapes?.length) return;
+      if (index !== undefined && (!group.groupedShapes[index] || (step < steps - 1 && !group.groupedShapes[index].groupedShapes?.length))) return;
+      const outcome = openGroupForEditing(groupId, index, step > 0);
+      if (!outcome.ok || index === undefined) return;
+      groupId = outcome.partIds?.[index] ?? "";
+    }
+  }, [openGroupForEditing]);
   const [objectsWatching, setObjectsWatching] = useState(() => nativeObjectsWatching());
   const [objectsTick, setObjectsTick] = useState(0);
   useEffect(() => {
@@ -19220,24 +19242,50 @@ export function LayerlingEditor({
       if (command.op === "select") {
         const live = liveObjectIds(shapesRef.current);
         selectShape(command.ids.filter((id) => live.has(id)), command.mode);
+      } else if (command.op === "focus") {
+        // A click on an object inside a closed group: focus on that exact object, and no ordinary selection left that a modeling command could act on.
+        const target = resolveNestedFocus(shapesRef.current, { rootId: command.rootId, indices: command.indices }, (shape) => displayShapeName(shape), restoreGroupedChildren);
+        if (!target) return;
+        nestedFocusEstablishingRef.current = true;
+        try {
+          selectShape([], "replace");
+          setNestedFocusPath({ rootId: command.rootId, indices: command.indices });
+        } finally {
+          nestedFocusEstablishingRef.current = false;
+        }
       } else if (command.op === "openGroup") {
         // The explicit "Edit Group" button: opens the group, and the groups around it on the way when it is nested (one Undo step). A refusal says why itself.
-        let groupId = command.rootId;
-        for (let step = 0; step <= command.indices.length; step += 1) {
-          const group = shapesRef.current.find((shape) => shape.id === groupId);
-          const index = command.indices[step];
-          if (!group?.groupedShapes?.length || (index !== undefined && !group.groupedShapes[index]?.groupedShapes?.length)) return;
-          const outcome = openGroupForEditing(groupId, index, step > 0);
-          if (!outcome.ok || index === undefined) return;
-          groupId = outcome.partIds?.[index] ?? "";
-        }
+        openGroupAlongPath(command.rootId, command.indices, true);
       } else if (command.op === "finishGroup") {
         void finishOpenGroup();
       } else {
         cancelOpenGroup();
       }
     });
-  }, [nativeDocument, selectShape, openGroupForEditing, finishOpenGroup, cancelOpenGroup]);
+  }, [nativeDocument, selectShape, openGroupAlongPath, finishOpenGroup, cancelOpenGroup]);
+
+  // The focused object, resolved against the current shapes (it follows a group that moves, and ends when its path stops existing: it is never redirected to another object).
+  const nestedFocusTarget = useMemo(
+    () => (nestedFocusPath && !historyViewState ? resolveNestedFocus(shapes, nestedFocusPath, (shape) => displayShapeName(shape), restoreGroupedChildren) : null),
+    [nestedFocusPath, shapes, historyViewState],
+  );
+  useEffect(() => {
+    if (nestedFocusPath && !nestedFocusTarget) setNestedFocusPath(null);
+  }, [nestedFocusPath, nestedFocusTarget]);
+  useEffect(() => {
+    if (!objectsWatching) return;
+    publishObjectFocus(nestedFocusTarget?.rowId ?? null);
+  }, [objectsWatching, objectsTick, nestedFocusTarget?.rowId]);
+  // The Object tab's Edit Group: open the groups around the focused object, selecting it (the one way to change it).
+  const editNestedFocusGroup = useCallback(() => {
+    if (nestedFocusPath) openGroupAlongPath(nestedFocusPath.rootId, nestedFocusPath.indices, false);
+  }, [nestedFocusPath, openGroupAlongPath]);
+  const nestedFocusView = useMemo(() => {
+    if (!nestedFocusTarget) return null;
+    const { placed, placement, rowId } = nestedFocusTarget;
+    const key = [rowId, placement, placed.x, placed.z, placed.elevation ?? 0, placed.height, placed.width, placed.depth, placed.size, placed.rotation, placed.rotationX ?? 0, placed.rotationZ ?? 0, placed.hole ? 1 : 0].join("|");
+    return { key, shape: placed, placement, card: nestedFocusCard(nestedFocusTarget, displayShapeName(nestedFocusTarget.stored)), onEditGroup: editNestedFocusGroup };
+  }, [nestedFocusTarget, editNestedFocusGroup]);
 
   // A selection made by the user on the workplane brings the Inspector's Object tab to the front (Build 0031). Selection changed any other way (the object list,
   // commands, undo) does not touch the tab, and neither does a click that selects nothing.
@@ -20648,6 +20696,7 @@ export function LayerlingEditor({
           onSelectShape={selectShapeOnWorkplane}
           onShapeContextMenu={historyViewState ? undefined : openShapeContextMenu}
           highlightIds={clearanceHighlightIds ?? menuHighlightIds}
+          nestedFocus={nestedFocusView}
           clearanceMark={clearanceMark}
           printCheckView={printCheckView}
           onSetPlacementWorkplane={setViewportPlacementWorkplane}

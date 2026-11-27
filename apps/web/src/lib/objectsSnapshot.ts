@@ -47,6 +47,11 @@ export function objectRowName(shape: WorkplaneShape, displayName: (shape: Workpl
   return translate(`shape.${shape.kind}`) || shape.kind;
 }
 
+/** The id a row has in the outline: the engine's id, or, for a part of a group that carries none, a stable one made from its group's row id and its position. */
+export function rowIdFor(shape: Pick<WorkplaneShape, "id">, parentRowId: string, index: number): string {
+  return shape.id || `${parentRowId}#${index}`;
+}
+
 /** A group being edited: the group as it was, and the ids of its loose parts (the editor's `OpenGroupLevel`). Levels run outermost first. */
 export interface OpenLevelInfo {
   original: WorkplaneShape;
@@ -80,7 +85,7 @@ export function buildObjectRows(shapes: readonly WorkplaneShape[], nameOf: (shap
   const one = (shape: WorkplaneShape, depth: number, parentId: string, index: number): ObjectRow | null => {
     if (++count > OBJECTS_MAX_ROWS || depth > OBJECTS_MAX_DEPTH) return null;
     // A part inside a group may carry no id of its own; it still needs a stable one for the host's outline.
-    const row: ObjectRow = { id: shape.id || `${parentId}#${index}`, name: nameOf(shape), kind: shape.kind };
+    const row: ObjectRow = { id: rowIdFor(shape, parentId, index), name: nameOf(shape), kind: shape.kind };
     flags(row, shape);
     if (shape.groupedShapes?.length) {
       row.group = shape.groupOperation === "bundle" ? "bundle" : "group";
