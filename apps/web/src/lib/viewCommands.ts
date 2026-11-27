@@ -26,7 +26,7 @@ export const VIEW_COMMANDS = [
   // own open and closed reports. They call the same functions the legacy panels' buttons called.
   "measure.tape.add", "measure.tape.move", "measure.tape.delete", "measure.tape.wholeEdges", "measure.tape.visible", "measure.tape.clear", "measure.tape.clearConfirmed",
   "measure.protractor.points", "measure.protractor.faces", "measure.protractor.clear",
-  "measure.end", "measure.popoverOpened", "measure.popoverClosed",
+  "measure.end", "measure.popoverOpened", "measure.popoverDetached", "measure.popoverClosed",
   // Build 0102: the native Display popover. "camera.dimensions" is the Q key's toggle (Dimensions and Distances); "savedView.go.N" is the key 7, 8, 9 or 0, "savedView.save.N" Shift+key
   // (N = 1...4, the slot's position). Saving here overwrites like the key does: the HOST asks for confirmation before it sends a save for a slot that is filled (the enabled flag of
   // "savedView.go.N" says the slot is filled).

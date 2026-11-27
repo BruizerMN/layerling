@@ -1002,6 +1002,8 @@ export function SecondaryToolbar({
     // editor's again (the palette stays open).
     if (command === "section.popoverClosed") { setSectionPopoverOpen(false); runViewCommand("section.popoverClosed"); return; }
     if (command === "section.popoverDetached") { setSectionPopoverOpen(false); return; }
+    // Build 0105: the Measure popover became a detached palette (same rule): Escape is the editor's again (an active measuring operation still cancels first); the palette stays open.
+    if (command === "measure.popoverDetached") { setMeasurePopoverOpen(false); return; }
     // Presentation Mode is read-only: the only commands it takes from the host are to leave and to toggle Standby.
     if (presentationActive && command !== "presentation.exit" && command !== "presentation.standby") return;
     if (command === "measure.popoverOpened") { setMeasurePopoverOpen(true); return; }

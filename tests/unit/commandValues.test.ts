@@ -32,6 +32,10 @@ describe("typed command values (Build 0103)", () => {
     for (const c of ["section.toggle", "section.position", "section.measure", "section.popoverOpened", "section.popoverDetached", "section.popoverClosed"]) expect(section).toContain(c);
   });
 
+  it("Build 0105: the Measure popover reports attached, detached and closed (once each)", () => {
+    for (const c of ["measure.popoverOpened", "measure.popoverDetached", "measure.popoverClosed"]) expect(VIEW_COMMANDS.filter((x) => x === c)).toHaveLength(1);
+  });
+
   it("ui.command: a value command needs a valid value, any other command takes none", () => {
     const ok = parseHostEvent(event("section.position", { kind: "length", number: 4 }));
     expect(ok).toMatchObject({ type: "ui.command", payload: { command: "section.position", value: { kind: "length", number: 4 } } });
