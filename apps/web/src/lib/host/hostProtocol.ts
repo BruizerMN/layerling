@@ -211,7 +211,7 @@ export interface DocumentFailedRequest {
 // --- protocol 3: saving ------------------------------------------------------------------------------------------------------------------
 
 export type SavePhase = "wait" | "snapshot" | "serialize" | "compress" | "upload";
-export const SAVE_FAILURE_CODES = ["serialize-failed", "too-large", "out-of-memory", "cancelled", "interaction-timeout", "upload-failed", "internal"] as const;
+export const SAVE_FAILURE_CODES = ["serialize-failed", "too-large", "out-of-memory", "cancelled", "interaction-timeout", "upload-failed", "internal", "group-editing"] as const;
 export type SaveFailureCode = (typeof SAVE_FAILURE_CODES)[number];
 
 /** Build 0003 (`ui.v1`): what the native menus need to know about the document page. Sent on change only. */
@@ -324,7 +324,7 @@ export interface DocumentChangedRequest {
   type: "document.changed";
   protocol: number;
   /** `revision` grows with every persistent change; `dirty` says whether the document now differs from what was last saved (or opened). */
-  payload: { documentId: string; revision: number; dirty: boolean };
+  payload: { documentId: string; revision: number; dirty: boolean; /** Build 0121: a group is open for editing (an unresolved editing transaction); absent means false. */ editing?: boolean };
 }
 export interface SaveProgressRequest {
   id: string;

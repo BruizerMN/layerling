@@ -325,6 +325,8 @@ import { drawingLabelsInLanguage } from "@/lib/drawingLabels";
 import { DEFAULT_TEXT_BLOCK_GAP, offersTextBlock, TEXT_BLOCK_ALIGNS, textBlockFor, textBlockLines, type TextBlockAlign, type TextBlockOptions } from "@/lib/textBlock";
 import { offersTextLayers, textLayerStack, layeredTextShape, nameTagSource, nameTagsFor, offersIconLayers, iconLayerStack, iconTagArea, layeredIconShape, iconTagCopies, svgIconArea, iconTagFromSvg, keyringTabShape, keyringTabTag, keyringTabAt, keyringTabPlace, textFreeKeyring, textFreeKeyringPlace, iconFreeKeyring, iconFreeKeyringPlace } from "@/lib/editorTextTags";
 import { groupMarksOf } from "@/lib/groupMarks";
+import { groupEditingMessage, type GroupEditingAction } from "@/lib/groupEditingMessages";
+import { rebuildGroupFromParts as rebuildGroupFromPartsShared } from "@/lib/groupReconstruction";
 import { isNonTextControl, isTypingTarget } from "@/lib/editorKeyTargets";
 import { pasteKeyHandling } from "@/lib/pasteKey";
 import { isFocusModeKey, useFocusMode } from "@/lib/focusMode";
@@ -3103,6 +3105,7 @@ export function LayerlingEditor({
   nativeDocument = null,
   onNativeDocumentReady,
   onNativeDocumentChange,
+  onNativeEditingChange,
   nativeApiRef,
   onHome,
   onOpenLylProjectFile,
@@ -3149,6 +3152,8 @@ export function LayerlingEditor({
   nativeDocument?: { fileName: string | null; documentId: string; documentProjectId: string | null } | null;
   /** Native documents (protocol 3): told whenever the persistent content changes (revision) or the dirty flag flips. */
   onNativeDocumentChange?: (state: RevisionState) => void;
+  /** Build 0121: a group is open for editing (native document): the host refuses to save, close or quit until it is resolved. */
+  onNativeEditingChange?: (editing: boolean) => void;
   /** Native documents: receives the editor's packaging API for Save. */
   nativeApiRef?: { current: NativeSaveApi | null };
   /** Native documents only: called once the editor has mounted and drawn its first frame (or after 2 s if the page is not being drawn). */
@@ -3507,6 +3512,16 @@ export function LayerlingEditor({
   const lastModelScaleRef = useRef<Pick<ScalePercentSettings, "by" | "ratio" | "useRealSize" | "realSize" | "axis"> | null>(null);
   const editorLanguage = useLanguage();
   const { notice, noticeAction, noticeAt, noticeOrdinary, setNotice, holdNotice, releaseNotice, dismissNotice, reportNoticesRef } = useEditorNotice({ errorsOnly: Boolean(nativeDocument) });
+
+  /**
+   * Build 0121: an open group is an editing transaction. While one is open the editor holds its parts as loose objects, so anything that
+   * would write the document out (save, export, snapshot) would lose the group; it is refused with a notice until Done or Cancel.
+   */
+  const refuseWhileEditingGroup = useCallback((action: GroupEditingAction): boolean => {
+    if (openGroupsRef.current.length === 0) return false;
+    setNotice(groupEditingMessage(action), true);
+    return true;
+  }, [setNotice]);
   // Cuts and splits run in a worker (lib/geometryWorker.ts): one that takes a moment says so, and
   // the editor stays usable meanwhile. Leaving the editor calls off what it still had running.
   const geometryAbortRef = useRef<AbortController | null>(null);
@@ -5056,6 +5071,8 @@ export function LayerlingEditor({
       createPackage: async ({ fileName, signal, onPhase, recovery }): Promise<NativePackage> => {
         const tracker = nativeTrackerRef.current;
         if (!tracker) throw new NativeSaveError("internal", "The editor is not ready to save.");
+        // Build 0121: an open group is an unresolved editing transaction; its parts are loose objects, so a package taken now would lose the group.
+        if (openGroupsRef.current.length > 0) throw new NativeSaveError("group-editing", groupEditingMessage("save"));
         const t0 = performance.now();
         onPhase("wait");
         // As exportLylDesign: not in the middle of a drag or while typing.
@@ -5065,6 +5082,7 @@ export function LayerlingEditor({
           if (Date.now() > deadline) throw new NativeSaveError("interaction-timeout", "The editor stayed busy; try saving again.");
           await new Promise((resolve) => window.setTimeout(resolve, 50));
         }
+        if (openGroupsRef.current.length > 0) throw new NativeSaveError("group-editing", groupEditingMessage("save"));
         const t1 = performance.now();
         onPhase("snapshot");
         // The picture first (it may take a moment): a failed capture only means a file without a preview, never a failed save (D5).
@@ -5072,6 +5090,7 @@ export function LayerlingEditor({
         const picture = recovery ? null : await capturedDesignPicture();
         const png = picture ? await projectThumbnailPngBytes(picture).catch(() => null) : null;
         if (signal.aborted) throw new NativeSaveError("cancelled", "The save was cancelled.");
+        if (openGroupsRef.current.length > 0) throw new NativeSaveError("group-editing", groupEditingMessage("save"));
         // ---- the snapshot: one synchronous block. Everything below is an immutable view; edits made while packaging stay unsaved. ----
         tracker.update(nativeSignature());
         const revision = tracker.revision;
@@ -5205,6 +5224,8 @@ export function LayerlingEditor({
       if (!projectId || !onProjectShapesChange) {
         return;
       }
+      // Build 0121: an open group is an unresolved editing transaction; its loose parts are not a state to keep. Written again when it is resolved.
+      if (openGroupsRef.current.length > 0) return;
       if (projectInteractionActiveRef.current) {
         pendingProjectShapesRef.current = nextShapes.map(canonicalizeShape);
         if (projectSyncTimerRef.current !== null) {
@@ -5232,6 +5253,17 @@ export function LayerlingEditor({
     },
     [emitProjectShapes, flushHeldProjectShapes, onProjectShapesChange, projectId],
   );
+
+  // Build 0121: tell the native host while a group is open (it blocks Save, Close and Quit), and write the design again once it is resolved.
+  const onNativeEditingChangeRef = useRef(onNativeEditingChange);
+  onNativeEditingChangeRef.current = onNativeEditingChange;
+  const groupEditingWasOpenRef = useRef(false);
+  useEffect(() => {
+    const open = openGroups.length > 0;
+    if (nativeDocument) onNativeEditingChangeRef.current?.(open);
+    if (!open && groupEditingWasOpenRef.current) syncProjectShapes(shapesRef.current, true);
+    groupEditingWasOpenRef.current = open;
+  }, [nativeDocument, openGroups.length, syncProjectShapes]);
 
   /**
    * Sets the files kept with the design and has them saved, as a change to the shapes is saved. They are
@@ -12789,42 +12821,9 @@ export function LayerlingEditor({
    * hidden, solid or hole, its own colour and its pivot (#807). Adding to or taking from it in the list does the same (#1338).
    * It also keeps what it does with its parts when it is resized (Discussion #526).
    */
-  const rebuildGroupFromParts = useCallback(async (original: WorkplaneShape, parts: WorkplaneShape[]): Promise<{ group: WorkplaneShape; mergeWarning: string } | { group: null; failure: string }> => {
-    const operation = original.groupOperation === "intersection" || original.groupOperation === "hull" || original.groupOperation === "bundle" || original.groupOperation === "loft" ? original.groupOperation : "group";
-    const result = operation === "intersection"
-      ? await buildIntersectionShapeFromSelection(parts, workspaceSettingsRef.current.booleanTriangleLimit)
-      : operation === "hull"
-        ? await buildHullShapeFromSelection(parts, workspaceSettingsRef.current.booleanTriangleLimit, { keepHoles: Boolean(original.hullKeepHoles) })
-        : operation === "loft"
-        ? await buildSketchLoftFromSelection(parts)
-        : operation === "bundle"
-        ? { group: groupedShape(parts) }
-        : await buildGroupedShapeOffThread(parts, workspaceSettingsRef.current.booleanTriangleLimit, geometryAbortRef.current?.signal);
-    if (!result.group) {
-      return { group: null, failure: "failureNotice" in result && result.failureNotice ? result.failureNotice : t("status.groupChanged") };
-    }
-    // Its colour stays if it had been given one apart from its first part.
-    const firstSolid = original.groupedShapes?.find((child) => !child.hole) ?? original.groupedShapes?.[0];
-    const ownColour = Boolean(firstSolid && firstSolid.color !== original.color);
-    const rebuilt = canonicalizeShape({ ...result.group, groupOperation: operation });
-    const group = canonicalizeShape(carryShapePivot(original, withHoleMode({
-      ...rebuilt,
-      id: original.id,
-      name: original.name,
-      color: ownColour ? original.color : rebuilt.color,
-      transparent: original.transparent,
-      hidden: original.hidden,
-      groupResize: original.groupResize,
-      // Multicolor switched on or off stays so after Done; a group cut into one body lost it and turned one colour (#1323).
-      ...(typeof original.multicolor === "boolean" ? { multicolor: original.multicolor } : {}),
-      // A name tag, icon tag, QR code or SBC board stays one, with its card (Discussion #1692).
-      ...groupMarksOf(original),
-    }, Boolean(original.hole))));
-    // The group's own paint (paint.ts) goes over to the group built again, where it lay in the world.
-    if (original.paint?.length && canPaintShape(group)) group.paint = rebasePaintStrokes(original.paint, original, group);
-    const mergeWarning = "mergeWarning" in result && typeof result.mergeWarning === "string" ? result.mergeWarning : "";
-    return { group, mergeWarning };
-  }, []);
+  const rebuildGroupFromParts = useCallback((original: WorkplaneShape, parts: WorkplaneShape[]) => (
+    rebuildGroupFromPartsShared(original, parts, { triangleLimit: workspaceSettingsRef.current.booleanTriangleLimit, signal: geometryAbortRef.current?.signal })
+  ), []);
   rebuildStretchedGroupRef.current = async (group, parts) => {
     const rebuilt = await rebuildGroupFromParts(group, parts);
     return rebuilt.group ?? { error: rebuilt.failure };
@@ -17641,6 +17640,7 @@ export function LayerlingEditor({
       }
 
       if (command.action === "save_project") {
+        if (openGroupsRef.current.length > 0) throw new Error(groupEditingMessage("save"));
         // The project the export window packs as .lyl, handed to the MCP server, which writes it where the caller
         // asked (#494). The editor's own save target is left as it is, so Ctrl+S goes on writing where it wrote.
         if (projectInteractionActiveRef.current) throw new Error(t("status.finishBeforeSave"));
@@ -18152,6 +18152,7 @@ export function LayerlingEditor({
     /** One plate of "One file per plate" (#456): its bodies, and where the finished file goes instead of a download. */
     plateRun: { shapes: WorkplaneShape[]; collect: (fileName: string, content: Blob | string) => Promise<void> } | null = null,
   ): Promise<void> => {
+    if (refuseWhileEditingGroup("export")) return;
     // "One file per plate" (#456): every plate with something to print as a file of its own, in one ZIP.
     if (!plateRun && buildPlates.exportPlate === "each" && buildPlates.count > 1 && !historyViewStateRef.current && !hasSelection && (format === "stl" || format === "3mf" || format === "obj")) {
       const files: Record<string, Uint8Array> = {};
@@ -18386,6 +18387,7 @@ export function LayerlingEditor({
 
   const exportDrawingDesign = useCallback(async (exportName: string, format: "svg" | "pdf", toServer = false) => {
     if (drawingExporting) return;
+    if (refuseWhileEditingGroup("export")) return;
     const source = exportSource();
     setDrawingExporting(true);
     setNotice(t("status.buildingDrawing"), true);
@@ -18414,6 +18416,7 @@ export function LayerlingEditor({
     if (stepExporting) {
       return;
     }
+    if (refuseWhileEditingGroup("export")) return;
     const { visible: sourceShapes, hiddenNote } = visibleExportShapes(exportSource().shapes);
     if (sourceShapes.length === 0 && hiddenNote) {
       setNotice(t("status.exportOnlyHidden"));
@@ -18457,6 +18460,7 @@ export function LayerlingEditor({
       setNotice(NATIVE_SAVE_UNAVAILABLE, true);
       return;
     }
+    if (refuseWhileEditingGroup("save")) return;
     if (lylExporting) return;
     if (target === "shared" && !onSaveSharedProject) {
       setNotice(t("status.sharedUnavailable"), true);
@@ -18705,7 +18709,7 @@ export function LayerlingEditor({
         );
       }
       const minutes = readFileBackupSettings().snapshotMinutes;
-      if (minutes <= 0 || snapshotRunningRef.current || Date.now() - snapshotAtRef.current < minutes * 60_000) return;
+      if (minutes <= 0 || snapshotRunningRef.current || openGroupsRef.current.length > 0 || Date.now() - snapshotAtRef.current < minutes * 60_000) return;
       snapshotRunningRef.current = true;
       const run = () => {
         void takeSnapshotRef.current()
@@ -18740,6 +18744,7 @@ export function LayerlingEditor({
 
   /** Der Entwurf als .lyl samt einer Textdatei, die sagt, wo und womit es passiert ist. */
   const saveBugReport = useCallback(async () => {
+    if (refuseWhileEditingGroup("export")) return;
     if (projectInteractionActiveRef.current) {
       setNotice(t("status.finishBeforeSave"));
       return;
@@ -18864,6 +18869,10 @@ export function LayerlingEditor({
   const saveToServerNow = useCallback(async () => {
     if (!serverFileName || !onSaveSharedProject) return;
     if (serverSaveStoppedRef.current || !serverSavePendingRef.current) return;
+    if (openGroupsRef.current.length > 0) {
+      scheduleServerSaveRetry(SERVER_SAVE_BUSY_MS);
+      return;
+    }
     if (serverSaveRunningRef.current || projectInteractionActiveRef.current) {
       scheduleServerSaveRetry(SERVER_SAVE_BUSY_MS);
       return;

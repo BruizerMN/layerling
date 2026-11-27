@@ -93,6 +93,7 @@ export function NativeDocumentShell() {
   /** The editor has mounted and reported itself ready: until then the loading screen stays over it (no blank or half-built editor shows through). */
   const [editorOnScreen, setEditorOnScreen] = useState(false);
   const changeStateRef = useRef<RevisionState | null>(null);
+  const editingRef = useRef(false);
   const changeTimerRef = useRef<number | null>(null);
   const documentIdRef = useRef<string | null>(null);
   /** The document.opened payload, held until the editor has mounted (see onNativeDocumentReady). */
@@ -238,8 +239,15 @@ export function NativeDocumentShell() {
       changeTimerRef.current = null;
       const latest = changeStateRef.current;
       const documentId = documentIdRef.current;
-      if (latest && documentId) void bridge.sendSave("document.changed", { documentId, revision: latest.revision, dirty: latest.dirty });
+      if (latest && documentId) void bridge.sendSave("document.changed", { documentId, revision: latest.revision, dirty: latest.dirty, editing: editingRef.current });
     }, 0);
+  };
+
+  /** Build 0121: whether a group is open for editing; the host blocks saving, closing and quitting while it is (also when the document content did not change). */
+  const handleNativeEditing = (editing: boolean) => {
+    if (editingRef.current === editing) return;
+    editingRef.current = editing;
+    if (changeStateRef.current) handleNativeChange(changeStateRef.current);
   };
 
   const reportOpened = () => {
@@ -264,6 +272,7 @@ export function NativeDocumentShell() {
         <LayerlingEditor
           nativeDocument={{ fileName: phase.fileName, documentId: document.documentId, documentProjectId: document.documentProjectId }}
           onNativeDocumentChange={handleNativeChange}
+          onNativeEditingChange={handleNativeEditing}
           nativeApiRef={nativeApiRef}
           onNativeDocumentReady={reportOpened}
           initialAssets={document.assets}
