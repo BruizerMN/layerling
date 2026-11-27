@@ -216,7 +216,7 @@ import { NativeInspectorDock } from "@/components/NativeInspectorDock";
 import { setInspectorTab } from "@/lib/inspectorTabs";
 import { plateSizePatch } from "@/lib/plateSize";
 import { readAppPrefs, subscribeAppPrefs, writeAppPrefs } from "@/lib/appPrefs";
-import { publishSettingsState, setNativeUiDocument, subscribeNativeUiEvents } from "@/lib/host/nativeUi";
+import { publishSettingsState, requestHostAction, setNativeUiDocument, subscribeNativeUiEvents } from "@/lib/host/nativeUi";
 import { getHostBridge } from "@/lib/host/hostBridge";
 import { fetchDocumentBytes } from "@/lib/host/documentTransfer";
 import { readStartView } from "@/lib/designView";
@@ -10215,9 +10215,17 @@ export function LayerlingEditor({
     );
   }, [commitShapes, hasSelection, refuseLockedSelection, selectedIds, selectedShapes, shapes]);
 
+  // The floating Objects List is RETIRED in the Mac app (a native document: the app always serves the native Objects outline, objects.v1, Build 0120): it is not shown there, and everything that used to open or close it
+  // (its key, the View Bar's and the context menu's items) asks the host to open or close the Objects tab of its Objects Sidebar instead. The panel and its code stay for the browser edition.
+  // Nothing is removed: this is the same suppression as the legacy View Bar's.
+  const objectListRetired = Boolean(nativeDocument);
   const toggleOutliner = useCallback(() => {
+    if (objectListRetired) {
+      requestHostAction("toggleObjectsTab");
+      return;
+    }
     setOutlinerOpen((open) => !open);
-  }, []);
+  }, [objectListRetired]);
 
   const toggleShapeLockById = useCallback((id: string) => {
     const target = shapes.find((s) => s.id === id);
@@ -19866,7 +19874,7 @@ export function LayerlingEditor({
 
       if (shortcut && (key === "o" || key === "O") && event.shiftKey) {
         event.preventDefault();
-        setOutlinerOpen((open) => !open);
+        toggleOutliner();
         return;
       }
 
@@ -19960,6 +19968,7 @@ export function LayerlingEditor({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     nativeDocument,
+    toggleOutliner,
     closeHistoryView,
     closeClearanceCheck,
     closePrintCheck,
@@ -20589,7 +20598,7 @@ export function LayerlingEditor({
         shapeCustomizations={workspaceSettings.shapeCustomizations}
       />
       <div className="editor-body">
-        {outlinerOpen ? (
+        {outlinerOpen && !objectListRetired ? (
           <ObjectListPanel
             inert={historyViewState !== null}
             shapes={historyViewState?.shapes ?? shapes}
