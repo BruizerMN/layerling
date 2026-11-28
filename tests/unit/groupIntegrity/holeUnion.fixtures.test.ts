@@ -8,7 +8,7 @@ import { applyMeshRepairs, scanForOpenMeshes } from "@/lib/meshRepair";
 import { createKernelMeshCheck } from "@/lib/meshRepairKernel";
 import type { WorkplaneShape } from "@/types/layerling";
 import { BODY_VOLUME_TOLERANCE } from "./baseline";
-import { assertKernelLive, bodyStats, fixturePath, loadFixture, reconstruct, reconstructStrict, startKernel } from "./support";
+import { assertKernelLive, bodyStats, fixturePath, flatNodes, loadFixture, reconstruct, reconstructStrict, startKernel } from "./support";
 
 /*
  * Build 0126 on the real documents (LAYERLING_INTEGRITY_FIXTURES, not in the repository): COST AND CORRECTNESS of the hole-only union. Every hole-only group with a mesh body, at any depth,
@@ -17,14 +17,20 @@ import { assertKernelLive, bodyStats, fixturePath, loadFixture, reconstruct, rec
  */
 beforeAll(async () => { kernel.runtime = Promise.resolve(await startKernel()); await assertKernelLive(); });
 
-function holeOnlyGroups(shapes: readonly WorkplaneShape[], into: WorkplaneShape[] = []): WorkplaneShape[] {
-  for (const shape of shapes) {
-    const kids = shape.groupedShapes;
-    if (!kids?.length) continue;
-    if (shape.importedMesh && kids.every((kid) => kid.hole)) into.push(shape);
-    holeOnlyGroups(kids, into);
+/**
+ * Every hole-only group with a mesh body, at any depth, WORLD-PLACED exactly as the strict census and real Done see it (`flatNodes`): a nested group taken from the stored shapes is in its
+ * parent's local frame, which is not what Done reconstructs (the first 0126 figures of 409 instead of 401 came from that; corrected in Build 0127's housekeeping).
+ */
+function holeOnlyGroups(shapes: readonly WorkplaneShape[]): WorkplaneShape[] {
+  const out: WorkplaneShape[] = [];
+  for (const top of shapes) {
+    if (!top.groupedShapes?.length) continue;
+    for (const node of flatNodes(top)) {
+      const group = node.shape;
+      if (group.groupedShapes?.length && group.importedMesh && group.groupedShapes.every((kid) => kid.hole)) out.push(group);
+    }
   }
-  return into;
+  return out;
 }
 function truthVolume(parts: WorkplaneShape[]): number | null {
   if (!parts.every((part) => part.importedMesh)) return null;
@@ -96,6 +102,7 @@ describe("0126 hole-only union on the real documents", () => {
       expect(after.unnamed).toBe(0);
       expect(before.wrongVolume).toBe(0);
       expect(after.wrongVolume).toBe(0);
+      expect(after.refused).toBe(0);   // after Repair Open Meshes every hole-only group unions
       expect(after.refused).toBeLessThanOrEqual(before.refused);
     }, 900_000);
   }
