@@ -1,7 +1,7 @@
 import { buildGroupedShapeFromSelection, restoreGroupedChildren } from "@/lib/editorBooleans";
 import { canonicalizeShape } from "@/lib/workplaneShapes";
 import type { WorkplaneShape } from "@/types/layerling";
-import { flatLeaves, makeGroup, maxVertexDeviation, primitive, reconstructStrict, symmetricDifferenceVolume, bodyStats, TRIANGLE_LIMIT } from "./support";
+import { flatLeaves, makeGroup, maxVertexDeviation, primitive, reconstruct, rebuildGroupFromPartsForTests, symmetricDifferenceVolume, bodyStats, TRIANGLE_LIMIT } from "./support";
 import { frameOf, rebuildPreserving } from "./poseProto";
 
 /** Shared lab for the Build 0127 verification (tests only). */
@@ -46,4 +46,10 @@ export const poseFieldsDiff = (a: WorkplaneShape, b: WorkplaneShape) => {
   const fa = frameOf(a).S, fb = frameOf(b).S;
   return Math.max(d, ...fa.map((s, i) => Math.abs(s - fb[i])));
 };
-export { makeGroup, primitive, reconstructStrict, rebuildPreserving, flatLeaves, bodyStats, TRIANGLE_LIMIT };
+/**
+ * "Today's Done" in the Build 0127 investigations = the reconstruction that BAKES the pose into the parts. Before 0127 that was `reconstructStrict`; since 0127 strict Done preserves the pose, so the
+ * baseline is the non-strict (browser) reconstruction, which still bakes. `produce` is the production strict reconstruction with the session's opened parts.
+ */
+export const reconstructStrict = reconstruct;
+export const produce = async (original: WorkplaneShape, parts: WorkplaneShape[], opened: readonly WorkplaneShape[]) => { const r = await rebuildGroupFromPartsForTests(original, parts, opened); return { group: r.group, failure: "failure" in r ? r.failure : "" }; };
+export { makeGroup, primitive, rebuildPreserving, flatLeaves, bodyStats, TRIANGLE_LIMIT };

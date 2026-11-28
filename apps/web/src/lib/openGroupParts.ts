@@ -6,7 +6,11 @@ import type { WorkplaneNote, WorkplaneShape } from "@/types/layerling";
  * and the notes pinned to it when it was opened, where they stood - cancelling
  * puts them back.
  */
-export type OpenGroupLevel = { original: WorkplaneShape; childIds: string[]; notes: WorkplaneNote[]; session?: OpenGroupSession };
+/**
+ * Build 0127 (native app): `openedParts` are the world parts this level opened with (what `restoreGroupedChildren` made), so that Done can tell which parts the person touched: the ones not
+ * touched are taken verbatim from `original` and a group's pose (rotation, mirror, resize) is kept (lib/groupPose.ts).
+ */
+export type OpenGroupLevel = { original: WorkplaneShape; childIds: string[]; notes: WorkplaneNote[]; session?: OpenGroupSession; openedParts?: WorkplaneShape[] };
 
 /**
  * Build 0122 (native app): what the scene was right after this level opened, so finishing or cancelling can tell that nothing changed (the original comes back

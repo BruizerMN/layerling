@@ -12898,7 +12898,7 @@ export function LayerlingEditor({
     if (beginsSession) beginGroupSession();
     try {
       commitOpenGroupTransition(
-        [...levels, { original: group, childIds, notes: notesPinnedTo(notesRef.current, group) }],
+        [...levels, { original: group, childIds, notes: notesPinnedTo(notesRef.current, group), ...(nativeDocument ? { openedParts: parts } : {}) }],
         // The native app keeps the user's order: the parts stand where the group stood. (The browser edition keeps its own behaviour: the parts go to the end.)
         nativeDocument ? replaceAtFirst(shapesRef.current, [group.id], parts) : [...shapesRef.current.filter((shape) => shape.id !== group.id), ...parts],
         selectPart !== undefined && childIds[selectPart] ? [childIds[selectPart]] : childIds,
@@ -12986,8 +12986,8 @@ export function LayerlingEditor({
    * It also keeps what it does with its parts when it is resized (Discussion #526).
    */
   // `strict` (native Done, Build 0122): refuse a result that is not the intended reconstruction, say which object is the problem; the other callers are as before.
-  const rebuildGroupFromParts = useCallback((original: WorkplaneShape, parts: WorkplaneShape[], strict = false) => (
-    rebuildGroupFromPartsShared(original, parts, { triangleLimit: workspaceSettingsRef.current.booleanTriangleLimit, signal: geometryAbortRef.current?.signal, strict })
+  const rebuildGroupFromParts = useCallback((original: WorkplaneShape, parts: WorkplaneShape[], strict = false, opened?: readonly WorkplaneShape[]) => (
+    rebuildGroupFromPartsShared(original, parts, { triangleLimit: workspaceSettingsRef.current.booleanTriangleLimit, signal: geometryAbortRef.current?.signal, strict, opened })
   ), []);
   rebuildStretchedGroupRef.current = async (group, parts) => {
     const rebuilt = await rebuildGroupFromParts(group, parts);
@@ -13031,7 +13031,8 @@ export function LayerlingEditor({
     openGroupBusyRef.current = true;
     setOpenGroupBusy(true);
     try {
-      const result = await rebuildGroupFromParts(original, parts, Boolean(nativeDocument));
+      // Build 0127: the session's opened parts let strict Done keep a group's pose and leave untouched parts as they were.
+      const result = await rebuildGroupFromParts(original, parts, Boolean(nativeDocument), session.openedParts);
       if (
         projectInfoRef.current.projectId !== sourceProjectId ||
         projectShapesFingerprint(shapesRef.current) !== sourceFingerprint ||

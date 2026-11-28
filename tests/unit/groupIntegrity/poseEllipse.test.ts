@@ -4,12 +4,12 @@ vi.mock("@/lib/editorMeshCore", async (importOriginal) => ({ ...(await importOri
 import { restoreGroupedChildren } from "@/lib/editorBooleans";
 import type { WorkplaneShape } from "@/types/layerling";
 import { assertKernelLive, startKernel } from "./support";
-import { bboxDev, openParts, posedGroup, primitive, rebuildPreserving, type Pose } from "./poseLab";
+import { bboxDev, openParts, posedGroup, primitive, produce as rebuildPreserving, type Pose } from "./poseLab";
 
 beforeAll(async () => { kernel.runtime = Promise.resolve(await startKernel()); await assertKernelLive(); });
 
 /*
- * Build 0127 (Bill, Q-C): an EDITED cylinder in a group stretched unevenly is stored as an ELLIPSE (a cylinder is always round; the stretched shape is not). Intentional, documented, and part of acceptance testing:
+ * Build 0127 (Bill, Q-C), against the PRODUCTION strict reconstruction (`produce`): an EDITED cylinder in a group stretched unevenly is stored as an ELLIPSE (a cylinder is always round; the stretched shape is not). Intentional, documented, and part of acceptance testing:
  * the geometry is preserved and the part stays parametrically editable (width, depth, height, sides), over repeated edit cycles; untouched cylinders keep their kind; with no uneven stretch a cylinder stays a cylinder.
  */
 const local = () => [primitive("A", "box", { x: 0, width: 40, depth: 20, height: 30 }), primitive("C", "cylinder", { x: 34, sides: 36, width: 16, depth: 16, height: 20 }), primitive("H", "cylinder", { x: 0, hole: true, sides: 32, width: 8, depth: 8, height: 40, elevation: -5 })];
@@ -21,7 +21,7 @@ const cycle = async (G0: WorkplaneShape, n: number, resizeAt = 0) => {
     const sign = c % 2 ? 1 : -1;
     const edited = opened.map((p) => (p.name === "C" ? { ...p, x: p.x + sign * 1.5, ...(c === resizeAt ? { width: p.width * 1.2, depth: p.depth * 1.2 } : {}) } : p));
     const r = await rebuildPreserving(G, edited, opened);
-    expect(r.group, `cycle ${c}`).toBeTruthy();
+    expect(r.group, `cycle ${c}: ${r.failure}`).toBeTruthy();
     G = r.group!;
     seen.push(kinds(G));
   }

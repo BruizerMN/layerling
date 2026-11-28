@@ -52,8 +52,9 @@ export function reconstruct(original: WorkplaneShape, parts: WorkplaneShape[]) {
 }
 
 /** Production reconstruction as native Done runs it (Build 0122): strict. */
-export function reconstructStrict(original: WorkplaneShape, parts: WorkplaneShape[]) {
-  return rebuildGroupFromParts(original, parts, { triangleLimit: TRIANGLE_LIMIT, strict: true });
+/** `opened` (Build 0127): the world parts the session began with, so strict Done can keep a posed group's pose and untouched parts. */
+export function reconstructStrict(original: WorkplaneShape, parts: WorkplaneShape[], opened?: readonly WorkplaneShape[]) {
+  return rebuildGroupFromParts(original, parts, { triangleLimit: TRIANGLE_LIMIT, strict: true, opened });
 }
 
 /** What the editor does when a group is opened and finished with nothing changed. */
@@ -224,4 +225,9 @@ export async function editThroughChain(top: WorkplaneShape, route: number[], mut
     parts[level - 1][route[level - 1]] = rebuilt.group;
   }
   throw new Error("unreachable");
+}
+
+/** Production strict reconstruction (Build 0127) with the session's opened parts, as native Done runs it. */
+export function rebuildGroupFromPartsForTests(original: WorkplaneShape, parts: WorkplaneShape[], opened: readonly WorkplaneShape[]) {
+  return rebuildGroupFromParts(original, parts, { triangleLimit: TRIANGLE_LIMIT, strict: true, opened });
 }

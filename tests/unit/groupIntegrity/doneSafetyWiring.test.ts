@@ -16,7 +16,7 @@ describe("Done safety wiring", () => {
     expect(editor).toMatch(/levels\.length === 1 && endGroupSession\("restore", session\.original\.id\)/);
   });
   it("Done reconstructs strictly in the native app and as before in the browser", () => {
-    expect(editor).toContain("rebuildGroupFromParts(original, parts, Boolean(nativeDocument))");
+    expect(editor).toContain("rebuildGroupFromParts(original, parts, Boolean(nativeDocument), session.openedParts)");
     expect(editor).toContain("strict = false");
   });
   it("Cancel from the button and the Objects Sidebar asks the host when changes would be discarded; the confirmed op cancels", () => {

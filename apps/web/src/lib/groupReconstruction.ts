@@ -3,6 +3,7 @@ import { buildHullShapeFromSelection, buildIntersectionShapeFromSelection, dispo
 import { getManifoldRuntime, meshForShape } from "@/lib/editorMeshCore";
 import { buildSketchLoftFromSelection } from "@/lib/sketchLoft";
 import { analyzeMesh } from "@/lib/meshRepair";
+import { planPoseRebuild, poseBuiltGroup } from "@/lib/groupPose";
 import { carryShapePivot } from "@/lib/rotationPivot";
 import { groupMarksOf } from "@/lib/groupMarks";
 import { groupFinishProblemMessage } from "@/lib/groupFinishProblems";
@@ -30,6 +31,8 @@ export type GroupReconstructionContext = {
   /** Stops the work when the scene changes under it (page only). */
   signal?: AbortSignal;
   strict?: boolean;
+  /** Build 0127 (native Done): the session's parts as they were when it began (the world parts `restoreGroupedChildren` made), so that parts not touched keep their original form and a group's pose is kept. */
+  opened?: readonly WorkplaneShape[];
 };
 
 export type GroupReconstruction =
@@ -71,16 +74,22 @@ export async function openMeshParts(parts: readonly WorkplaneShape[]): Promise<{
 }
 
 export async function rebuildGroupFromParts(original: WorkplaneShape, parts: WorkplaneShape[], context: GroupReconstructionContext): Promise<GroupReconstruction> {
+  // Build 0127: a group that carries a pose (rotation, mirror, resize) keeps it, or Done is refused; a group without one takes the unchanged path below (Build 0126). Native strict only.
+  const plan = context.strict ? planPoseRebuild(original, parts, context.opened) : null;
+  if (plan?.kind === "refuse") return { group: null, failure: plan.message };
+  if (plan?.kind === "restore") return { group: original, mergeWarning: "" };
+  const preserve = plan?.kind === "preserve" ? plan : null;
+  const buildFrom = preserve ? preserve.local : parts;
   const operation = original.groupOperation === "intersection" || original.groupOperation === "hull" || original.groupOperation === "bundle" || original.groupOperation === "loft" ? original.groupOperation : "group";
   const result = operation === "intersection"
-    ? await buildIntersectionShapeFromSelection(parts, context.triangleLimit)
+    ? await buildIntersectionShapeFromSelection(buildFrom, context.triangleLimit)
     : operation === "hull"
-      ? await buildHullShapeFromSelection(parts, context.triangleLimit, { keepHoles: Boolean(original.hullKeepHoles) })
+      ? await buildHullShapeFromSelection(buildFrom, context.triangleLimit, { keepHoles: Boolean(original.hullKeepHoles) })
       : operation === "loft"
-      ? await buildSketchLoftFromSelection(parts)
+      ? await buildSketchLoftFromSelection(buildFrom)
       : operation === "bundle"
-      ? { group: groupedShape(parts) }
-      : await buildGroupedShapeOffThread(parts, context.triangleLimit, context.signal, { clearHoles: Boolean(context.strict), unionHoles: Boolean(context.strict) });
+      ? { group: groupedShape(buildFrom) }
+      : await buildGroupedShapeOffThread(buildFrom, context.triangleLimit, context.signal, { clearHoles: Boolean(context.strict), unionHoles: Boolean(context.strict) });
   const quality: GroupBuildQuality | undefined = "quality" in result ? (result.quality as GroupBuildQuality | undefined) : undefined;
   const name = displayShapeName(original);
   if (!result.group) {
@@ -99,7 +108,7 @@ export async function rebuildGroupFromParts(original: WorkplaneShape, parts: Wor
   // Its colour stays if it had been given one apart from its first part.
   const firstSolid = original.groupedShapes?.find((child) => !child.hole) ?? original.groupedShapes?.[0];
   const ownColour = Boolean(firstSolid && firstSolid.color !== original.color);
-  const rebuilt = canonicalizeShape({ ...result.group, groupOperation: operation });
+  const rebuilt = canonicalizeShape(preserve ? poseBuiltGroup(original, { ...result.group, groupOperation: operation } as WorkplaneShape, preserve) : { ...result.group, groupOperation: operation });
   // Build 0126 (native Done): a group of holes only keeps the colour it was given (its parts' colours say nothing: holes are drawn hole grey), and a shape lock is data that must survive.
   const holesOnly = Boolean(context.strict) && parts.length > 0 && parts.every((part) => part.hole);
   const group = canonicalizeShape(carryShapePivot(original, withHoleMode({

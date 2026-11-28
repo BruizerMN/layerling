@@ -45,7 +45,7 @@ describe("visibility flags and exact restoration (Build 0126)", () => {
     expect(finish).toContain("if (nativeDocument && openSessionUnchanged(session))");
   });
   it("only native Done is strict: hole union, colour and shape-lock carry-through all depend on it", () => {
-    expect(editor).toContain("rebuildGroupFromParts(original, parts, Boolean(nativeDocument))");
+    expect(editor).toContain("rebuildGroupFromParts(original, parts, Boolean(nativeDocument), session.openedParts)");
     expect(reconstruction).toContain("unionHoles: Boolean(context.strict)");
     expect(reconstruction).toContain("Boolean(context.strict) && parts.length > 0 && parts.every((part) => part.hole)");
     expect(reconstruction).toContain("context.strict && original.shapeLocked");
