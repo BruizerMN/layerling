@@ -1219,6 +1219,7 @@ export const MESSAGES_TR: Partial<Record<MessageKey, string>> = {
   "status.selectionLockedNow": "Seçim kilitlendi",
   "status.selectionUnlocked": "Seçimin kilidi açıldı",
   "status.objectLocked": "Nesne kilitli",
+  "status.groupShapeLocked": "\"{name}\" has its shape locked: unlock it before editing its parts",
   "status.selectionToHole": "Seçim deliğe çevrildi",
   "status.selectionTransparent": "Seçim saydam yapıldı",
   "status.selectionOpaque": "Seçim opak yapıldı",

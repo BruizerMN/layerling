@@ -1853,6 +1853,7 @@ export const MESSAGES_PT_PT: Partial<Record<MessageKey, string>> = {
   "status.shapeLockOn": "Forma bloqueada: continua a poder ser movida, rodada e agrupada, mas mantém o tamanho e as definições",
   "status.shapeLockOff": "Forma desbloqueada",
   "status.objectLocked": "Objeto bloqueado",
+  "status.groupShapeLocked": "\"{name}\" has its shape locked: unlock it before editing its parts",
   "status.shapeLockRefused": "A forma está bloqueada: pode ser movida e rodada, mas não alterada (Ctrl+Shift+L desbloqueia-a)",
   "status.shapeLockHeld": "A forma de \"{name}\" está bloqueada: o tamanho, as definições e o nome mantêm-se",
   "status.selectionToHole": "Seleção transformada numa forma de corte",

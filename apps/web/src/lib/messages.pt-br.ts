@@ -3961,6 +3961,7 @@ export const MESSAGES_PT_BR: Partial<Record<MessageKey, string>> = {
   "status.selectionLockedNow": "Seleção bloqueada",
   "status.selectionUnlocked": "Seleção desbloqueada",
   "status.objectLocked": "Objeto bloqueado",
+  "status.groupShapeLocked": "\"{name}\" has its shape locked: unlock it before editing its parts",
   "status.selectionToHole": "Seleção transformada em buraco",
   "status.selectionTransparent": "Seleção agora transparente",
   "status.selectionOpaque": "Seleção agora opaca",

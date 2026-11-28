@@ -4,7 +4,7 @@ import { watchAutoTitles } from "@/lib/autoButtonTitles";
 import { deleteSketchDraft, loadSketchDraft, saveSketchDraft, sketchHasWork, type SketchDraft } from "@/lib/sketchDraftStore";
 import { normalizeNarrowStart, normalizeSlopeCurve, normalizeSlopeFrom, normalizeSlopeSide, shapeSupportsNarrow, shapeSupportsSlope } from "@/lib/slopeAlong";
 import { AlertTriangle, X } from "lucide-react";
-import { bodyLocked, groupHeld, holdsShapeLock, patchFitsShapeLock, shapeLockBroken } from "@/lib/shapeLock";
+import { bodyLocked, firstHeldGroupOnPath, groupHeld, holdsShapeLock, patchFitsShapeLock, shapeLockBroken } from "@/lib/shapeLock";
 import { ObjectListPanel } from "@/components/workplane/ObjectListPanel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
@@ -12888,8 +12888,10 @@ export function LayerlingEditor({
     }
     const group = shapesRef.current.find((shape) => shape.id === id);
     if (!group?.groupedShapes?.length) return refuseOpenGroupStep(t("status.selectGroupFirst"));
-    if (groupHeld(group)) return refuseOpenGroupStep(t("status.objectLocked"));
-    const parts = restoreGroupedChildren(group);
+    // Build 0126 (native): a group whose own shape is locked cannot be edited; the person unlocks its geometry first. Every entry point (Objects Sidebar, nested paths, MCP, the canvas) passes through here.
+    if (groupHeld(group)) return refuseOpenGroupStep(nativeDocument && !group.locked ? t("status.groupShapeLocked", { name: displayShapeName(group) }) : t("status.objectLocked"));
+    // Build 0126 (native): the parts keep the visibility flags they were stored with (a hidden group's parts are no longer hidden for good; the group itself comes back hidden).
+    const parts = restoreGroupedChildren(group, undefined, nativeDocument ? { keepPartVisibility: true } : undefined);
     const childIds = parts.map((shape) => shape.id);
     const message = t("status.groupOpened", { name: displayShapeName(group) });
     const beginsSession = Boolean(nativeDocument) && levels.length === 0 && !groupSessionRef.current;
@@ -19536,6 +19538,12 @@ export function LayerlingEditor({
   // so the path is by position. The steps join in one Undo step; a refusal (another group is being edited, a locked group, ...) says why itself and stops the rest.
   // `openTarget`: also open the last group of the path (Edit Group on that group); otherwise the last step selects the object the path ends at.
   const openGroupAlongPath = useCallback((rootId: string, indices: readonly number[], openTarget: boolean) => {
+    // Build 0126 (native): a group on the path that is locked or has its shape locked refuses the whole path BEFORE any group opens (no half-opened path).
+    const held = nativeDocument ? firstHeldGroupOnPath(shapesRef.current, rootId, indices, openTarget) : null;
+    if (held) {
+      refuseOpenGroupStep(!held.locked ? t("status.groupShapeLocked", { name: displayShapeName(held) }) : t("status.objectLocked"));
+      return;
+    }
     let groupId = rootId;
     const steps = openTarget ? indices.length + 1 : indices.length;
     for (let step = 0; step < steps; step += 1) {
@@ -19547,7 +19555,7 @@ export function LayerlingEditor({
       if (!outcome.ok || index === undefined) return;
       groupId = outcome.partIds?.[index] ?? "";
     }
-  }, [openGroupForEditing]);
+  }, [nativeDocument, openGroupForEditing, refuseOpenGroupStep]);
   // Property edits on an object inside a CLOSED group (Build 0117): only its name and its shape lock, which are metadata of the part. They leave the group's own geometry (a baked mesh the
   // group carries) untouched, commit as one Undo step, and keep the selection, the focus and the open groups. The engine's own validation applies: a shape-locked part keeps its name
   // (commitShapes refuses with its notice), and a padlocked object cannot take the shape lock. Hiding such an object is deliberately NOT offered: a group that carries its mesh is drawn

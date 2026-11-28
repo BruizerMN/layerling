@@ -2015,6 +2015,7 @@ export const MESSAGES_SV: Partial<Record<MessageKey, string>> = {
   "status.shapeLockOn": "Form låst: den går fortfarande att flytta, vrida och gruppera, men behåller sin storlek och sina inställningar",
   "status.shapeLockOff": "Form upplåst",
   "status.objectLocked": "Objekt låst",
+  "status.groupShapeLocked": "\"{name}\" has its shape locked: unlock it before editing its parts",
   "status.groupLocked": "En låst del kan inte grupperas eller buntas. Lås upp den med Ctrl+L, eller lås bara dess form med Ctrl+Skift+L: den delen kan fortfarande grupperas",
   "status.shapeLockRefused": "Formen är låst: den kan flyttas och vridas, men inte ändras (Ctrl+Skift+L låser upp den)",
   "status.shapeLockHeld": "”{name}” har sin form låst: storlek, inställningar och namn förblir oförändrade",

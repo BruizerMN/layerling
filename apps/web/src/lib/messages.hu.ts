@@ -1755,6 +1755,7 @@ export const MESSAGES_HU: Partial<Record<MessageKey, string>> = {
   "status.selectionLockedNow": "Kijelölés zárolva",
   "status.selectionUnlocked": "Kijelölés feloldva",
   "status.objectLocked": "Az objektum zárolva van",
+  "status.groupShapeLocked": "\"{name}\" has its shape locked: unlock it before editing its parts",
   "status.selectionToHole": "A kijelölés lyuk lett",
   "status.selectionTransparent": "A kijelölés átlátszó lett",
   "status.selectionOpaque": "A kijelölés átlátszatlan lett",

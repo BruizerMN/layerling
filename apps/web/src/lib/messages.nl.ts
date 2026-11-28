@@ -2020,6 +2020,7 @@ export const MESSAGES_NL: Record<MessageKey, string> = {
   "status.shapeLockOn": "Vorm vergrendeld: hij laat zich nog verplaatsen, draaien en groeperen, maar houdt zijn maat en instellingen",
   "status.shapeLockOff": "Vorm ontgrendeld",
   "status.objectLocked": "Object vergrendeld",
+  "status.groupShapeLocked": "\"{name}\" has its shape locked: unlock it before editing its parts",
   "status.groupLocked": "Een vergrendeld onderdeel kan niet worden gegroepeerd of gebundeld. Ontgrendel het met Ctrl+L, of vergrendel alleen de vorm met Ctrl+Shift+L: dat onderdeel kan wel gegroepeerd worden",
   "status.shapeLockRefused": "De vorm is vergrendeld: hij kan worden verplaatst en gedraaid, maar niet veranderd (Ctrl+Shift+L ontgrendelt hem)",
   "status.shapeLockHeld": "Van \"{name}\" is de vorm vergrendeld: maat, instellingen en naam blijven zoals ze zijn",

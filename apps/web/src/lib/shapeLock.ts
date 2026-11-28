@@ -106,3 +106,24 @@ export function shapeLockBroken(before: WorkplaneShape[], after: WorkplaneShape[
   };
   return visit(before);
 }
+
+/**
+ * Build 0126: the first group along an Edit Group path that may not be opened (padlocked, or its own shape locked), or null. `shapes` are the stored top-level objects; the path is
+ * the root group's id and the positions down through closed groups, as the Objects Sidebar sends it. With `openTarget` the last group of the path is opened too. Checked BEFORE
+ * anything opens, so a refusal in the middle of a path never leaves the outer groups open.
+ */
+export function firstHeldGroupOnPath(
+  shapes: readonly WorkplaneShape[],
+  rootId: string,
+  indices: readonly number[],
+  openTarget: boolean,
+): WorkplaneShape | null {
+  let group: WorkplaneShape | null = shapes.find((shape) => shape.id === rootId) ?? null;
+  const steps = openTarget ? indices.length + 1 : indices.length;
+  for (let step = 0; step < steps && group; step += 1) {
+    if (groupHeld(group)) return group;
+    const index = indices[step];
+    group = index === undefined ? null : group.groupedShapes?.[index] ?? null;
+  }
+  return null;
+}

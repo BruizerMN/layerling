@@ -2025,6 +2025,7 @@ export const MESSAGES_AR: Partial<Record<MessageKey, string>> = {
   "status.shapeLockOn": "تم قفل الشكل: لا يزال يتحرك ويدور ويُجمَّع، لكنه يحتفظ بحجمه وإعداداته",
   "status.shapeLockOff": "تم فك قفل الشكل",
   "status.objectLocked": "الجسم مقفل",
+  "status.groupShapeLocked": "\"{name}\" has its shape locked: unlock it before editing its parts",
   "status.groupLocked": "لا يمكن تجميع جزء مقفل أو حزمه. ألغِ قفله بـ Ctrl+L، أو اقفل شكله فقط بـ Ctrl+Shift+L: يبقى هذا الجزء قابلاً للتجميع",
   "status.shapeLockRefused": "الشكل مقفل: يمكن تحريكه وتدويره، لكن لا يمكن تغييره (Ctrl+Shift+L يفك القفل)",
   "status.shapeLockHeld": "شكل \"{name}\" مقفل: يبقى حجمه وإعداداته واسمه كما هي",

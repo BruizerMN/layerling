@@ -36,4 +36,10 @@ export const LEAF_TOLERANCE = 1e-9;
  * only be made by a degraded fallback (Foshay's open-cut groups). Every refusal must name an object. Ceilings; a repair of the meshes lowers them. The 4 SAUD groups whose hole
  * touches nothing are NOT refusals any more (they succeed).
  */
-export const KNOWN_STRICT_REFUSALS: Record<FixtureName, number> = { medium: 0, foshay: 53, saud: 91 };
+export const KNOWN_STRICT_REFUSALS: Record<FixtureName, number> = { medium: 0, foshay: 56, saud: 334 };
+/**
+ * Build 0126: native Done now UNIONS the holes of a hole-only group (and refuses when it cannot), so the hole-only groups built on open meshes are validated for the first time. On the
+ * UNREPAIRED documents that adds exactly these refusals to the 0122 ones (SAUD 91 + 243 = 334, Foshay 53 + 3 = 56; measured, FULL census). After Repair Open Meshes every hole-only
+ * group of SAUD (583 with nesting), Foshay (564) and Depot Window Cutout (1) unions (holeUnion.fixtures.test.ts), and the 91 mixed groups rebuild as before.
+ */
+export const KNOWN_HOLE_ONLY_REFUSALS_UNREPAIRED: Record<FixtureName, number> = { medium: 0, foshay: 3, saud: 243 };

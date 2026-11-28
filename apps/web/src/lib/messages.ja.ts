@@ -2011,6 +2011,7 @@ export const MESSAGES_JA: Partial<Record<MessageKey, string>> = {
   "status.shapeLockOn": "形をロックしました。移動、回転、グループ化はできますが、サイズと設定は変わりません",
   "status.shapeLockOff": "形のロックを解除しました",
   "status.objectLocked": "オブジェクトをロックしました",
+  "status.groupShapeLocked": "\"{name}\" has its shape locked: unlock it before editing its parts",
   "status.groupLocked": "ロックしたパーツはグループにもバンドルにもできません。Ctrl+L でロックを解除するか、Ctrl+Shift+L で形だけをロックしてください。それならグループにできます",
   "status.shapeLockRefused": "形がロックされています。移動と回転はできますが、変更はできません（Ctrl+Shift+L で解除）",
   "status.shapeLockHeld": "「{name}」は形がロックされています。サイズ、設定、名前は変わりません",

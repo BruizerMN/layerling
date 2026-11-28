@@ -36,12 +36,16 @@ import { type Vec3, type MeshData, type Cuboid, type ShapeUpdatePatch, type Mani
  * leaves the cut face open, or solids that should be merged were only laid together. A hole-only group is laid together by design (not degraded).
  */
 export type GroupBuildQuality = {
-  path: "plain" | "box-cut" | "kernel-cut" | "kernel-union" | "clear-hole" | "holes-concat" | "open-cut-fallback" | "unmerged-concat" | "other";
+  path: "plain" | "box-cut" | "kernel-cut" | "kernel-union" | "clear-hole" | "hole-union" | "holes-concat" | "open-cut-fallback" | "unmerged-concat" | "other";
   degraded?: string;
 };
 
 /** Options of a group build. `clearHoles`: holes that touch no solid are a success (the body is the solids alone, the holes stay among the parts) instead of a failed cut (Build 0122, native Done). */
-export type GroupBuildOptions = { clearHoles?: boolean };
+export type GroupBuildOptions = {
+  clearHoles?: boolean;
+  /** Build 0126 (native Done): a group of imported-mesh HOLES only gets one kernel union of them as its body (it fails, and Done refuses, when that cannot be made) instead of the meshes laid together. */
+  unionHoles?: boolean;
+};
 
 export type GroupBuildResult = {
   group: WorkplaneShape | null;
@@ -2077,10 +2081,11 @@ function manifoldUnionMeshShapeWithRuntime(
   selection: WorkplaneShape[],
   triangleLimit: number,
   groupChildren: WorkplaneShape[] | undefined,
-  options: { requireImported?: boolean },
+  options: { requireImported?: boolean; holes?: boolean },
   runtime: ManifoldToplevel,
 ): WorkplaneShape | null {
-  const solids = selection.filter((shape) => !shape.hole && !shape.locked);
+  // Build 0126: `holes` unions the HOLES of a hole-only group (its body is their union); otherwise the solids, as always.
+  const solids = selection.filter((shape) => (options.holes ? Boolean(shape.hole) : !shape.hole) && !shape.locked);
   if (solids.length < 2 || (options.requireImported !== false && !selection.some((shape) => Boolean(shape.importedMesh)))) {
     return null;
   }
@@ -2111,7 +2116,7 @@ function manifoldUnionMeshShapeWithRuntime(
       result = foldedThinWalls(result, result, MERGE_SLIVER_TOLERANCE, created);
     }
     const positions = manifoldMeshToPositions(result.getMesh());
-    const group = meshPositionsToGroupShape(selection, solids, positions, "grouped-manifold-union", groupChildren);
+    const group = meshPositionsToGroupShape(selection, solids, positions, options.holes ? "grouped-hole-union" : "grouped-manifold-union", groupChildren);
     return isUsableBooleanGroup(group, mergedSourceMesh.faces.length, false) ? group : null;
   } catch {
     return null;
@@ -2124,7 +2129,7 @@ async function manifoldUnionMeshShape(
   selection: WorkplaneShape[],
   triangleLimit: number,
   groupChildren?: WorkplaneShape[],
-  options: { requireImported?: boolean } = {},
+  options: { requireImported?: boolean; holes?: boolean } = {},
 ): Promise<WorkplaneShape | null> {
   try {
     return manifoldUnionMeshShapeWithRuntime(selection, triangleLimit, groupChildren, options, await getManifoldRuntime());
@@ -2863,7 +2868,11 @@ export function groupPartAxes(child: WorkplaneShape): [[number, number, number],
  * own instead - its middle in the group's frame, x and z from the group's middle and y from its foot, and its
  * stretch along the group's axes - for a group that keeps its holes and small parts (Discussion #526).
  */
-export function restoreGroupedChildren(group: WorkplaneShape, placements?: readonly Pick<GroupPartPlacement, "center" | "stretch">[]): WorkplaneShape[] {
+/**
+ * `keepPartVisibility` (Build 0126, native group editing): each part keeps exactly the `hidden` flag it was stored with. Without it (the browser, and every other caller) the parts of a
+ * hidden group come back hidden, and a part flagged hidden is left out of the next cut: that emptied the body of a hidden group on Done.
+ */
+export function restoreGroupedChildren(group: WorkplaneShape, placements?: readonly Pick<GroupPartPlacement, "center" | "stretch">[], options: { keepPartVisibility?: boolean } = {}): WorkplaneShape[] {
   const children = group.groupedShapes ?? [];
   if (children.length === 0) {
     return [];
@@ -2920,7 +2929,7 @@ export function restoreGroupedChildren(group: WorkplaneShape, placements?: reado
       mirrorX: Boolean(child.mirrorX) !== Boolean(group.mirrorX) || undefined,
       mirrorY: Boolean(child.mirrorY) !== Boolean(group.mirrorY) || undefined,
       mirrorZ: Boolean(child.mirrorZ) !== Boolean(group.mirrorZ) || undefined,
-      hidden: group.hidden ? true : child.hidden,
+      hidden: group.hidden && !options.keepPartVisibility ? true : child.hidden,
     };
     return canonicalizeShape(group.hole && !children.some((c) => c.hole) ? withHoleMode(restored, true) : restored);
   });
@@ -3225,6 +3234,8 @@ export async function buildGroupedShapeFromSelection(selected: WorkplaneShape[],
   // was made as a plain one and cut nothing, while a second bundle with its hole on top made the same group cut (#1528).
   const hasHole = booleanSelection.some((shape) => shape.hole) || selected.some(isBundleWithHole);
   const hasImportedMesh = booleanSelection.some((shape) => Boolean(shape.importedMesh));
+  // Build 0126 (native Done): the body of a group of imported-mesh holes is their kernel union, never the meshes laid together; if it cannot be made there is no group.
+  const holeOnlyUnion = Boolean(options.unionHoles) && hasImportedMesh && !hasSolid && hasHole;
   const boxBooleanSelection = hasSolid && hasHole ? expandGroupsForBoxBoolean(selected) : [];
   // Der Boolesche Kern rechnet auf der geflachten Auswahl, aber das Ergebnis
   // soll trotzdem die urspruenglichen, ungeflachten Formen als seine
@@ -3240,8 +3251,11 @@ export async function buildGroupedShapeFromSelection(selected: WorkplaneShape[],
     ? await groupWhenHolesClearSolids(booleanSelection, groupable, triangleLimit)
     : null;
   const exactImportedGroup = hasImportedMesh && hasSolid && hasHole ? manifoldCutGroup ?? clearHoleGroup ?? importedBooleanMeshShape(booleanSelection, groupable) : null;
-  const bakedImportedMerge = hasImportedMesh && !(hasSolid && hasHole) ? manifoldImportedMerge ?? mergedMeshShape(booleanSelection, groupable) : null;
-  const built = hasSolid && hasHole
+  const holeUnionGroup = holeOnlyUnion ? await manifoldUnionMeshShape(booleanSelection, triangleLimit, groupable, { holes: true }) : null;
+  const bakedImportedMerge = hasImportedMesh && !(hasSolid && hasHole) && !holeOnlyUnion ? manifoldImportedMerge ?? mergedMeshShape(booleanSelection, groupable) : null;
+  const built = holeOnlyUnion
+    ? holeUnionGroup
+    : hasSolid && hasHole
     ? cleanBoxGroup ??
       exactImportedGroup ??
       (hasImportedMesh
@@ -3266,7 +3280,8 @@ export async function buildGroupedShapeFromSelection(selected: WorkplaneShape[],
   const holes = takeHoleFillTally();
   let quality: GroupBuildQuality | undefined;
   if (built) {
-    if (hasSolid && hasHole) {
+    if (holeOnlyUnion) quality = { path: "hole-union" };
+    else if (hasSolid && hasHole) {
       if (built === cleanBoxGroup) quality = { path: "box-cut" };
       else if (built === bundleCutGroup || built === manifoldCutGroup) quality = { path: "kernel-cut" };
       else if (built === clearHoleGroup) quality = { path: "clear-hole" };

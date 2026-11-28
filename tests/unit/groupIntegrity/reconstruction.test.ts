@@ -96,7 +96,7 @@ describe("known defects (Findings 1 and 2): required behaviour, not yet delivere
     expect(propertyDiffs(group, result.group!)).toEqual({});
   });
 
-  it.fails("KNOWN DEFECT D2b: a hole-only group keeps its own colour after Done (as in the real documents: orange hole groups turn hole grey)", async () => {
+  it.fails("KNOWN DEFECT D2b (browser path; FIXED for native strict Done in Build 0126, see doneFidelity1.test.ts): a hole-only group keeps its own colour after Done (as in the real documents: orange hole groups turn hole grey)", async () => {
     const cutter = async (id: string, x: number) => ({
       ...(await makeGroup([primitive(`${id}b`, "box", { x, color: "#f5831f" }), primitive(`${id}c`, "cylinder", { x, hole: true, sides: 32, width: 4, depth: 4, height: 14, elevation: -2 })])),
       id, hole: true, color: "#f5831f",
@@ -106,13 +106,13 @@ describe("known defects (Findings 1 and 2): required behaviour, not yet delivere
     expect(result.group!.color).toBe("#f5831f");
   });
 
-  it.fails("KNOWN DEFECT D2c: a group's own shape lock survives Done", async () => {
+  it.fails("KNOWN DEFECT D2c (browser path; FIXED for native strict Done in Build 0126, see doneFidelity1.test.ts): a group's own shape lock survives Done", async () => {
     const group = { ...(await makeGroup(plainParts())), shapeLocked: true } as WorkplaneShape;
     const { result } = await openAndFinish(group);
     expect(Boolean(result.group!.shapeLocked)).toBe(true);
   });
 
-  it.fails("KNOWN DEFECT D2d: finishing a hidden group does not hide its parts or empty its body", async () => {
+  it.fails("KNOWN DEFECT D2d (browser path; FIXED for native strict Done in Build 0126, see doneFidelity1.test.ts): finishing a hidden group does not hide its parts or empty its body", async () => {
     const group = { ...(await makeGroup(plainParts())), hidden: true } as WorkplaneShape;
     const { result } = await openAndFinish(group);
     expect(result.group!.groupedShapes!.every((part) => !part.hidden)).toBe(true);
