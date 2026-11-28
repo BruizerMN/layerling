@@ -1,4 +1,6 @@
 
+import type { DimmingRegistry } from "@/components/workplane/viewportDimming";
+import type { DimmingPresentation } from "@/lib/surroundings";
 import { Axis3d, Crosshair, Eye, EyeOff, Maximize2, MousePointer2, Plus, Rows3, X } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type Dispatch, type MutableRefObject, type PointerEvent as ReactPointerEvent, type SetStateAction } from "react";
 import type { CameraTurn } from "@/lib/viewCubeTransition";
@@ -62,6 +64,9 @@ export type ShapeRenderRecord = {
 };
 
 export type ThreeState = {
+  /** Build 0131: the dimming of the objects Group Editing calls surroundings (a neutral mechanism): owned by THIS viewport, never module-level; `dimmingInput` is what the page asked for. */
+  dimming?: DimmingRegistry;
+  dimmingInput?: { ids: ReadonlySet<string>; presentation: DimmingPresentation } | null;
   /** How far the orbit pivot may travel (the plate), as the camera clamp last saw it; the wheel zoom stays within it. */
   pivotLimits?: { halfWidth: number; halfDepth: number; minY: number; maxY: number };
   /** Where "Center view" last went: a part beyond the plate edge may be centred, so the pivot may reach as far as that part. */

@@ -130,11 +130,12 @@ import { NestedFocusInspector } from "@/components/workplane/NestedFocusInspecto
 import type { NestedFocusCardData, NestedFocusPlacement } from "@/lib/objectsFocus";
 import { orbitViewBy, panViewBy } from "@/lib/viewArrowKeys";
 import { useViewportKeyboardHooks } from "@/components/workplane/viewportKeyboard";
+import { referenceShapesOf, type DimmingPresentation } from "@/lib/surroundings";
 import { useViewportDoubleClick } from "@/components/workplane/useViewportDoubleClick";
 import { aimPickRay, firstShapeHit, paintLassoInView, pickImagePoint, pickLayFlatFace, pickMateFace, pickPaintFace, pickFaceCentre, pickRotationPivot, pickShapeAt, pointerRayFor, shapesUnderPointer, rayPointOnRotationPlane, RENDER_LAYER_SHAPES, splitAxisParameter, usePickOnlyPointer, worldTrianglePositions, type LayFlatPick, type PickOnlySelection } from "@/components/workplane/viewportPicking";
 import { fastEdgesGeometry } from "@/lib/fastEdgesGeometry";
 import { RENDER_LAYER_HELPERS, type PointCardOffset, type ThreeState, type MoveDimensionSession, type NoteOverlayState, type TapePoint, type TapeAttachment, type TapeEdgeAttachment, type TapeModel, type TapeOverlayState, type TapeCandidate, type DragItem, quaternionForShape, projectToScreen, syncMoveDimensionWorldLines, tapeShapeDimensions, tapePointWorld, tapeEdgeWorldPoints, tapeSegmentWorldPoints, tapeLengthMoverOf, tapeLengthRefusalText, syncTapeOverlay, tapeSegmentLengths, syncNoteOverlay, NoteOverlay, TapeOverlay, type RulerDimensionOverlayItem, type RulerDimensionOverlayState, syncRulerDimensionOverlay, RulerDimensionOverlay, type CornerRulerInstance, type CornerRulerOverlayState, syncCornerRulerToolOverlay, CornerRulerToolOverlay, syncOriginDimensionWorldLines, shapeCenter, shapeLocalExtents, projectShapeExtent, projectShapesExtent, type OriginDimensionFrame, formatMeasure, findShapeObject, releaseSharedShapeMaterials, disposeChildren, disposeObject } from "@/components/workplane/ViewportOverlays";
-import { MIN_SHAPE_SIZE, RENDER_LAYER_PREVIEWS, overhangUniforms, setEdgeLineStyle, setStrongHoles, setRulerInchScale, MODIFIER_EDGE_DEPTH_PULL, clamp, selectionFrameForShapes, refreshFrozenObjectMatrix, updateShapeObjectTransform, applySectionClipping, rebuildShapes, rebuildModifierEdges, setModifierEdgeHover, rebuildSelectionHelpers, cadFacePickLayerMesh, syncCadFaceLayer, syncBentTubeSegment, TRANSPARENT_SOLID_OPACITY, createShapeObject, onGroupDisplayReady } from "./workplane/viewportShapeObjects";
+import { MIN_SHAPE_SIZE, applyDimming, RENDER_LAYER_PREVIEWS, overhangUniforms, setEdgeLineStyle, setStrongHoles, setRulerInchScale, MODIFIER_EDGE_DEPTH_PULL, clamp, selectionFrameForShapes, refreshFrozenObjectMatrix, updateShapeObjectTransform, applySectionClipping, rebuildShapes, rebuildModifierEdges, setModifierEdgeHover, rebuildSelectionHelpers, cadFacePickLayerMesh, syncCadFaceLayer, syncBentTubeSegment, TRANSPARENT_SOLID_OPACITY, createShapeObject, onGroupDisplayReady } from "./workplane/viewportShapeObjects";
 import { movePivotToDepthUnder, WorkspaceSettings, createThreeScene, rebuildWorkplane, showWorkplanePlates, syncWorkplaneHoverPreview, updateSectionPlaneHelper, syncSplitPlane, type SplitConnectorMarks } from "./workplane/viewportScene";
 import { pointInsideOutline } from "@/lib/screenHull";
 import { isTypingTarget } from "@/lib/editorKeyTargets";
@@ -242,6 +243,9 @@ type WorkplaneViewportProps = {
   highlightIds?: readonly string[];
   /** Build 0130 (native): the objects the editing context allows to be picked or enclosed by a marquee (null: all). Surroundings are passed through: neither picked nor in the way of a member behind them. They stay drawn, snappable and usable as references. */
   selectableIds?: ReadonlySet<string> | null;
+  /** Build 0131: the objects drawn dimmed (Group Editing's surroundings), and how: a neutral presentation (opacity 0..1; whether they take part as geometric references). Appearance and reference participation ONLY: neither grants editing or selection (`selectableIds` does that, independent of this). null: nothing dimmed. */
+  dimmedIds?: ReadonlySet<string> | null;
+  dimming?: DimmingPresentation | null;
   /**
    * Objects Sidebar navigational focus (Build 0116): an object inside a closed group that the sidebar points at. Not a selection: the viewport only MARKS it (the pick highlight, in a layer of
    * its own: the object's own geometry where it can be built, else its nominal bounding box; nothing when `placement` is "none") and the Object tab shows the read-only card. `key` changes when
@@ -1673,6 +1677,8 @@ export function WorkplaneViewport({
   onShapeContextMenu,
   highlightIds,
   selectableIds = null,
+  dimmedIds = null,
+  dimming = null,
   nestedFocus,
   clearanceMark = null,
   printCheckView = null,
@@ -2838,6 +2844,23 @@ export function WorkplaneViewport({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inchScale]);
 
+  // Build 0131: the dimming follows the page's request without rebuilding anything. A slider move inside the dimmed range changes only the variants' opacity; every other change (an end of the range, the references
+  // choice, another set of objects) is one idempotent sync. The scene sync (`rebuildShapes`) applies it again after it creates or replaces objects.
+  useEffect(() => {
+    const state = threeRef.current;
+    if (!state) return;
+    const previous = state.dimmingInput ?? null;
+    const next = dimmedIds && dimming ? { ids: dimmedIds, presentation: dimming } : null;
+    state.dimmingInput = next;
+    const inside = (opacity: number) => opacity > 0 && opacity < 1;
+    if (previous && next && previous.ids === next.ids && previous.presentation.references === next.presentation.references && inside(previous.presentation.opacity) && inside(next.presentation.opacity) && state.dimming) {
+      state.dimming.setOpacityOnly(next.presentation.opacity);
+      state.needsRender = true;
+      return;
+    }
+    applyDimming(state);
+  }, [dimmedIds, dimming?.opacity, dimming?.references]);
+
   useEffect(() => {
     shapesRef.current = shapes;
     rebuildShapes(
@@ -3610,6 +3633,8 @@ export function WorkplaneViewport({
       }
       if (state.cadFaceLayer) disposeChildren(state.cadFaceLayer);
       if (state.cadFacePickMesh) disposeCadFacePickMesh(state.cadFacePickMesh);
+      state.dimming?.release();                                  // Build 0131: every temporary rendering change is undone before the scene is torn down
+      state.dimmingInput = null;
       disposeChildren(state.shapeLayer);
       state.shapeRecords.clear();
       disposeChildren(state.helperLayer);
@@ -4736,12 +4761,12 @@ export function WorkplaneViewport({
       const slideSnap = slideMoving
         ? {
             moving: slideMoving,
-            targets: moveSnapTargets(shapesRef.current, new Set(frame.ids), notesVisibleRef.current ? referencePoints(notesRef.current) : [], activeWorkplane),
+            targets: moveSnapTargets(referenceShapes(), new Set(frame.ids), notesVisibleRef.current ? referencePoints(notesRef.current) : [], activeWorkplane),
             guideY: activeWorkplane.origin.y,
           }
         : undefined;
       const resizeSnap = kind === "scale" && scaleSigns && state && workspaceRef.current.objectSnap
-        ? resizeSnapForHandle(state, frame, scaleSigns, shapesRef.current, new Set(frame.ids), notesVisibleRef.current ? referencePoints(notesRef.current) : [], activeWorkplane)
+        ? resizeSnapForHandle(state, frame, scaleSigns, referenceShapes(), new Set(frame.ids), notesVisibleRef.current ? referencePoints(notesRef.current) : [], activeWorkplane)
         : undefined;
       rememberResizeAnchor(shape.id, kind, resizeHandleKey);
       event.preventDefault();
@@ -6038,6 +6063,12 @@ export function WorkplaneViewport({
     const allowed = selectableIdsRef.current;
     return allowed ? shapesRef.current.filter((shape) => allowed.has(shape.id)) : shapesRef.current;
   }, []);
+  const dimmedIdsRef = useRef(dimmedIds);
+  dimmedIdsRef.current = dimmedIds;
+  const dimmingRef = useRef(dimming);
+  dimmingRef.current = dimming;
+  /** The shapes an interactive reference (snapping, measuring, alignment guides) may use: all, or without the dimmed objects that do not take part. Selection and picking never read this (`pickableShapes`). */
+  const referenceShapes = useCallback(() => referenceShapesOf(shapesRef.current, dimmedIdsRef.current, dimmingRef.current) as WorkplaneShape[], []);
   const pickShape = useCallback((clientX: number, clientY: number, pointerType = "mouse") => {
     const state = threeRef.current;
     return state ? pickShapeAt(state, pickableShapes(), clientX, clientY, pointerType, selectedIdsRef.current) : null;
@@ -6325,7 +6356,7 @@ export function WorkplaneViewport({
     const state = threeRef.current;
     if (!state) return null;
     const rect = state.renderer.domElement.getBoundingClientRect();
-    const visible = shapesRef.current.filter((shape) => !shape.hidden && !isNonSolidShape(shape));
+    const visible = referenceShapes().filter((shape) => !shape.hidden && !isNonSolidShape(shape));
     const spots = visible.flatMap((shape) => boxSnapSpots(shapeBoxCornersWorld(shape)));
     const tape = visible.length ? pickModelTapeCandidate(state, visible.map((shape) => shape.id), clientX, clientY) : null;
     if (tape?.attachment?.kind === "vertex") spots.push({ x: tape.x, y: tape.y, z: tape.z });
@@ -6434,7 +6465,7 @@ export function WorkplaneViewport({
       const rect = state.renderer.domElement.getBoundingClientRect();
       const pointerX = clientX - rect.left;
       const pointerY = clientY - rect.top;
-      const visible = shapesRef.current.filter((shape) => !shape.hidden && !isNonSolidShape(shape));
+      const visible = referenceShapes().filter((shape) => !shape.hidden && !isNonSolidShape(shape));
       // Die Ecken der Koerperboxen - die Kantenlinien, an denen das Massband
       // einrastet, sind nicht in jeder Ansicht da. Dazu deren echte Eckpunkte.
       const corners = visible.flatMap((shape) => shapeBoxCornersWorld(shape));
@@ -6736,7 +6767,7 @@ export function WorkplaneViewport({
   const resolveProtractorPoint = useCallback((clientX: number, clientY: number) => {
     const state = threeRef.current;
     if (!state) return null;
-    const visibleIds = shapesRef.current.filter((shape) => !shape.hidden).map((shape) => shape.id);
+    const visibleIds = referenceShapes().filter((shape) => !shape.hidden).map((shape) => shape.id);
     const candidate = visibleIds.length > 0 ? pickModelTapeCandidate(state, visibleIds, clientX, clientY, null, null, false, true) : null;
     const id = `protractor-point-${++protractorIdRef.current}`;
     if (candidate) return { id, x: candidate.x, y: candidate.y, z: candidate.z, ...(candidate.attachment ? { attachment: candidate.attachment } : {}) };
@@ -7632,7 +7663,7 @@ export function WorkplaneViewport({
           return entry ? [worldSnapBox(entry)] : [];
         }));
         dragRef.current.snapTargets = moveSnapTargets(
-          shapesRef.current,
+          referenceShapes(),
           dragged,
           notesVisibleRef.current ? referencePoints(notesRef.current) : [],
           activeWorkplane,

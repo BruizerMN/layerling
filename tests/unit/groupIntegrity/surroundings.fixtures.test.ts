@@ -5,11 +5,12 @@ import { restoreGroupedChildren } from "@/lib/editorBooleans";
 import { replaceAtFirst } from "@/lib/openGroupParts";
 import type { WorkplaneShape } from "@/types/layerling";
 import { fixturePath, loadFixture } from "./support";
-import { beginSurroundingsSession, DimmingRegistry, setSurroundingsOpacity } from "./surroundingsProto";
+import { DimmingRegistry } from "@/components/workplane/viewportDimming";
+import { beginSurroundingsSession, setSurroundingsOpacity, dimmingOf } from "@/lib/surroundings";
 
 /*
  * Build 0131 STEP 1: the real documents (LAYERLING_INTEGRITY_FIXTURES). HEADLESS: three.js scene objects are built by the production `createShapeObject` for every visible top-level shape of the document with one group opened
- * (the surroundings are everything else) and the PROTOTYPE registry dims them. MEASURED here: counts (objects, meshes = draw calls, triangles, distinct materials) and CPU-side times. NOT measurable here (no GPU): fill rate,
+ * (the surroundings are everything else) and the PRODUCTION registry dims them. MEASURED here: counts (objects, meshes = draw calls, triangles, distinct materials) and CPU-side times. NOT measurable here (no GPU): fill rate,
  * overdraw, frame time; those are reported as anticipated from the counts.
  */
 const stat = (o: THREE.Object3D) => {
@@ -44,15 +45,15 @@ for (const file of ["saud.lyl", "foshay.lyl"]) {
       const total = { meshes: 0, triangles: 0, materials: new Set<THREE.Material>() };
       for (const o of dimmedRoots) { const s = stat(o); total.meshes += s.meshes; total.triangles += s.triangles; s.materials.forEach((m) => total.materials.add(m)); }
       const reg = new DimmingRegistry();
-      const enter = ms(() => reg.sync(dimmedRoots, setSurroundingsOpacity(beginSurroundingsSession(), 0.5)));
+      const enter = ms(() => reg.sync(dimmedRoots, dimmingOf(setSurroundingsOpacity(beginSurroundingsSession(), 0.5))));
       const variants = reg.variantCount;
       const slider = ms(() => { for (let i = 1; i <= 100; i += 1) reg.setOpacityOnly(i / 100 * 0.99); }, 5) / 100;
-      const change = ms(() => reg.sync(dimmedRoots.slice(0, Math.floor(dimmedRoots.length / 2)), setSurroundingsOpacity(beginSurroundingsSession(), 0.5)));   // a transition changes which objects are dimmed
-      reg.sync(dimmedRoots, setSurroundingsOpacity(beginSurroundingsSession(), 0.5));
-      const to100 = ms(() => reg.sync(dimmedRoots, setSurroundingsOpacity(beginSurroundingsSession(), 1)));
-      const to0 = ms(() => reg.sync(dimmedRoots, beginSurroundingsSession()));
+      const change = ms(() => reg.sync(dimmedRoots.slice(0, Math.floor(dimmedRoots.length / 2)), dimmingOf(setSurroundingsOpacity(beginSurroundingsSession(), 0.5))));   // a transition changes which objects are dimmed
+      reg.sync(dimmedRoots, dimmingOf(setSurroundingsOpacity(beginSurroundingsSession(), 0.5)));
+      const to100 = ms(() => reg.sync(dimmedRoots, dimmingOf(setSurroundingsOpacity(beginSurroundingsSession(), 1))));
+      const to0 = ms(() => reg.sync(dimmedRoots, dimmingOf(beginSurroundingsSession())));
       let leaked = 0;
-      const cycles = ms(() => { for (let i = 0; i < 20; i += 1) { reg.sync(dimmedRoots, setSurroundingsOpacity(beginSurroundingsSession(), 0.4)); reg.release(); } }, 1) / 20;
+      const cycles = ms(() => { for (let i = 0; i < 20; i += 1) { reg.sync(dimmedRoots, dimmingOf(setSurroundingsOpacity(beginSurroundingsSession(), 0.4))); reg.release(); } }, 1) / 20;
       leaked = reg.variantCount + reg.touchedCount;
       console.info(`[0131 ${file}] ${flat.length} flat objects (${parts.length} members of "${edited.name}"), ${dimmedRoots.length} surroundings: ${total.meshes} meshes (= draw calls if all drawn), ${Math.round(total.triangles)} triangles, ${total.materials.size} distinct materials -> ${variants} dimming variants\n   build of all scene objects ${buildMs.toFixed(0)} ms (what a full scene build costs; not paid per slider move)\n   enter dimming ${enter.toFixed(2)} ms, change which objects are dimmed (a transition) ${change.toFixed(2)} ms, cross to 100% ${to100.toFixed(2)} ms, to 0% ${to0.toFixed(2)} ms; SLIDER MOVE ${(slider * 1000).toFixed(1)} microseconds (opacity of ${variants} materials)\n   20 enter/leave cycles ${cycles.toFixed(2)} ms each, leaked variants/memos after release: ${leaked}; created ${reg.created}, disposed ${reg.disposed}`);
       expect(leaked).toBe(0);

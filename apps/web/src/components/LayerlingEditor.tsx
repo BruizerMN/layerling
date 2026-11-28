@@ -184,6 +184,8 @@ import { snapShapeFootprintToVisibleGrid, visibleGridStep } from "@/lib/gridSnap
 import { composedShapeRotation, geometryRotationDegreesForShortcut, geometryRotationDelta, rotatedGeometryShapePatch } from "@/lib/geometryRotation";
 import { carryShapePivot, heightPatchKeepingBase, pivotAfterJoin, shapePivotFromWorld, shapePivotWorld, type PivotPoint } from "@/lib/rotationPivot";
 import { createLocalId } from "@/lib/localIds";
+import { SurroundingsOverlay } from "@/components/workplane/SurroundingsOverlay";
+import { beginSurroundingsSession, dimmingOf, referenceShapesOf, setSurroundingsOpacity, setUseAsReferences, type SurroundingsState } from "@/lib/surroundings";
 import { activationChanged, contextChain, editableIds, groupActionAllowed, notesViolation, onlyEditable, prepareContextCommit } from "@/lib/editingContext";
 import { canEditGroupAtLevel, mcpOpenGroupSummary, openGroupLevelsStillOpen, trackOpenGroupLevels, type OpenGroupLevel, type OpenGroupSession } from "@/lib/openGroupParts";
 import { applyMeshRepairs, scanForOpenMeshes, type MeshRepairScan } from "@/lib/meshRepair";
@@ -3250,6 +3252,8 @@ export function LayerlingEditor({
   // Visual Groups: document-level, not part of the undo history; reads filter by the objects that exist (lib/visualGroups.ts).
   const [visualGroups, setVisualGroups] = useState<VisualGroupsRegistry>(() => initialVisualGroups ?? EMPTY_VISUAL_GROUPS);
   const [selectedIds, setSelectedIdsState] = useState<string[]>([]);
+  // Build 0131 (native): the Surroundings overlay's state, per Group Editing SESSION. Starts at 0% with "Use as references" checked for every new session; kept through nested transitions; never saved, never in history, never dirty.
+  const [surroundings, setSurroundings] = useState<SurroundingsState>(beginSurroundingsSession);
   const [clipboard, setClipboard] = useState<WorkplaneShape[]>([]);
   const clipboardCopiedAtRef = useRef(0);
   // Ctrl+V waits for the browser's paste event (#1548): the press it belongs to, and the one still waiting for it.
@@ -12926,6 +12930,7 @@ export function LayerlingEditor({
     const current = entries[index];
     if (!current) return;
     groupSessionRef.current = { stash: { entries, index }, stashLevels: openGroupHistoryRef.current };
+    setSurroundings(beginSurroundingsSession());     // Build 0131: a NEW session starts at 0% with references checked
     openGroupHistoryRef.current = new Map([[current.fingerprint, openGroupsRef.current]]);
     const frame = sessionFrame(current);
     historyRef.current = frame.entries;
@@ -13551,6 +13556,20 @@ export function LayerlingEditor({
 
   // Build 0130 (native): what the viewport may pick or enclose (null: everything).
   const contextSelectableIds = useMemo(() => contextMembers(), [contextMembers, openGroups, shapes]);
+  // Build 0131: the surroundings are the live objects that are not members of the context. They are DRAWN dimmed (appearance) and may be used as references (participation); neither has any bearing on selection or editing.
+  const dimmedIds = useMemo(() => {
+    if (!contextSelectableIds) return null;
+    const ids = new Set<string>();
+    for (const shape of shapes) if (!contextSelectableIds.has(shape.id)) ids.add(shape.id);
+    return ids;
+  }, [contextSelectableIds, shapes]);
+  const dimmingPresentation = useMemo(() => (dimmedIds ? dimmingOf(surroundings) : null), [dimmedIds, surroundings]);
+  const dimmedIdsRef = useRef(dimmedIds);
+  dimmedIdsRef.current = dimmedIds;
+  const surroundingsRef = useRef(surroundings);
+  surroundingsRef.current = surroundings;
+  /** The objects an automatic placement (the fit test's free spot) may take into account: everything, or without the surroundings that do not take part as references. */
+  const referenceShapesNow = useCallback(() => referenceShapesOf(shapesRef.current, dimmedIdsRef.current, dimmedIdsRef.current ? dimmingOf(surroundingsRef.current) : null), []);
 
   // Undo past an opening brings that group back, and deleting every part leaves
   // nothing to close: in both cases that level is over, with every level inside it.
@@ -14084,7 +14103,7 @@ export function LayerlingEditor({
       // Always on the plate, never on a face the workplane was set on: it is printed as it lies.
       const base = horizontalPlacementWorkplane();
       const origin = buildPlates.newShapeOrigin(base);
-      const taken = shapesRef.current.filter((shape) => !shape.hidden && !isNonSolidShape(shape)).map((shape) => meshAabb(shape));
+      const taken = referenceShapesNow().filter((shape) => !shape.hidden && !isNonSolidShape(shape)).map((shape) => meshAabb(shape));
       const spot = fitTestSpot({ width: built.width, depth: built.depth }, origin, taken);
       const shape = canonicalizeShape({ ...built, ...placementPatchForNewShape(built, base, { ...origin, x: spot.x, z: spot.z }) });
       if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return { error: t("status.contextChanged") }; }
@@ -21396,6 +21415,8 @@ export function LayerlingEditor({
           onShapeContextMenu={historyViewState ? undefined : openShapeContextMenu}
           highlightIds={clearanceHighlightIds ?? menuHighlightIds}
           selectableIds={contextSelectableIds}
+          dimmedIds={dimmedIds}
+          dimming={dimmingPresentation}
           nestedFocus={nestedFocusView}
           clearanceMark={clearanceMark}
           printCheckView={printCheckView}
@@ -21533,6 +21554,13 @@ export function LayerlingEditor({
           />
         )}
       </div>
+      {nativeDocument && dimmedIds ? (
+        <SurroundingsOverlay
+          state={surroundings}
+          onOpacity={(value) => setSurroundings((current) => setSurroundingsOpacity(current, value))}
+          onReferences={(value) => setSurroundings((current) => setUseAsReferences(current, value))}
+        />
+      ) : null}
       {shapeContextMenu && toolbarMode === "geometry" ? (
         <ShapeContextMenu
           x={shapeContextMenu.x}

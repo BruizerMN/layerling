@@ -1,5 +1,6 @@
 "use client";
 
+import { DimmingRegistry } from "@/components/workplane/viewportDimming";
 import * as THREE from "three";
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { groupDisplayMergeable, groupShowsPartColors } from "@/lib/groupColors";
@@ -1301,6 +1302,26 @@ export function applySectionClipping(state: ThreeState | null, plane: THREE.Plan
   state.needsRender = true;
 }
 
+/**
+ * Build 0131: puts the dimmed objects (`state.dimmingInput`) into the state the page asked for, or, with no input, undoes every temporary rendering change. Appearance only: no geometry, no record, no model data.
+ * Runs at the end of every scene sync, so objects the sync created or re-materialed are dimmed consistently, and meshes it replaced or removed are forgotten.
+ */
+export function applyDimming(state: ThreeState) {
+  const input = state.dimmingInput ?? null;
+  if (!input) {
+    state.dimming?.release();
+    return;
+  }
+  const registry = (state.dimming ??= new DimmingRegistry());
+  const roots: THREE.Object3D[] = [];
+  input.ids.forEach((id) => {
+    const record = state.shapeRecords.get(id);
+    if (record) roots.push(record.object);
+  });
+  registry.sync(roots, input.presentation);
+  state.needsRender = true;
+}
+
 export function rebuildShapes(
   state: ThreeState | null,
   shapes: WorkplaneShape[],
@@ -1329,6 +1350,7 @@ export function rebuildShapes(
     if (state.sectionPlane) {
       applySectionClipping(state, state.sectionPlane);
     }
+    applyDimming(state);
     state.needsRender = true;
     return;
   }
@@ -1400,6 +1422,7 @@ export function rebuildShapes(
   if (state.sectionPlane) {
     applySectionClipping(state, state.sectionPlane);
   }
+  applyDimming(state);
   state.needsRender = true;
 }
 

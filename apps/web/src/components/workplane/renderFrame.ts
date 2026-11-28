@@ -332,6 +332,8 @@ function splitSeeThroughAtPlate(state: FrameState, plate: THREE.Object3D) {
       const mesh = child as THREE.Mesh;
       const material = mesh.material;
       if (!mesh.isMesh || Array.isArray(material) || !(material instanceof THREE.MeshStandardMaterial) || !material.transparent) return;
+      // Build 0131: dimmed surroundings below 100% are drawn once, not twice (their normal rendering, far half included, is back at 100%).
+      if (mesh.userData.dimmed) return;
       const geometry = mesh.geometry;
       if (!geometry.boundingSphere) geometry.computeBoundingSphere();
       const sphere = geometry.boundingSphere;
