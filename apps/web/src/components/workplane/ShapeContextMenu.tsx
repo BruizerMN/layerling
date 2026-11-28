@@ -18,6 +18,8 @@ export type ShapeContextMenuItem = {
   checked?: boolean;
   /** Native menu only: the item opens these as a submenu (the Visual Groups commands). The web menu never gets such an item. */
   submenu?: ShapeContextMenuItem[];
+  /** Build 0132: shown but unavailable (the command is refused while a group is being edited). */
+  disabled?: boolean;
   /** The pointer or the focus is on the item (true) or has left it (false). */
   onHover?: (active: boolean) => void;
   /** `shift`: Shift was held, to add to the selection. */
@@ -109,6 +111,7 @@ export function ShapeContextMenu({ x, y, label, items, onClose }: {
           key={item.key}
           type="button"
           role="menuitem"
+          disabled={item.disabled}
           className={`${item.danger ? "danger" : ""}${item.separated ? " separated" : ""}`.trim() || undefined}
           onClick={(event) => {
             if (!item.keepOpen) onClose();

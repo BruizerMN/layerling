@@ -293,6 +293,8 @@ export function SecondaryToolbar({
   hasSelection,
   selectionFacts,
   hiddenShapeCount,
+  groupEditing = false,
+  editingChain,
   selectionHidden,
   mirrorMode,
   canSplit,
@@ -498,6 +500,10 @@ export function SecondaryToolbar({
   /** What the selection is, for the tooltip of a greyed-out tool to say what is missing. */
   selectionFacts: SelectionFacts;
   hiddenShapeCount: number;
+  /** Build 0132 (native): a group is being edited: the whole-design commands (Unhide All, Hide Others) are unavailable. */
+  groupEditing?: boolean;
+  /** Build 0132: the groups being edited, outermost first, for the native breadcrumb strip. */
+  editingChain?: { id: string; name: string }[];
   selectionHidden: boolean;
   mirrorMode: boolean;
   canSplit: boolean;
@@ -989,17 +995,18 @@ export function SecondaryToolbar({
       inspectorVisible,
       textFocus,
       presentation: presentationActive,
+      editingChain: editingChain ?? [],
       standby: presentationActive && presentationStandby,
       // Edit: the Clipboard and History ribbon groups' commands, for the active mode (a sketch has its own undo, copy, paste, duplicate and delete).
       edit: sketching
         ? { undo: sketchCanUndo, redo: sketchCanRedo, cut: false, copy: sketchHasSelection, paste: sketchHasClipboard, duplicate: sketchHasSelection, delete: sketchHasSelection, history: false, historyActive: false }
         : { undo: canUndo, redo: canRedo, cut: canModifySelection, copy: hasSelection, paste: hasClipboard, duplicate: hasSelection, delete: canModifySelection, history: canHistoryView, historyActive: historyViewActive },
       // View: the Visibility group's commands (objects only exist in 3D).
-      view: sketching ? null : { hiddenCount: hiddenShapeCount, selectionHidden, hasSelection, outlinerOpen, noteCount, notesVisible, overhangsVisible, overhangAngle },
+      view: sketching ? null : { groupEditing, hiddenCount: hiddenShapeCount, selectionHidden, hasSelection, outlinerOpen, noteCount, notesVisible, overhangsVisible, overhangAngle },
       // File: the File group's commands (3D only, as the ribbon group was).
       file: sketching ? null : { import: !historyViewActive, export: true, attachments: true, insertDesigns: !historyViewActive && !presentationActive },
     });
-  }, [nativeChrome, toolbarMode, historyViewActive, focusMode, ribbonPinned, inspectorVisible, textFocus, presentationActive, presentationStandby, sketchCanUndo, sketchCanRedo, sketchHasSelection, sketchHasClipboard, canUndo, canRedo, canModifySelection, hasSelection, hasClipboard, canHistoryView, hiddenShapeCount, selectionHidden, outlinerOpen, noteCount, notesVisible, overhangsVisible, overhangAngle]);
+  }, [nativeChrome, toolbarMode, historyViewActive, focusMode, ribbonPinned, inspectorVisible, textFocus, presentationActive, presentationStandby, sketchCanUndo, sketchCanRedo, sketchHasSelection, sketchHasClipboard, canUndo, canRedo, canModifySelection, hasSelection, hasClipboard, canHistoryView, hiddenShapeCount, selectionHidden, outlinerOpen, noteCount, notesVisible, overhangsVisible, overhangAngle, editingChain, groupEditing]);
   const nativeCommandRef = useRef<(command: string, value?: CommandValue) => void>(() => undefined);
   nativeCommandRef.current = (command, value) => {
     // Build 0099: the host's Measure popover closed (any reason, Presentation Mode too): the page puts every measuring operation down, existing measurements untouched.
@@ -1499,11 +1506,11 @@ export function SecondaryToolbar({
         "show-hidden",
         hiddenShapeCount === 0 ? t("visibility.nothingHidden") : t("visibility.showAllHidden", { count: hiddenShapeCount }),
         visibilityGroup,
-        hiddenShapeCount > 0,
+        hiddenShapeCount > 0 && !groupEditing,
         onShowHidden,
         { icon: Eye },
       ),
-      plain("hide-others", t("contextMenu.hideOthers"), visibilityGroup, hasSelection, onHideOthers, { icon: EyeOff }),
+      plain("hide-others", t("contextMenu.hideOthers"), visibilityGroup, hasSelection && !groupEditing, onHideOthers, { icon: EyeOff }),
       plain("invert-selection", t("contextMenu.invertSelection"), t("shortcuts.group.selection"), true, onInvertSelection, { icon: ArrowLeftRight }),
       plain("notes", t("visibility.notes"), visibilityGroup, noteCount > 0, onToggleNotes, { icon: notesVisible ? Eye : EyeOff, active: notesVisible }),
       plain("overhangs", t("visibility.overhangs", { angle: overhangAngle }), visibilityGroup, true, onToggleOverhangs, { icon: AlertTriangle, active: overhangsVisible }),
@@ -1830,7 +1837,7 @@ export function SecondaryToolbar({
                 className="visibility-dropdown-action"
                 type="button"
                 role="menuitem"
-                disabled={hiddenShapeCount === 0}
+                disabled={hiddenShapeCount === 0 || groupEditing}
                 onClick={() => {
                   setVisibilityOpen(false);
                   onShowHidden();
@@ -1845,7 +1852,7 @@ export function SecondaryToolbar({
                 className="visibility-dropdown-action"
                 type="button"
                 role="menuitem"
-                disabled={!hasSelection}
+                disabled={!hasSelection || groupEditing}
                 title={hasSelection ? undefined : t("editor.needs.selection")}
                 onClick={() => {
                   setVisibilityOpen(false);

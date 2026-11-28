@@ -19,6 +19,7 @@ import "./focusMode.css";
 import "./fileBackups.css";
 import "./nativeStatusBar.css";
 import "./nativeInspector.css";
+import "./groupEditingBar.css";
 import "./nativeAppearance.css";
 import { DiagnoseStrip } from "@/components/DiagnoseStrip";
 import { HostBridge } from "@/components/HostBridge";

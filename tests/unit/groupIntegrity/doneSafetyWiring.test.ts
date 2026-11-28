@@ -22,7 +22,9 @@ describe("Done safety wiring", () => {
   it("Cancel from the button and the Objects Sidebar asks the host when changes would be discarded; the confirmed op cancels", () => {
     expect(editor).toContain('requestHostAction("confirmCancelGroupEditing")');
     expect(editor).toContain('onClick={() => requestCancelOpenGroup()}');
-    expect(editor).toMatch(/command\.op === "cancelGroupConfirmed"\) \{\s*\n\s*cancelOpenGroup\(\);/);
+    // Build 0132: the confirmation answers either the whole-session question (the Context Bar) or the one-level question (a row's Cancel)
+    expect(editor).toContain('command.op === "cancelGroupConfirmed") {');
+    expect(editor).toContain("if (wholeCancelPendingRef.current) { wholeCancelPendingRef.current = false; cancelWholeSession(); } else cancelOpenGroup();");
     expect(OBJECTS_OPS).toContain("cancelGroupConfirmed");
     expect(objects).toContain('case "cancelGroupConfirmed"');
   });

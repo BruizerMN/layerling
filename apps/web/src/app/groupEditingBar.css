@@ -1,0 +1,58 @@
+/*
+ * Build 0132: the Workspace Context Bar (components/workplane/GroupEditingContextBar.tsx). It spans exactly the Workspace column: placed the way the Inspector dock is (fixed, from the toolbar's bottom edge), ending before the
+ * Inspector when that is shown; the stage gives it room (margin and height), so it never covers the 3D view. Colours come from the host's live accent and its contrasting foreground. Hidden in Presentation Mode (the page
+ * does not set the flag there); visible in Focus Mode.
+ */
+html[data-context-bar="on"] { --context-bar-height: 32px; }
+html[data-context-bar="on"] .workplane-stage {
+  margin-top: var(--context-bar-height);
+  height: calc(100vh - var(--editor-toolbar-height) - var(--editor-footer-height) - var(--context-bar-height));
+}
+.group-editing-context-bar {
+  --bar-bg: var(--accent-live, #0a84ff);
+  --bar-fg: var(--accent-live-fg, #ffffff);
+  position: fixed;
+  top: var(--editor-toolbar-height);
+  left: 0;
+  right: 0;
+  height: var(--context-bar-height, 32px);
+  z-index: 5;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  background: var(--bar-bg);
+  color: var(--bar-fg);
+  font: 12px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  user-select: none;
+}
+html[data-inspector="on"]:not([data-focus-mode="on"]) .group-editing-context-bar { right: 296px; }
+html[data-presentation="on"] .group-editing-context-bar { display: none; }
+.group-editing-context-bar .context-bar-left,
+.group-editing-context-bar .context-bar-right { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.group-editing-context-bar .context-bar-right { justify-content: flex-end; gap: 8px; }
+.group-editing-context-bar .context-bar-centre { min-width: 0; display: flex; justify-content: center; }
+.group-editing-context-bar .context-bar-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.group-editing-context-bar .context-bar-slider { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+.group-editing-context-bar .context-bar-slider input[type="range"] { width: 120px; min-width: 40px; flex: 0 1 120px; accent-color: var(--bar-fg); margin: 0; }
+.group-editing-context-bar .context-bar-percent { min-width: 32px; text-align: right; font-variant-numeric: tabular-nums; }
+.group-editing-context-bar .context-bar-check { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.group-editing-context-bar .context-bar-check[data-disabled] { opacity: 0.6; }
+.group-editing-context-bar .context-bar-check input { accent-color: var(--bar-fg); margin: 0; }
+.group-editing-context-bar .context-bar-button {
+  height: 22px;
+  padding: 0 12px;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--bar-fg) 70%, transparent);
+  background: transparent;
+  color: var(--bar-fg);
+  font: inherit;
+  font-weight: 500;
+  cursor: default;
+}
+.group-editing-context-bar .context-bar-button:hover:not(:disabled) { background: color-mix(in srgb, var(--bar-fg) 18%, transparent); }
+.group-editing-context-bar .context-bar-button.primary { background: var(--bar-fg); color: var(--bar-bg); border-color: var(--bar-fg); font-weight: 600; }
+.group-editing-context-bar .context-bar-button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--bar-fg) 88%, var(--bar-bg)); }
+.group-editing-context-bar .context-bar-button:disabled { opacity: 0.55; }

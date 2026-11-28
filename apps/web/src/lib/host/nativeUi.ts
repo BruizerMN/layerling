@@ -18,12 +18,14 @@ export type NativeUiState = {
   ribbonPinned: boolean;
   inspectorVisible?: boolean;
   textFocus?: boolean;
+  /** Build 0132: the chain of groups being edited, outermost first (ids and names): the sidebar's breadcrumb strip shows it on both tabs. Absent or empty: no session. */
+  editingChain?: { id: string; name: string }[];
   /** Presentation Mode is on in this document (the host disables its menus except Exit and Quit). */
   presentation?: boolean;
   /** Presentation Mode is showing the standby screen (the model is hidden); the host titles its Presentation menu from it. */
   standby?: boolean;
   edit?: { undo: boolean; redo: boolean; cut: boolean; copy: boolean; paste: boolean; duplicate: boolean; delete: boolean; history: boolean; historyActive: boolean } | null;
-  view?: { hiddenCount: number; selectionHidden: boolean; hasSelection: boolean; outlinerOpen: boolean; noteCount: number; notesVisible: boolean; overhangsVisible: boolean; overhangAngle: number } | null;
+  view?: { groupEditing?: boolean; hiddenCount: number; selectionHidden: boolean; hasSelection: boolean; outlinerOpen: boolean; noteCount: number; notesVisible: boolean; overhangsVisible: boolean; overhangAngle: number } | null;
   /** Build 0095: which View Bar commands the mounted view (3D or Sketch) can run now and which are on; the host's "View Bar" menu validates and checks from it. */
   viewBar?: ViewBarState | null;
   file?: { import: boolean; export: boolean; attachments: boolean; /** Build 0070: Import Layerling Files can run now (3D, history view closed). */ insertDesigns?: boolean } | null;

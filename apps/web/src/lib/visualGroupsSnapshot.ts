@@ -28,6 +28,8 @@ export interface PaletteGroup {
 export interface VisualGroupsPaletteState {
   /** A history state is shown: the palette changes nothing. */
   readOnly: boolean;
+  /** Build 0132: a group is being edited: every action except browsing, searching, expanding and collapsing is unavailable (the engine refuses them; the palette shows it). */
+  locked?: boolean;
   groups: PaletteGroup[];
   /** The selected objects that are in a group, in selection order. */
   selected: string[];
@@ -48,7 +50,8 @@ export function visualGroupsPaletteState(
   /** The original groups of the levels the editor has open: while open they are not among `shapes` (their parts are), but they keep their Visual Group. */
   openGroups: readonly WorkplaneShape[] = [],
 ): VisualGroupsPaletteState {
-  if (registry.items.length === 0) return { readOnly, groups: [], selected: [] };
+  const locked = openGroups.length > 0;
+  if (registry.items.length === 0) return { readOnly, ...(locked ? { locked } : {}), groups: [], selected: [] };
   const live = liveObjectIds(shapes);
   const editingGroups = new Map(openGroups.filter((group) => !live.has(group.id)).map((group) => [group.id, group]));
   const resolved = resolveVisualGroups(registry, editingGroups.size > 0 ? new Set([...live, ...editingGroups.keys()]) : live);
@@ -69,7 +72,7 @@ export function visualGroupsPaletteState(
   });
   const groups = resolved.items.map(build);
   // Only objects that exist are selectable; an open group is not one of them.
-  return { readOnly, groups, selected: selectedIds.filter((id) => member.has(id) && !editingGroups.has(id)) };
+  return { readOnly, ...(locked ? { locked } : {}), groups, selected: selectedIds.filter((id) => member.has(id) && !editingGroups.has(id)) };
 }
 
 export function visualGroupsOutline(registry: VisualGroupsRegistry): ChooserGroup[] {

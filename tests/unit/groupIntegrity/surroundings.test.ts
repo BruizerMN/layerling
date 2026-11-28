@@ -8,7 +8,7 @@ import { primitive } from "./support";
 import { DimmingRegistry } from "@/components/workplane/viewportDimming";
 import { selectionBounds } from "@/components/workplane/cameraRig";
 import { beginSurroundingsSession, dimmingOf, referencesCheckboxDisabled, referenceShapesOf, setSurroundingsOpacity, setUseAsReferences, surroundingsParticipate } from "@/lib/surroundings";
-import { SurroundingsOverlay } from "@/components/workplane/SurroundingsOverlay";
+import { GroupEditingContextBar } from "@/components/workplane/GroupEditingContextBar";
 import { renderToString } from "react-dom/server";
 import { createElement } from "react";
 
@@ -311,14 +311,15 @@ describe("Production: the requirements Bill added (raycast, material changes, fi
     ra.release(); expect((meshesOf(b)[0].material as THREE.Material).opacity).toBeCloseTo(0.9, 6);
     expect(docB).toEqual({ opacity: 0.9, references: true });
   });
-  it("the overlay: the checkbox is DISABLED at 0% yet CHECKED; enabled above 0%; unchecked stays unchecked (state is only the page's)", () => {
-    const html = (state: { opacity: number; references: boolean }) => renderToString(createElement(SurroundingsOverlay, { state, onOpacity: () => undefined, onReferences: () => undefined }));
+  it("the Context Bar's Surroundings controls: the checkbox is DISABLED at 0% yet CHECKED; enabled above 0%; unchecked stays unchecked (state is only the page's)", () => {
+    const html = (state: { opacity: number; references: boolean }) => renderToString(createElement(GroupEditingContextBar, { name: "Wall", state, busy: false, onOpacity: () => undefined, onReferences: () => undefined, onDone: () => undefined, onCancel: () => undefined }));
     const zero = html({ opacity: 0, references: true });
     expect(zero).toMatch(/type="checkbox"[^>]*checked/); expect(zero).toMatch(/type="checkbox"[^>]*disabled/);
     const half = html({ opacity: 0.5, references: false });
     expect(half).not.toMatch(/type="checkbox"[^>]*disabled/); expect(half).not.toMatch(/type="checkbox"[^>]*checked/);
     expect(html({ opacity: 0.5, references: true })).toMatch(/50(<!-- -->)?%/);
   });
+
 });
 
 describe("S: the wiring (native only; the browser has no context, so nothing is dimmed)", () => {
@@ -332,7 +333,7 @@ describe("S: the wiring (native only; the browser has no context, so nothing is 
   });
   it("editor: the session state resets when a NEW session begins; the overlay and the props exist only for a native document in a context; placement reads referenceShapesNow()", () => {
     expect(editor.slice(editor.indexOf("const beginGroupSession = useCallback"), editor.indexOf("const endGroupSession"))).toContain("setSurroundings(beginSurroundingsSession());");
-    expect(editor).toContain("{nativeDocument && dimmedIds ? (\n        <SurroundingsOverlay");
+    expect(editor).toContain("{contextBarShown ? (\n        <GroupEditingContextBar");
     expect(editor).toContain("dimmedIds={dimmedIds}\n          dimming={dimmingPresentation}");
     expect(editor).toContain("const taken = referenceShapesNow().filter(");
     expect(editor.slice(editor.indexOf("const contextMembers = useCallback("), editor.indexOf("/** The modeling selection can only"))).toContain("nativeDocument && openGroupsRef.current.length");

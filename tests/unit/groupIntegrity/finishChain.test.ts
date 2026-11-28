@@ -8,13 +8,33 @@ import { replaceAtFirst } from "@/lib/openGroupParts";
 import { cloneWorkplaneShapeTreeWithFreshIds } from "@/lib/workplaneShapes";
 import type { WorkplaneShape } from "@/types/layerling";
 import { assertKernelLive, fixturePath, loadFixture, makeGroup, primitive, startKernel } from "./support";
-import { finishChain, finishChainPerLevel, type ChainLevel } from "./finishChainProto";
+import { finishChain as finishChainProduction, notesAfterChain, type ChainLevel, type ChainResult } from "@/lib/groupFinishChain";
+import { rebuildGroupFromParts } from "@/lib/groupReconstruction";
+import { notesAfterShapeChange } from "@/lib/noteAnchoring";
+import { createVisualGroup, EMPTY_VISUAL_GROUPS, liveObjectIds, membershipMap, moveObjectsToGroup } from "@/lib/visualGroups";
+import type { WorkplaneNote } from "@/types/layerling";
+import { TRIANGLE_LIMIT } from "./support";
+
+const rebuild = (original: WorkplaneShape, parts: WorkplaneShape[], opened: readonly WorkplaneShape[] | undefined) => rebuildGroupFromParts(original, parts, { triangleLimit: TRIANGLE_LIMIT, strict: true, opened });
+type R = { ok: true; shapes: WorkplaneShape[]; open: ChainLevel[] } | { ok: false; level: number; message: string };
+/** The production transactional completion (the pure module the editor calls). */
+const finishChain = (shapes: readonly WorkplaneShape[], levels: readonly ChainLevel[], keepOpen = 0): Promise<ChainResult<ChainLevel>> => finishChainProduction(shapes, levels, keepOpen, rebuild);
+/** What the editor did before Build 0132 in effect: each level finished and COMMITTED on its own (every intermediate state recorded); a refusal at an outer level comes after the inner levels are committed. */
+async function finishChainPerLevel(shapes: readonly WorkplaneShape[], levels: readonly ChainLevel[], keepOpen = 0) {
+  let cur: WorkplaneShape[] = [...shapes]; let open = [...levels]; const states: WorkplaneShape[][] = [];
+  while (open.length > keepOpen) {
+    const step = (await finishChain(cur, open, open.length - 1)) as R | ChainResult<ChainLevel>;
+    if (!step.ok) return { shapes: cur, open, states, refused: { level: step.level, message: step.message } };
+    cur = step.shapes; open = step.open; states.push(cur);
+  }
+  return { shapes: cur, open, states, refused: null as { level: number; message: string } | null };
+}
 
 beforeAll(async () => { kernel.runtime = Promise.resolve(await startKernel()); await assertKernelLive(); });
 
 /*
- * Build 0132 STAGE 1: transactional completion of a chain of editing levels (whole-session Done; a breadcrumb click). FAILING FIRST: production has no such function. PROTOTYPE (test tree, production reconstruction):
- * equivalence with the per-level path on real SAUD/Foshay chains, and REFUSAL ATOMICITY (an outer refusal leaves nothing of the successfully computed inner levels). Real documents are deep-frozen: nothing may write to them.
+ * Build 0132: transactional completion of a chain of editing levels (whole-session Done; a breadcrumb click), PRODUCTION module `lib/groupFinishChain` (Stage 1's failing-first tests, now passing): complete equivalence with the per-level
+ * path on real SAUD/Foshay chains (shapes, identities, order, properties, notes, Visual Groups, selection), and REFUSAL ATOMICITY (an outer refusal leaves nothing of the inner levels). Real documents are deep-frozen: nothing may write to them.
  */
 const root = path.resolve(__dirname, "../../../");
 const editor = readFileSync(path.join(root, "apps/web/src/components/LayerlingEditor.tsx"), "utf8");
@@ -39,19 +59,24 @@ function openChain(doc: readonly WorkplaneShape[], top: number, route: number[])
 }
 const addMembers = (levels: ChainLevel[], k: number, ...added: WorkplaneShape[]) => levels.map((l, i) => (i === k ? { ...l, childIds: [...l.childIds, ...added.map((a) => a.id)] } : l));
 
-describe("FAILING FIRST: production must provide the transactional completion", () => {
-  it.fails("a production module (lib/groupFinishChain) computes all levels deepest-first without committing", async () => {
+describe("Production provides the transactional completion (Stage 1 failing-first tests, now passing)", () => {
+  it("a production module (lib/groupFinishChain) computes all levels deepest-first without committing", async () => {
     const mod = await import("@/lib/groupFinishChain" as string);
     expect(typeof mod.finishChain).toBe("function");
   });
-  it.fails("the editor has whole-session Done and Cancel and a go-to-level operation that use it (and commit once)", () => {
-    expect(editor).toContain("finishAllOpenGroups");
-    expect(editor).toContain("cancelWholeSession");
-    expect(editor).toContain("finishToLevel");
+  it("the editor has whole-session Done and Cancel and a go-to-level operation that use it (and commit once)", () => {
+    const complete = editor.slice(editor.indexOf("const completeLevels = useCallback"), editor.indexOf("const finishAllOpenGroups"));
+    expect(editor).toContain("const finishAllOpenGroups");
+    expect(editor).toContain("const cancelWholeSession");
+    expect(editor).toContain("const finishToLevel");
+    expect((complete.match(/commitOpenGroupTransition\(/g) ?? []).length).toBe(1);                // ONE commit, however many levels
+    expect((complete.match(/endGroupSession\("done"\)/g) ?? []).length).toBe(1);               // one document-level history step
+    expect(complete.indexOf("if (!outcome.ok) return refuseOpenGroupStep(outcome.message);")).toBeLessThan(complete.indexOf("commitOpenGroupTransition("));   // a refusal returns BEFORE anything is written
+    expect(complete).not.toMatch(/setSelectedIds|setSurroundings|sessionEditedRef\.current = /);     // a refusal touches neither selection nor Surroundings nor the session state
   });
 });
 
-describe("PROTOTYPE: transactional completion on synthetic nested groups", () => {
+describe("Production: transactional completion on synthetic nested groups", () => {
   const build = async () => {
     const inner = await makeGroup([primitive("i1", "box", { width: 10, depth: 10, height: 10 }), primitive("i2", "box", { x: 12, width: 10, depth: 10, height: 10 })]);
     const outer = await makeGroup([{ ...inner, id: "innerG", name: "Inner" } as WorkplaneShape, primitive("o2", "box", { x: 40, width: 10, depth: 10, height: 10 })]);
@@ -144,3 +169,71 @@ for (const file of ["saud.lyl", "foshay.lyl"]) {
     }, 1_800_000);
   });
 }
+
+describe("Production: COMPLETE document equivalence on real chains (notes, Visual Groups, flags, selection, identity, order) and atomicity of breadcrumb navigation", () => {
+  for (const file of ["saud.lyl", "foshay.lyl"]) {
+    describe.skipIf(!fixturePath(file))(`${file}`, () => {
+      it("transactional == per-level in every observable respect; a breadcrumb refusal changes nothing", async () => {
+        const project = await loadFixture(fixturePath(file)!);
+        const doc = deepFreeze(project.shapes);
+        const routes: { top: number; route: number[] }[] = [];
+        doc.forEach((top, ti) => { const walk = (g: WorkplaneShape, route: number[]) => { if (g.groupedShapes!.length >= 2 && g.groupedShapes!.some(hasGroup) && !g.locked && !g.shapeLocked) routes.push({ top: ti, route }); g.groupedShapes!.forEach((c, ci) => { if (hasGroup(c) && route.length < 4) walk(c, [...route, ci]); }); }; if (hasGroup(top) && !top.locked && !top.shapeLocked) walk(top, []); });
+        routes.sort((a, b) => b.route.length - a.route.length);
+        const step = Math.max(1, Math.floor(routes.length / 30)); const sample = routes.filter((_, i) => i % step === 0).slice(0, 30);
+        const donors = doc.filter(hasGroup);
+        const t = { cases: 0, compared: 0, order: 0, ids: 0, props: 0, notes: 0, notesSingleStepDiffers: 0, vg: 0, selection: 0, refusedBoth: 0, breadcrumbRefusal: 0, breadcrumbTried: 0 };
+        let n = 0;
+        for (const { top, route } of sample) {
+          n += 1; t.cases += 1;
+          const { cur, levels } = openChain(doc, top, route);
+          const inner = levels.at(-1)!;
+          const pasted = cloneWorkplaneShapeTreeWithFreshIds(donors[(n * 5) % donors.length].id === doc[top].id ? donors[(n * 5 + 1) % donors.length] : donors[(n * 5) % donors.length], "paste");
+          const removed = inner.openedParts.find(hasGroup) ?? inner.openedParts[0];
+          const edited = [...cur.filter((s) => s.id !== removed.id), pasted];
+          const lv = addMembers(levels, levels.length - 1, pasted);
+          const outside = doc.find((s) => s.id !== doc[top].id)!;
+          // free and attached notes: on a surrounding, on an inner part, on the outermost group, free
+          const note = (id: string, shapeId?: string): WorkplaneNote => ({ id, text: id, x: 1, y: 2, z: 3, ...(shapeId ? { anchor: { shapeId, normalized: [0.5, 0.5, 0.5] } } : {}) }) as WorkplaneNote;
+          const notes0 = [note("n-out", outside.id), note("n-part", inner.openedParts[0].id), note("n-top", lv[0].original.id), note("n-free"), note("n-new", pasted.id)];
+          const { registry, id: vgId } = createVisualGroup(EMPTY_VISUAL_GROUPS, { name: "V" });
+          const reg = moveObjectsToGroup(registry, [outside.id, lv[0].original.id].filter(Boolean), vgId);
+          const tx = await finishChain(edited, lv, 0);
+          const seq = await finishChainPerLevel(edited, lv, 0);
+          if (!tx.ok) { if (seq.refused) t.refusedBoth += 1; continue; }
+          if (seq.refused) continue;
+          t.compared += 1;
+          if (tx.shapes.map((s) => s.id).join() === seq.shapes.map((s) => s.id).join()) t.order += 1;                                         // identity and order
+          if (sameDocs(tx.shapes, seq.shapes)) t.props += 1;                                                                                  // geometry, properties, hierarchy, hidden/locked/shapeLocked
+          t.ids += 1;
+          // notes: the editor re-pins once per level (sequential) or once (single): the same notes result
+          let seqNotes = notes0; let prev: readonly WorkplaneShape[] = edited;
+          for (let k = seq.states.length - 1, level = lv.length - 1; k >= 0; k -= 1, level -= 1) { seqNotes = notesAfterShapeChange(seqNotes, prev, seq.states[seq.states.length - 1 - k] ?? seq.shapes, new Set(lv.slice(0, level).map((l) => l.original.id)), true); prev = seq.states[seq.states.length - 1 - k]; }
+          const seqNotes2 = (() => { let notes = notes0; let p: readonly WorkplaneShape[] = edited; seq.states.forEach((state, index) => { const held = new Set(lv.slice(0, lv.length - 1 - index).map((l) => l.original.id)); notes = notesAfterShapeChange(notes, p, state, held, true); p = state; }); return notes; })();
+          void seqNotes;
+          const txNotes = notesAfterChain(notes0, edited, tx.states, lv);                                                                    // what the editor does
+          const singleStepNotes = notesAfterShapeChange(notes0, edited, tx.shapes, new Set(tx.open.map((l) => l.original.id)), true);      // the alternative (not chosen): one re-pinning against the final result
+          if (JSON.stringify(singleStepNotes) !== JSON.stringify(seqNotes2)) t.notesSingleStepDiffers += 1;
+          if (JSON.stringify(txNotes) === JSON.stringify(seqNotes2)) t.notes += 1;
+          else if (process.env.LAYERLING_DEBUG_NOTES) for (const note of txNotes) { const other = seqNotes2.find((x) => x.id === note.id); if (JSON.stringify(note) !== JSON.stringify(other)) console.info(`[0132 notes diff] levels ${lv.length} note ${note.id}: single ${JSON.stringify(note.anchor ?? "free")} ${[note.x, note.y, note.z].map((v) => v.toFixed(2))} ; per-level ${JSON.stringify(other?.anchor ?? "free")} ${other ? [other.x, other.y, other.z].map((v) => v.toFixed(2)) : ""}`); }
+          // Visual Groups membership is by id and lazily valid: identical results keep identical live ids
+          if (JSON.stringify([...membershipMap(reg, liveObjectIds(tx.shapes))].sort()) === JSON.stringify([...membershipMap(reg, liveObjectIds(seq.shapes))].sort())) t.vg += 1;
+          if (tx.result?.id === lv[0].original.id) t.selection += 1;                                                                          // the selection after Done: the outermost completed group
+          // breadcrumb atomicity: an outer refusal during navigation to an ancestor leaves the whole active state untouched
+          if (lv.length >= 3) {
+            const o = { ...primitive(`open${n}`, "box", {}), kind: "mesh", importedMesh: { positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], baseWidth: 1, baseDepth: 1, baseHeight: 1, triangleCount: 1, sourceFormat: "json" } } as unknown as WorkplaneShape;
+            const h = primitive(`hole${n}`, "box", { hole: true, width: 400, depth: 400, height: 400, x: lv[1].openedParts[0].x, z: lv[1].openedParts[0].z });
+            const bad = [...edited, { ...o, x: h.x, z: h.z }, h]; const lvBad = addMembers(addMembers(lv, 1, bad[bad.length - 2], h), 1);   // the SECOND level now refuses; click the first ancestor
+            t.breadcrumbTried += 1;
+            const frozenBad = deepFreeze([...bad]); const frozenLevels = deepFreeze(lvBad.map((l) => ({ ...l })));
+            const refused = await finishChain(frozenBad, frozenLevels, 1);
+            if (!refused.ok) t.breadcrumbRefusal += 1;        // frozen inputs: nothing was written; no result returned: levels, shapes, selection, session untouched
+          }
+        }
+        console.info(`[0132 ${file}] ${t.cases} chains: compared ${t.compared} finished (refused by both ${t.refusedBoth}): order ${t.order}, properties/hierarchy ${t.props}, notes ${t.notes} (a single re-pinning against the final result would differ in ${t.notesSingleStepDiffers}), Visual Groups ${t.vg}, selection target ${t.selection}; breadcrumb refusal atomic ${t.breadcrumbRefusal}/${t.breadcrumbTried}`);
+        expect(t.compared + t.refusedBoth).toBeGreaterThan(0);
+        for (const key of ["order", "props", "notes", "vg", "selection"] as const) expect(t[key], key).toBe(t.compared);
+        expect(t.breadcrumbRefusal).toBe(t.breadcrumbTried);
+      }, 1_800_000);
+    });
+  }
+});

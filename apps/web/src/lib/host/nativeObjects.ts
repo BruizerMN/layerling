@@ -20,6 +20,8 @@ export type ObjectsInvoke =
   | { op: "takeOutOfGroup"; groupId: string; partId: string; beforeId: string | null; intoGroupId: string | null }
   | { op: "openGroup"; rootId: string; indices: number[] }
   | { op: "finishGroup" }
+  /** Build 0132: a click on an ancestor in the breadcrumbs: that group becomes the current context; the levels deeper than it complete, transactionally. */
+  | { op: "finishToLevel"; groupId: string }
   | { op: "cancelGroup" }
   /** Build 0122: the host asked the person and they confirmed discarding the changes of the group being edited. */
   | { op: "cancelGroupConfirmed" };
@@ -92,6 +94,8 @@ export function parseObjectsInvoke(op: string, args: Record<string, unknown>): O
       return isText(args.rootId) && Array.isArray(args.indices) && args.indices.length <= 64 && args.indices.every((n) => Number.isInteger(n) && (n as number) >= 0)
         ? { op, rootId: args.rootId, indices: args.indices as number[] }
         : null;
+    case "finishToLevel":
+      return isText(args.groupId) ? { op, groupId: args.groupId } : null;
     case "finishGroup":
     case "cancelGroup":
     case "cancelGroupConfirmed":

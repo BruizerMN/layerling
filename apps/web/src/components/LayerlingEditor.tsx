@@ -184,8 +184,9 @@ import { snapShapeFootprintToVisibleGrid, visibleGridStep } from "@/lib/gridSnap
 import { composedShapeRotation, geometryRotationDegreesForShortcut, geometryRotationDelta, rotatedGeometryShapePatch } from "@/lib/geometryRotation";
 import { carryShapePivot, heightPatchKeepingBase, pivotAfterJoin, shapePivotFromWorld, shapePivotWorld, type PivotPoint } from "@/lib/rotationPivot";
 import { createLocalId } from "@/lib/localIds";
-import { SurroundingsOverlay } from "@/components/workplane/SurroundingsOverlay";
+import { GroupEditingContextBar } from "@/components/workplane/GroupEditingContextBar";
 import { beginSurroundingsSession, dimmingOf, referenceShapesOf, setSurroundingsOpacity, setUseAsReferences, type SurroundingsState } from "@/lib/surroundings";
+import { finishChain, notesAfterChain } from "@/lib/groupFinishChain";
 import { activationChanged, contextChain, editableIds, groupActionAllowed, notesViolation, onlyEditable, prepareContextCommit } from "@/lib/editingContext";
 import { canEditGroupAtLevel, mcpOpenGroupSummary, openGroupLevelsStillOpen, trackOpenGroupLevels, type OpenGroupLevel, type OpenGroupSession } from "@/lib/openGroupParts";
 import { applyMeshRepairs, scanForOpenMeshes, type MeshRepairScan } from "@/lib/meshRepair";
@@ -3405,6 +3406,10 @@ export function LayerlingEditor({
   // ending any other way), so an asynchronous operation that began in one activation completes only in that one: entering A, starting an import, entering B, finishing B and returning to A is a
   // different activation although the group id matches again. A transition also ends the interactive modeling tools (their operands, previews and transient state belong to the previous context).
   const contextGenerationRef = useRef(0);
+  /** Build 0132: true once the session has changed anything (a commit or a note step that is not a group transition); reset at every new session. */
+  const sessionEditedRef = useRef(false);
+  /** Build 0132: the pending native confirmation is for the WHOLE session (the Context Bar's Cancel), not for one level. */
+  const wholeCancelPendingRef = useRef(false);
   const endModelingToolsRef = useRef<() => void>(() => undefined);
   const setOpenGroupLevels = useCallback((levels: OpenGroupLevel[]) => {
     const changed = contextChain(openGroupsRef.current) !== contextChain(levels);
@@ -5783,6 +5788,7 @@ export function LayerlingEditor({
       if (changed) {
         syncProjectShapes(canonicalNext);
       }
+      if (groupSessionRef.current && !openGroupTransitionRef.current) sessionEditedRef.current = true;   // Build 0132: the session changed something (sticky: confirms Cancel conservatively)
       for (const apply of markCommit(true)) apply();
       return true;
     },
@@ -5833,6 +5839,7 @@ export function LayerlingEditor({
       // Der Abgleich mit dem Projektspeicher vergleicht Koerper. Eine Notiz
       // aendert daran nichts, also muss er hier ausdruecklich laufen.
       if (changed) syncProjectShapes(shapesRef.current, true);
+      if (groupSessionRef.current) sessionEditedRef.current = true;
       return true;
     },
     [appendHistoryEntry, nativeDocument, setNotice, syncProjectShapes],
@@ -12931,6 +12938,7 @@ export function LayerlingEditor({
     if (!current) return;
     groupSessionRef.current = { stash: { entries, index }, stashLevels: openGroupHistoryRef.current };
     setSurroundings(beginSurroundingsSession());     // Build 0131: a NEW session starts at 0% with references checked
+    sessionEditedRef.current = false;
     openGroupHistoryRef.current = new Map([[current.fingerprint, openGroupsRef.current]]);
     const frame = sessionFrame(current);
     historyRef.current = frame.entries;
@@ -13141,6 +13149,7 @@ export function LayerlingEditor({
   const requestCancelOpenGroup = useCallback((): void => {
     const level = openGroupsRef.current.at(-1);
     if (!level) return;
+    wholeCancelPendingRef.current = false;
     if (nativeDocument && !openGroupBusyRef.current && level.session && !openSessionUnchanged(level) && requestHostAction("confirmCancelGroupEditing")) return;
     cancelOpenGroup();
   }, [cancelOpenGroup, nativeDocument, openSessionUnchanged]);
@@ -13236,6 +13245,74 @@ export function LayerlingEditor({
       setOpenGroupBusy(false);
     }
   }, [commitNotes, commitOpenGroupTransition, endGroupSession, endOpenGroupLevelsWithoutStep, nativeDocument, openSessionUnchanged, refuseOpenGroupStep, rebuildGroupFromParts, restoreOriginalSession]);
+
+  /**
+   * Build 0132 (native): completes the levels deeper than `keepOpen` TRANSACTIONALLY: every level is computed in memory first (lib/groupFinishChain.ts); if any level refuses, NOTHING changes (the whole editing state, the
+   * session history, the selection and the Surroundings settings stay exactly as they are) and the refusal is reported; otherwise ONE commit and one history step. keepOpen 0: the whole session (the Context Bar's Done);
+   * k: a click on an ancestor in the breadcrumbs.
+   */
+  const completeLevels = useCallback(async (keepOpen: number): Promise<OpenGroupOutcome> => {
+    const levels = openGroupsRef.current;
+    if (!levels.length) return { ok: false, message: t("group.noneOpen") };
+    if (openGroupBusyRef.current) return { ok: false, message: t("group.busy") };
+    if (!nativeDocument) return keepOpen === levels.length - 1 ? finishOpenGroup() : { ok: false, message: t("group.noneOpen") };
+    if (keepOpen >= levels.length) return { ok: true, message: "" };
+    const startedContext = contextActivation();
+    const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
+    const sourceProjectId = projectInfoRef.current.projectId;
+    const sourceLevels = levels;
+    openGroupBusyRef.current = true;
+    setOpenGroupBusy(true);
+    try {
+      const outcome = await finishChain(shapesRef.current, levels, keepOpen, (original, parts, opened) => rebuildGroupFromParts(original, parts, true, opened));
+      if (
+        projectInfoRef.current.projectId !== sourceProjectId ||
+        projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext) ||
+        openGroupsRef.current !== sourceLevels
+      ) {
+        return refuseOpenGroupStep(t("status.groupChanged"));
+      }
+      if (!outcome.ok) return refuseOpenGroupStep(outcome.message);       // nothing was committed, nothing is changed
+      const message = outcome.result && outcome.completedOriginal ? t("status.groupClosed", { name: displayShapeName(outcome.result) }) : "";
+      // The notes follow the very sequence the per-level path used (one re-pinning per completed level), so committing once changes no note behaviour.
+      if (!historyViewStateRef.current) notesRef.current = notesAfterChain(notesRef.current, shapesRef.current, outcome.states, levels);
+      commitOpenGroupTransition(outcome.open, outcome.shapes, outcome.result ? outcome.result.id : [], message);
+      // the outermost level closed: the whole session is ONE step of the document (0123)
+      if (openGroupsRef.current.length === 0) endGroupSession("done");
+      return { ok: true, message, ...(outcome.result ? { groupId: outcome.result.id } : {}) };
+    } finally {
+      openGroupBusyRef.current = false;
+      setOpenGroupBusy(false);
+    }
+  }, [commitOpenGroupTransition, contextActivation, contextChanged, endGroupSession, finishOpenGroup, nativeDocument, rebuildGroupFromParts, refuseOpenGroupStep]);
+  /** The Context Bar's Done: the entire editing session, whatever the depth. */
+  const finishAllOpenGroups = useCallback(() => completeLevels(0), [completeLevels]);
+  /** A click on an ancestor in the breadcrumbs: that group becomes the current context; the levels deeper than it complete. */
+  const finishToLevel = useCallback((groupId: string): Promise<OpenGroupOutcome> => {
+    const index = openGroupsRef.current.findIndex((level) => level.original.id === groupId);
+    return index < 0 ? Promise.resolve({ ok: false, message: t("group.noneOpen") }) : completeLevels(index + 1);
+  }, [completeLevels]);
+  /** The Context Bar's Cancel: restores the complete pre-session state, whatever the depth (the session frame keeps it); the Surroundings settings are not touched. */
+  const cancelWholeSession = useCallback((): OpenGroupOutcome => {
+    const levels = openGroupsRef.current;
+    if (!levels.length) return { ok: false, message: t("group.noneOpen") };
+    if (openGroupBusyRef.current) return refuseOpenGroupStep(t("group.busy"));
+    if (!nativeDocument) return cancelOpenGroup();
+    const first = levels[0];
+    const message = t("status.groupOpenCancelled", { name: displayShapeName(first.original) });
+    if (endGroupSession("restore", first.original.id)) return { ok: true, message, groupId: first.original.id };
+    return cancelOpenGroup();
+  }, [cancelOpenGroup, endGroupSession, nativeDocument, refuseOpenGroupStep]);
+  /** Whole-session Cancel as the person asks for it: the native confirmation only when the session actually changed something. */
+  const requestCancelWholeSession = useCallback((): void => {
+    if (!openGroupsRef.current.length) return;
+    if (nativeDocument && !openGroupBusyRef.current && sessionEditedRef.current) {
+      wholeCancelPendingRef.current = true;
+      if (requestHostAction("confirmCancelGroupEditing")) return;
+      wholeCancelPendingRef.current = false;
+    }
+    cancelWholeSession();
+  }, [cancelWholeSession, nativeDocument]);
 
   /** Why a part cannot go into or out of a group from the object list right now, or null (Discussion #1338). */
   const groupPartsStepRefused = useCallback((): string | null => {
@@ -13563,6 +13640,17 @@ export function LayerlingEditor({
     for (const shape of shapes) if (!contextSelectableIds.has(shape.id)) ids.add(shape.id);
     return ids;
   }, [contextSelectableIds, shapes]);
+  // Build 0132 (native): the Workspace Context Bar is shown for the whole session; hidden in Presentation Mode, visible in Focus Mode. The flag on <html> gives the stage its room (CSS only).
+  const contextBarShown = Boolean(nativeDocument) && openGroups.length > 0 && !presentationMode;
+  useEffect(() => {
+    const root = document.documentElement;
+    if (contextBarShown) root.dataset.contextBar = "on";
+    else delete root.dataset.contextBar;
+    return () => { delete root.dataset.contextBar; };
+  }, [contextBarShown]);
+  const editingChainKey = openGroups.map((level) => `${level.original.id}\u0001${displayShapeName(level.original)}`).join("\u0002");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const editingChain = useMemo(() => openGroups.map((level) => ({ id: level.original.id, name: displayShapeName(level.original) })), [editingChainKey]);
   const dimmingPresentation = useMemo(() => (dimmedIds ? dimmingOf(surroundings) : null), [dimmedIds, surroundings]);
   const dimmedIdsRef = useRef(dimmedIds);
   dimmedIdsRef.current = dimmedIds;
@@ -19962,13 +20050,16 @@ export function LayerlingEditor({
         openGroupAlongPath(command.rootId, command.indices, true);
       } else if (command.op === "finishGroup") {
         void finishOpenGroup();
+      } else if (command.op === "finishToLevel") {
+        void finishToLevel(command.groupId);
       } else if (command.op === "cancelGroupConfirmed") {
-        cancelOpenGroup();
+        // Build 0132: the confirmation was asked for the whole session (the Context Bar's Cancel) or for one level (a row's Cancel).
+        if (wholeCancelPendingRef.current) { wholeCancelPendingRef.current = false; cancelWholeSession(); } else cancelOpenGroup();
       } else {
         requestCancelOpenGroup();
       }
     });
-  }, [nativeDocument, selectShape, openGroupAlongPath, finishOpenGroup, cancelOpenGroup, requestCancelOpenGroup, renameShapeById, toggleShapeHiddenById, toggleShapeLockById, toggleShapeLockOfShapeById, updateNestedShape, groupPartsStepRefused, commitShapes, addShapesToGroup, takePartOutOfGroup, setNotice]);
+  }, [nativeDocument, selectShape, openGroupAlongPath, finishOpenGroup, finishToLevel, cancelWholeSession, cancelOpenGroup, requestCancelOpenGroup, renameShapeById, toggleShapeHiddenById, toggleShapeLockById, toggleShapeLockOfShapeById, updateNestedShape, groupPartsStepRefused, commitShapes, addShapesToGroup, takePartOutOfGroup, setNotice]);
 
   // The focused object, resolved against the current shapes (it follows a group that moves, and ends when its path stops existing: it is never redirected to another object).
   const nestedFocusTarget = useMemo(
@@ -20793,7 +20884,7 @@ export function LayerlingEditor({
         { key: "selectMultiple", label: t("contextMenu.selectMultiple"), onSelect: startMultiSelect },
         ...selectOther,
       ];
-      if (shapes.some((shape) => shape.hidden)) items.push({ key: "showHidden", label: t("contextMenu.showHidden"), shortcut: "Ctrl+Shift+H", onSelect: showHidden });
+      if (shapes.some((shape) => shape.hidden)) items.push({ key: "showHidden", label: t("contextMenu.showHidden"), shortcut: "Ctrl+Shift+H", disabled: Boolean(contextSelectableIds), onSelect: showHidden });
       if (referencePoints(notes).length > 0) items.push({ key: "removePoints", label: t("contextMenu.removeAllPoints", { count: referencePoints(notes).length }), danger: true, separated: true, onSelect: removeAllReferencePoints });
       return items;
     }
@@ -20911,7 +21002,7 @@ export function LayerlingEditor({
     }
     items.push(
       { key: "hide", label: t("contextMenu.hide"), shortcut: "Ctrl+H", separated: true, onSelect: toggleHidden },
-      { key: "hideOthers", label: t("contextMenu.hideOthers"), onSelect: () => { hideOthers(); } },
+      { key: "hideOthers", label: t("contextMenu.hideOthers"), disabled: Boolean(contextSelectableIds), onSelect: () => { hideOthers(); } },
       { key: "lock", label: t(allLocked ? "contextMenu.unlock" : "contextMenu.lock"), shortcut: "Ctrl+L", onSelect: toggleLocked },
       ...(selectionLocked ? [] : [{ key: "lockShape", label: t(allShapeLocked ? "contextMenu.unlockShape" : "contextMenu.lockShape"), shortcut: "Ctrl+Shift+L", onSelect: toggleShapeLocked }]),
       ...(selectionLocked ? [] : [{ key: "carry", label: t("contextMenu.carry"), shortcut: "C", onSelect: startCarry }]),
@@ -20941,7 +21032,7 @@ export function LayerlingEditor({
             // Visual Groups: a cascading submenu (native menus only), built from the same items.
             if (item.submenu) return item.submenu.length === 0 ? [] : [{ key, title: item.label, separatorBefore: item.separated, items: convert(item.submenu, `${key}/`) }];
             registry.set(key, item);
-            return [{ key, title: item.label, shortcut: item.shortcut, danger: item.danger, separatorBefore: item.separated, color: item.color, ...(item.checked ? { checked: true } : {}) }];
+            return [{ key, title: item.label, shortcut: item.shortcut, danger: item.danger, separatorBefore: item.separated, color: item.color, ...(item.checked ? { checked: true } : {}), ...(item.disabled ? { enabled: false } : {}) }];
           });
         const items = convert(shapeContextMenuItems(base), "");
         if (items.length === 0) return false;
@@ -21019,6 +21110,8 @@ export function LayerlingEditor({
           loftable: canSketchLoft(selectedShapes),
         }}
         hiddenShapeCount={hiddenObjectCount}
+        groupEditing={Boolean(contextSelectableIds)}
+        editingChain={editingChain}
         onCut={cutSelected}
         selectionHidden={hasSelection && selectedShapes.every((shape) => shape.hidden)}
         alignMode={alignMode}
@@ -21523,7 +21616,7 @@ export function LayerlingEditor({
               plates={buildPlates.plates}
               active={buildPlates.active}
               selectionCount={selectedIds.length}
-              disabled={Boolean(historyViewState)}
+              disabled={Boolean(historyViewState) || Boolean(contextSelectableIds)}
               onSelect={buildPlates.select}
               onAdd={buildPlates.add}
               onShowAll={buildPlates.showAll}
@@ -21554,11 +21647,15 @@ export function LayerlingEditor({
           />
         )}
       </div>
-      {nativeDocument && dimmedIds ? (
-        <SurroundingsOverlay
+      {contextBarShown ? (
+        <GroupEditingContextBar
+          name={displayShapeName(openGroups[openGroups.length - 1].original)}
           state={surroundings}
+          busy={openGroupBusy}
           onOpacity={(value) => setSurroundings((current) => setSurroundingsOpacity(current, value))}
           onReferences={(value) => setSurroundings((current) => setUseAsReferences(current, value))}
+          onDone={() => void finishAllOpenGroups()}
+          onCancel={requestCancelWholeSession}
         />
       ) : null}
       {shapeContextMenu && toolbarMode === "geometry" ? (
