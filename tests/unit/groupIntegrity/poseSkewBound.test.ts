@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { POSE_DISPLACEMENT_TOLERANCE } from "@/lib/groupPose";
+import { POSE_DISPLACEMENT_TOLERANCE, POSE_SHEAR_COSINE } from "@/lib/groupPose";
 import { groupedPartSizeScale } from "@/lib/groupScale";
 
 /*
- * Build 0127: WHAT THE IMPLEMENTED SKEW CHECK PERMITS, measured against the analytic condition approved in the verification phase (the stretched axes of the part stay perpendicular: |cos| <= 1e-6).
+ * RETAINED AS PERMANENT COVERAGE (Bill, 2026-11-27). This measures the LOOSER skew rule of Build 0127 revision 1 (corner displacement against the 3e-4 tolerance), which has been REPLACED in revision 2 by the
+ * approved analytic threshold (|cos| <= 1e-6) as an independent safeguard; see poseShearRule.test.ts for the production regression tests. It documents why the displacement tolerance must not substitute for the shear check.
+ *
+ * Build 0127: WHAT THE REVISION-1 SKEW CHECK PERMITTED, measured against the analytic condition approved in the verification phase (the stretched axes of the part stay perpendicular: |cos| <= 1e-6).
  * Pure geometry, no kernel: for a group stretched by S and a part turned by Rc inside it (local box w x h x d),
  *   truth = S Rc c'                    the corner of the exactly stretched part (a parallelepiped when the part shears)
  *   representation = Rc (ps o c')      the corner of the engine's box: the same turn, sizes stretched along the part's own axes (groupedPartSizeScale)
@@ -49,12 +52,12 @@ describe.skipIf(!process.env.LAYERLING_POSE_INVESTIGATION)("skew check: what it 
       c.n += 1;
       if (m.share <= POSE_DISPLACEMENT_TOLERANCE) { c.passed += 1; c.maxShearPassed = Math.max(c.maxShearPassed, m.shearDeg); c.maxMmPassed = Math.max(c.maxMmPassed, m.distMm); }
       else c.minShearRefused = Math.min(c.minShearRefused, m.shearDeg);
-      if (m.cos <= 1e-6) { cosOnlyN += 1; cosOnlyMaxShare = Math.max(cosOnlyMaxShare, m.share); cosOnlyMaxMm = Math.max(cosOnlyMaxMm, m.distMm); }
-      if (m.share <= POSE_DISPLACEMENT_TOLERANCE) { passedTotal += 1; if (m.cos > 1e-6) passedAboveNoise += 1; }
+      if (m.cos <= POSE_SHEAR_COSINE) { cosOnlyN += 1; cosOnlyMaxShare = Math.max(cosOnlyMaxShare, m.share); cosOnlyMaxMm = Math.max(cosOnlyMaxMm, m.distMm); }
+      if (m.share <= POSE_DISPLACEMENT_TOLERANCE) { passedTotal += 1; if (m.cos > POSE_SHEAR_COSINE) passedAboveNoise += 1; }
       if (m.cos > 1e-9) { ratioMin = Math.min(ratioMin, m.share / m.cos); ratioMax = Math.max(ratioMax, m.share / m.cos); }
     }
     const lines = Object.entries(classes).map(([k, c]) => `${k}: ${c.n} samples, ${c.passed} pass the 3e-4 check; LARGEST SHEAR ANGLE PASSED ${c.maxShearPassed.toFixed(4)} deg (largest corner displacement passed ${c.maxMmPassed.toFixed(4)} mm); smallest shear angle refused ${Number.isFinite(c.minShearRefused) ? c.minShearRefused.toFixed(6) : "n/a"} deg`);
-    console.info(`[skew bound]\n${lines.join("\n")}\nSamples with the approved analytic threshold met (|cos| <= 1e-6, shear <= ${(THREE.MathUtils.radToDeg(Math.asin(1e-6))).toExponential(2)} deg): ${cosOnlyN}; their largest skew share ${cosOnlyMaxShare.toExponential(2)} and largest corner displacement ${cosOnlyMaxMm.toExponential(2)} mm (the implemented check's tolerance is ${POSE_DISPLACEMENT_TOLERANCE}). Of the ${passedTotal} samples the implemented check passes, ${passedAboveNoise} have a shear above the analytic threshold (${((100 * passedAboveNoise) / Math.max(1, passedTotal)).toFixed(1)}%): genuinely sheared geometry. share / |cos| over all samples: min ${ratioMin.toExponential(2)}, max ${ratioMax.toExponential(2)}.`);
+    console.info(`[skew bound]\n${lines.join("\n")}\nSamples with the approved analytic threshold met (|cos| <= ${POSE_SHEAR_COSINE}, shear <= ${(THREE.MathUtils.radToDeg(Math.asin(POSE_SHEAR_COSINE))).toExponential(2)} deg): ${cosOnlyN}; their largest skew share ${cosOnlyMaxShare.toExponential(2)} and largest corner displacement ${cosOnlyMaxMm.toExponential(2)} mm (the implemented check's tolerance is ${POSE_DISPLACEMENT_TOLERANCE}). Of the ${passedTotal} samples the implemented check passes, ${passedAboveNoise} have a shear above the analytic threshold (${((100 * passedAboveNoise) / Math.max(1, passedTotal)).toFixed(1)}%): genuinely sheared geometry. share / |cos| over all samples: min ${ratioMin.toExponential(2)}, max ${ratioMax.toExponential(2)}.`);
     expect(cosOnlyMaxShare).toBeLessThan(POSE_DISPLACEMENT_TOLERANCE);   // whatever the analytic threshold passes, the implemented check passes too
   });
 });

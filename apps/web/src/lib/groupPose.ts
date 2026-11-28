@@ -17,7 +17,14 @@ import type { WorkplaneShape } from "@/types/layerling";
  * set: docs/BUILD-0127-VERIFICATION.md and docs/BUILD-0127-SUPPORTED-SET-AND-MESSAGES.md. A group without a pose is not handled here at all (the Build 0126 path).
  */
 
-/** Largest allowed displacement of a changed part, in the world, as a share of its reach (half its box diagonal): three 0.005 degree rounding errors compose to at most 2.6e-4 rad. */
+/**
+ * TWO INDEPENDENT SAFEGUARDS for a changed part (Bill, 2026-11-27); neither substitutes for or overrides the other:
+ *  1. GEOMETRIC REPRESENTABILITY (shear): the stretched axes of the part must stay perpendicular, |cos| <= POSE_SHEAR_COSINE. A part that fails it is a parallelepiped, which the engine's part
+ *     (a rotation and three sizes) cannot express: refused, however small its displacement looks.
+ *  2. ROTATION STORAGE PRECISION: storing the part's rotation (0.01 degrees per Euler angle, small components snapped) may move it by at most POSE_DISPLACEMENT_TOLERANCE of its reach in the WORLD.
+ */
+export const POSE_SHEAR_COSINE = 1e-6;
+/** Largest allowed displacement of a changed part from storing its rotation, in the world, as a share of its reach (half its stretched box diagonal): three 0.005 degree rounding errors compose to at most 2.6e-4 rad. */
 export const POSE_DISPLACEMENT_TOLERANCE = 3e-4;
 const EPSILON = 1e-6;
 
@@ -37,13 +44,14 @@ export function groupHasPose(group: WorkplaneShape): boolean {
 const resizedAtAll = (S: readonly number[]) => S.some((s) => Math.abs(s - 1) > EPSILON);
 const resizedUnevenly = (S: readonly number[]) => Math.max(...S) - Math.min(...S) > EPSILON * Math.max(...S);
 
-export type Unposed = { part: WorkplaneShape; displacementMm: number; displacementShare: number; skewMm: number; skewShare: number };
+export type Unposed = { part: WorkplaneShape; displacementMm: number; displacementShare: number; shearCos: number };
 
 /**
  * The inverse of `restoreGroupedChildren` for one part: a world part (as the editor shows it while the group is open) back to the part in the group's own content frame, together with
  * what storing it costs in the WORLD (the group's stretch amplifies a local displacement, so the check is made after stretching):
  *  - `displacement*`: the engine stores rotations as three Euler angles rounded to 0.01 degrees, each set to 0 within about 0.505 degrees of a multiple of 360; how far that moves the part;
- *  - `skew*`: a part turned at an angle inside an unevenly stretched group becomes a parallelepiped; the engine's part is a box turned by the same angles; how far the two differ.
+ *  - `shearCos`: the largest |cos| between two of the part's axes after the group's stretch (0 when they stay perpendicular). A part turned at an angle inside an unevenly stretched group becomes a
+ *    parallelepiped; this is the analytic measure of that, independent of the displacement.
  */
 export function unposePart(group: WorkplaneShape, world: WorkplaneShape): Unposed {
   const { S, Rg, m: [mx, my, mz], C0 } = frameOf(group);
@@ -84,16 +92,18 @@ export function unposePart(group: WorkplaneShape, world: WorkplaneShape): Unpose
   const stored = quaternionForShape(part);
   const half = [shapeWidth(part) / 2, part.height / 2, shapeDepth(part) / 2];
   const stretch = (v: THREE.Vector3) => v.set(v.x * sx, v.y * sy, v.z * sz);
-  let displacement = 0, skew = 0, reach = 0;
+  let displacement = 0, reach = 0;
   for (const a of [-1, 1]) for (const b of [-1, 1]) for (const c of [-1, 1]) {
     const corner = new THREE.Vector3(a * half[0], b * half[1], c * half[2]);
     const truth = stretch(corner.clone().applyQuaternion(exact));
     displacement = Math.max(displacement, truth.distanceTo(stretch(corner.clone().applyQuaternion(stored))));
-    skew = Math.max(skew, truth.distanceTo(corner.clone().multiply(new THREE.Vector3(ps.width, ps.height, ps.depth)).applyQuaternion(exact)));
     reach = Math.max(reach, truth.length());
   }
   const share = (d: number) => (reach > 0 ? d / reach : 0);
-  return { part, displacementMm: displacement, displacementShare: share(displacement), skewMm: skew, skewShare: share(skew) };
+  // the shear of the part AS STORED (what the rebuilt body will contain): the stretched axes of its own turn
+  const stretched = groupPartAxes(part).map(([x, y, z]) => new THREE.Vector3(x * sx, y * sy, z * sz).normalize());
+  const shearCos = Math.max(Math.abs(stretched[0].dot(stretched[1])), Math.abs(stretched[0].dot(stretched[2])), Math.abs(stretched[1].dot(stretched[2])));
+  return { part, displacementMm: displacement, displacementShare: share(displacement), shearCos };
 }
 
 /** What the group builders have been verified to carry through an un-posed rebuild (docs/BUILD-0127-SUPPORTED-SET-AND-MESSAGES.md section 6). */
@@ -169,11 +179,13 @@ export function planPoseRebuild(original: WorkplaneShape, parts: readonly Workpl
       if (!supportedStar) return resized ? refuse({ kind: "unsupportedKind", group, part: name, kindName: kindLabel(world.kind) }) : refuse({ kind: "unsupportedFeature", group, part: name, feature: `a ${kindLabel(world.kind)}` });
     }
     const unposed = unposePart(original, world);
-    if (uneven && unposed.skewShare > POSE_DISPLACEMENT_TOLERANCE) return refuse({ kind: "skewed", group, part: name });
+    // safeguard 1 (representability): the analytic shear threshold; evaluated for every changed part, whatever the stretch, and never relaxed by the displacement tolerance
+    if (unposed.shearCos > POSE_SHEAR_COSINE) return refuse({ kind: "skewed", group, part: name });
     if (uneven && shapeHasExtrudeDeform(world)) {
       const twisted = Math.abs(world.extrudeTwist ?? 0) > EPSILON, leaning = Math.abs(world.extrudeTopOffsetX ?? 0) > EPSILON || Math.abs(world.extrudeTopOffsetZ ?? 0) > EPSILON;
       return refuse({ kind: "twistLean", group, part: name, what: twisted && leaning ? "twisted and leaning" : twisted ? "twisted" : "leaning" });
     }
+    // safeguard 2 (rotation storage precision): independent of the shear check
     if (unposed.displacementShare > POSE_DISPLACEMENT_TOLERANCE) return refuse({ kind: "rotationStorage", group, part: name, mm: unposed.displacementMm });
     local.push(unposed.part);
   }

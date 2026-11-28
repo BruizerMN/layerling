@@ -19,44 +19,47 @@ const local = (): WorkplaneShape[] => [primitive("A", "box", { x: 0, width: 40, 
 const movePart = (parts: WorkplaneShape[], name: string, patch: Partial<WorkplaneShape> | ((p: WorkplaneShape) => Partial<WorkplaneShape>)) => parts.map((p) => (p.name === name ? { ...p, ...(typeof patch === "function" ? patch(p) : patch) } : p));
 const refusal = async (G: WorkplaneShape, edit: (parts: WorkplaneShape[]) => WorkplaneShape[]) => { const opened = openParts(G); const r = await produce(G, edit(opened), opened); expect(r.group, "a refusal was expected").toBeNull(); return r.failure; };
 const STAYS = "Your changes are still in place and Group Editing remains open.";
+// Bill, 2026-11-27: one remedy wording in messages 1 to 6
+const CANCEL = "Cancel Group Editing to restore the original group and discard the changes made during this session.";
+const orCancel = `or c${CANCEL.slice(1)}`;
 
 describe("refusal messages (revised wording)", () => {
   it("1. skew: a part turned at an angle in a group resized unevenly", async () => {
     const G = await posedGroup(local(), { stretch: [2, 1.3, 0.6], rotation: 33 });
     const text = await refusal(G, (p) => movePart(p, "B", (b) => ({ rotation: (b.rotation ?? 0) + 25 })));
-    expect(text).toBe(`Cannot finish “Posed”: “B” is turned at an angle inside a group that has been resized unevenly. Its shape would change when the group is rebuilt.\nTry aligning the part with the group's sides, or cancel Group Editing to restore the original group.\n${STAYS}`);
+    expect(text).toBe(`Cannot finish “Posed”: “B” is turned at an angle inside a group that has been resized unevenly. Its shape would change when the group is rebuilt.\nTry aligning the part with the group's sides, ${orCancel}\n${STAYS}`);
     expect(text).not.toMatch(/90|quarter|180|270/);   // no prescribed angles
   });
   it("2. twist: a twisted part in a group resized unevenly (approved wording)", async () => {
     const parts = local(); parts[2] = { ...parts[2], extrudeTwist: 40 };
     const G = await posedGroup(parts, { stretch: [2, 1, 1] });
     const text = await refusal(G, (p) => movePart(p, "B", { x: 40 }));
-    expect(text).toBe(`Cannot finish “Posed”: “B” is twisted and the group has been resized unevenly, which would change its shape. Remove the twist from “B”, or Cancel to keep the group as it was.\n${STAYS}`);
+    expect(text).toBe(`Cannot finish “Posed”: “B” is twisted and the group has been resized unevenly, which would change its shape. Remove the twist from “B”, ${orCancel}\n${STAYS}`);
   });
   it("3. a kind that cannot yet be kept exact in a resized group (a star)", async () => {
     const parts = local(); parts[2] = primitive("B", "star", { x: 34, width: 18, depth: 18, height: 10 });
     const G = await posedGroup(parts, { stretch: [1.7, 1.7, 1.7] });
     const text = await refusal(G, (p) => movePart(p, "B", { x: 40 }));
-    expect(text).toBe(`Cannot finish “Posed”: Group Editing cannot yet keep a star (“B”) exact in a group that has been resized. Cancel to keep the group as it was.\n${STAYS}`);
+    expect(text).toBe(`Cannot finish “Posed”: Group Editing cannot yet keep a star (“B”) exact in a group that has been resized. ${CANCEL}\n${STAYS}`);
   });
   it("4. rotation that cannot be preserved accurately (revised: the displacement, no 0.5 degree advice)", async () => {
     const parts = local(); parts[2] = { ...parts[2], rotation: 0 };
     const G = await posedGroup(parts, { rotation: 33 });                      // no resize: only the storage of the turn matters
     const text = await refusal(G, (p) => movePart(p, "B", (b) => ({ rotation: (b.rotation ?? 0) + 0.2 })));   // 0.2 degrees relative to the group: snapped to 0 by the engine
-    expect(text).toMatch(/^Cannot finish “Posed”: the current rotation of “B” cannot be preserved accurately when the group is rebuilt\. Its geometry would shift by up to 0\.\d+ mm\.\nAdjust the part's rotation, align it with the group, or cancel Group Editing to restore the original group\.\n/);
+    expect(text).toMatch(/^Cannot finish “Posed”: the current rotation of “B” cannot be preserved accurately when the group is rebuilt\. Its geometry would shift by up to 0\.\d+ mm\.\nAdjust the part's rotation, align it with the group, or cancel Group Editing to restore the original group and discard the changes made during this session\.\n/);
     expect(text).toContain(STAYS);
     expect(text).not.toContain("0.5");
   });
   it("5. a group type or feature that cannot yet be preserved (revised wording, the type is named)", async () => {
     const G = await posedGroup(local(), { mirrorX: true }, { groupOperation: "loft" });
     const text = await refusal(G, (p) => movePart(p, "B", { x: 40 }));
-    expect(text).toBe(`Cannot finish “Posed”: Group Editing does not yet support preserving this type of group (loft) when it has been rotated, mirrored or resized.\nCancel Group Editing to restore the original group.\n${STAYS}`);
+    expect(text).toBe(`Cannot finish “Posed”: Group Editing does not yet support preserving this type of group (loft) when it has been rotated, mirrored or resized.\n${CANCEL}\n${STAYS}`);
     expect(text).not.toMatch(/works while|not rotated/);   // no promise that an unposed group reconstructs
   });
   it("6. a changed part that uses a feature that cannot yet be kept (approved wording)", async () => {
     const G = await posedGroup(local(), { mirrorX: true });
     const text = await refusal(G, (p) => movePart(p, "B", { edgeTreatments: [{ kind: "fillet", amount: 1, edgeCount: 4 }] } as Partial<WorkplaneShape>));
-    expect(text).toBe(`Cannot finish “Posed”: “B” uses edge treatments, which Group Editing cannot yet keep exact while the group is rotated, mirrored or resized. Change “B” back, or Cancel to keep the group as it was.\n${STAYS}`);
+    expect(text).toBe(`Cannot finish “Posed”: “B” uses edge treatments, which Group Editing cannot yet keep exact while the group is rotated, mirrored or resized. Change “B” back, ${orCancel}\n${STAYS}`);
   });
 });
 
