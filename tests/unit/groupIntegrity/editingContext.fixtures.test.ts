@@ -10,8 +10,9 @@ import { cloneWorkplaneShapeTreeWithFreshIds } from "@/lib/workplaneShapes";
 import type { WorkplaneNote, WorkplaneShape } from "@/types/layerling";
 import { applyMeshRepairs, scanForOpenMeshes } from "@/lib/meshRepair";
 import { createKernelMeshCheck } from "@/lib/meshRepairKernel";
-import { assertKernelLive, bodyStats, fixturePath, flatLeaves, loadFixture, startKernel, TRIANGLE_LIMIT } from "./support";
-import { contextViolation, editableIds, trackMembership } from "./editingContextProto";
+import { assertKernelLive, bodyStats, fixturePath, flatLeaves, loadFixture, primitive, startKernel, TRIANGLE_LIMIT } from "./support";
+import { canonicalizeShape } from "@/lib/workplaneShapes";
+import { contextViolation, editableIds, prepareContextCommit, trackContextMembership as trackMembership } from "@/lib/editingContext";
 
 beforeAll(async () => { kernel.runtime = Promise.resolve(await startKernel()); await assertKernelLive(); });
 
@@ -109,7 +110,7 @@ for (const [file, repaired] of [["saud.lyl", false], ["saud.lyl", true], ["fosha
           ids = trackMembership(ids, prev, cur); notes = notesAfterShapeChange(notes, prev, cur, heldIds());
           if (ids.at(-1)!.includes(pastedId)) tally.pastedJoined += 1;
         }
-        if (contextViolation(editableIds(ids, new Set(cur.map((s) => s.id))), prev, cur) === null) tally.membership += 1;
+        if (prepareContextCommit(editableIds(ids, new Set(cur.map((s) => s.id))), prev, cur, canonicalizeShape).ok) tally.membership += 1;
         // --- finish deepest first with the PRODUCTION strict reconstruction (as finishOpenGroup)
         let failed: string | null = null; let failedLevel = -1; let failedParts: WorkplaneShape[] = [];
         for (let k = levels.length - 1; k >= 0; k -= 1) {
@@ -163,18 +164,32 @@ for (const [file, repaired] of [["saud.lyl", false], ["saud.lyl", true], ["fosha
       for (const key of ["outsideIntact", "orderIntact", "vgIntact", "notesOutside"] as const) expect(tally[key], key).toBe(tally.finished);
     }, 1_800_000);
 
-    it.skipIf(repaired)("PERFORMANCE of the guard on this document (per commit, all top-level shapes)", async () => {
+    it.skipIf(repaired)("PERFORMANCE of the PRODUCTION guard and pipeline (prepareContextCommit): the real document, its largest flattened contexts, and a synthetic 100,000-object stress", async () => {
       const project = await loadFixture(fixturePath(file)!);
       const doc = project.shapes;
-      const members = new Set(doc.slice(0, 3).map((s) => s.id));
-      const time = (f: () => unknown, n = 20) => { const t0 = performance.now(); for (let i = 0; i < n; i += 1) f(); return (performance.now() - t0) / n; };
-      const sharedRefs = doc.map((s) => s);                                           // a tool that keeps untouched objects by reference (the common case, before canonicalization)
-      const modified = doc.map((s, i) => (i === 0 ? { ...s, x: s.x + 1 } : s));
-      const allNew = doc.map((s) => ({ ...s }));                                      // worst case: every object recreated (e.g. Unhide All's map)
-      const ref = time(() => contextViolation(members, doc, modified));
-      const worst = time(() => contextViolation(members, doc, allNew), 5);
-      console.info(`[0130 ${file} guard cost] ${doc.length} top-level shapes: reference path ${ref.toFixed(2)} ms per commit; every object recreated by spread (shared nested data) ${worst.toFixed(2)} ms; (sharedRefs ${sharedRefs.length})`);
-      expect(ref).toBeLessThan(50);
+      const time = (f: () => unknown, n = 10) => { const t0 = performance.now(); for (let i = 0; i < n; i += 1) f(); return (performance.now() - t0) / n; };
+      const measure = (label: string, shapes: WorkplaneShape[], members: Set<string>) => {
+        const edited = shapes.map((x, i) => (i === shapes.findIndex((y) => members.has(y.id)) ? { ...x, x: x.x + 1 } : x));      // a member changes; every other object keeps its reference
+        const spread = shapes.map((x) => ({ ...x }));                                                                            // worst realistic case: every object recreated (shared nested data)
+        const pipeline = time(() => prepareContextCommit(members, shapes, edited, canonicalizeShape));
+        const worst = time(() => prepareContextCommit(members, shapes, spread, canonicalizeShape), 3);
+        const naive = shapes.length <= 20_000 ? time(() => shapes.map(canonicalizeShape), 3) : NaN;
+        console.info(`[0130 guard cost] ${label}: ${shapes.length} objects flat, ${members.size} members: production pipeline ${pipeline.toFixed(2)} ms per commit (references kept), ${worst.toFixed(2)} ms (every object recreated); canonicalizing everything, as a commit does today without a context: ${Number.isNaN(naive) ? "n/a" : naive.toFixed(2) + " ms"}`);
+        return { pipeline, worst };
+      };
+      // the real document with its largest group opened (its parts flat beside the surroundings)
+      const biggest = doc.map((g, i) => ({ g, i })).filter(({ g }) => g.groupedShapes?.length).sort((x, y) => y.g.groupedShapes!.length - x.g.groupedShapes!.length)[0];
+      if (biggest) {
+        const parts = restoreGroupedChildren(biggest.g, undefined, { keepPartVisibility: true });
+        const flat = replaceAtFirst(doc, [biggest.g.id], parts);
+        measure(`${file}, its largest group (${parts.length} parts) opened`, flat, new Set(parts.map((p) => p.id)));
+      }
+      // synthetic: large flattened contexts of plain objects
+      for (const n of [5_000, 20_000, 100_000]) {
+        const many = Array.from({ length: n }, (_, i) => primitive(`s${i}`, "box", { x: i % 300, z: Math.floor(i / 300) }));
+        const r = measure(`synthetic`, many, new Set(many.slice(0, 50).map((x) => x.id)));
+        expect(r.pipeline).toBeLessThan(200);
+      }
     }, 600_000);
   });
 }

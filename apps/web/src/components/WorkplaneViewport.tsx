@@ -240,6 +240,8 @@ type WorkplaneViewportProps = {
   onShapeContextMenu?: (request: { shapeId: string | null; clientX: number; clientY: number; stackIds: string[]; inSelection?: boolean; facePoint?: { x: number; y: number; z: number } }) => void;
   /** Bodies marked with an outline that shows through what stands in front: the one a row of "Select other" points at (#804). */
   highlightIds?: readonly string[];
+  /** Build 0130 (native): the objects the editing context allows to be picked or enclosed by a marquee (null: all). Surroundings are passed through: neither picked nor in the way of a member behind them. They stay drawn, snappable and usable as references. */
+  selectableIds?: ReadonlySet<string> | null;
   /**
    * Objects Sidebar navigational focus (Build 0116): an object inside a closed group that the sidebar points at. Not a selection: the viewport only MARKS it (the pick highlight, in a layer of
    * its own: the object's own geometry where it can be built, else its nominal bounding box; nothing when `placement` is "none") and the Object tab shows the read-only card. `key` changes when
@@ -1670,6 +1672,7 @@ export function WorkplaneViewport({
   onSelectShape,
   onShapeContextMenu,
   highlightIds,
+  selectableIds = null,
   nestedFocus,
   clearanceMark = null,
   printCheckView = null,
@@ -4602,9 +4605,11 @@ export function WorkplaneViewport({
     if (!state) {
       return [];
     }
+    const allowed = selectableIdsRef.current;
     return shapesRef.current
       .filter((shape) => !shape.hidden)
       .filter((shape) => !shape.imagePlate)
+      .filter((shape) => !allowed || allowed.has(shape.id))
       .filter((shape) => {
         const bounds = shapeScreenBounds(state, shape);
         if (!bounds || !boundsIntersectRect(bounds, rect)) return false;
@@ -6026,14 +6031,21 @@ export function WorkplaneViewport({
     setActiveRotationWheel(false);
   }, []);
 
+  const selectableIdsRef = useRef(selectableIds);
+  selectableIdsRef.current = selectableIds;
+  /** The shapes a click or marquee may pick: all, or the members of the editing context (the pick passes through the rest). */
+  const pickableShapes = useCallback(() => {
+    const allowed = selectableIdsRef.current;
+    return allowed ? shapesRef.current.filter((shape) => allowed.has(shape.id)) : shapesRef.current;
+  }, []);
   const pickShape = useCallback((clientX: number, clientY: number, pointerType = "mouse") => {
     const state = threeRef.current;
-    return state ? pickShapeAt(state, shapesRef.current, clientX, clientY, pointerType, selectedIdsRef.current) : null;
-  }, []);
+    return state ? pickShapeAt(state, pickableShapes(), clientX, clientY, pointerType, selectedIdsRef.current) : null;
+  }, [pickableShapes]);
   const shapeStackAt = useCallback((clientX: number, clientY: number) => {
     const state = threeRef.current;
-    return state ? shapesUnderPointer(state, shapesRef.current, clientX, clientY) : [];
-  }, []);
+    return state ? shapesUnderPointer(state, pickableShapes(), clientX, clientY) : [];
+  }, [pickableShapes]);
   // A right-click on empty space inside the frame of the selection still means the selection (#1282).
   const insideSelectionFrame = useCallback((clientX: number, clientY: number) => {
     const state = threeRef.current;
@@ -6254,6 +6266,8 @@ export function WorkplaneViewport({
       const shapeId = entry.object.userData.shapeId;
       if (typeof shapeId !== "string") return false;
       const shape = shapesRef.current.find((candidate) => candidate.id === shapeId);
+      // Build 0130 (native): a note is attached only to a member of the editing context; over a surrounding it is placed on the workplane (the boundary also holds for attaching).
+      if (selectableIdsRef.current && !selectableIdsRef.current.has(shapeId)) return false;
       return shape ? !shape.hidden : false;
     });
     if (hit) {

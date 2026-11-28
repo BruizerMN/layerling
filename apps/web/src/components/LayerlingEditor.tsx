@@ -176,7 +176,7 @@ import { nestedFocusCard, replaceNestedShape, resolveNestedFocus, type NestedFoc
 import { buildObjectRows, objectRowName } from "@/lib/objectsSnapshot";
 import { replaceAtFirst } from "@/lib/openGroupParts";
 import { existingGroupId, visualGroupsMenuFits, visualGroupsOutline, visualGroupsPaletteState, type ChooserGroup } from "@/lib/visualGroupsSnapshot";
-import { EMPTY_VISUAL_GROUPS, applyMerge, showOnlyGroupedObjects, setGroupLocked, toggleObjectLocked, findVisualGroup, focusGroupVisibility, moveItemsToGroup, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, copyPairs, mergePickCandidates, moveObjectsToGroup, placeDerivedObjects, placeReplacementObjects, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
+import { EMPTY_VISUAL_GROUPS, descendantObjectIds, applyMerge, showOnlyGroupedObjects, setGroupLocked, toggleObjectLocked, findVisualGroup, focusGroupVisibility, moveItemsToGroup, createVisualGroup, deleteVisualGroup, liveObjectIds, membershipMap, mergeDestination, copyPairs, mergePickCandidates, moveObjectsToGroup, placeDerivedObjects, placeReplacementObjects, placementOf, revertMembership, type MembershipChange, moveVisualGroup, removeObjectsFromGroups, renameVisualGroup, resolveVisualGroups, toggleGroupVisibility, visualGroupsFingerprint, type VisualGroupsRegistry } from "@/lib/visualGroups";
 import { ATTACHMENT_MCP_READ_ACTIONS, attachmentMcpCommand, attachmentMcpList } from "@/lib/projectAttachmentsMcp";
 import { appendEditorHistorySnapshot, boundedEditorHistoryState, continuesKeyRun, type KeyRun, editorHistoryBranch, editorHistoryEntry, editorHistoryForExport, historyStateAt, hydrateEditorHistoryState, notesForHistoryIndex, projectSceneFingerprint, projectShapesFingerprint, workplaneForHistoryIndex, type EditorHistoryEntry, type EditorHistoryState } from "@/lib/editorHistory";
 import { deleteHistoryEntries, formatHistoryBytes, historyFreedBytes, historyIndexAfterDelete } from "@/lib/historyStepSizes";
@@ -184,6 +184,7 @@ import { snapShapeFootprintToVisibleGrid, visibleGridStep } from "@/lib/gridSnap
 import { composedShapeRotation, geometryRotationDegreesForShortcut, geometryRotationDelta, rotatedGeometryShapePatch } from "@/lib/geometryRotation";
 import { carryShapePivot, heightPatchKeepingBase, pivotAfterJoin, shapePivotFromWorld, shapePivotWorld, type PivotPoint } from "@/lib/rotationPivot";
 import { createLocalId } from "@/lib/localIds";
+import { activationChanged, contextChain, editableIds, groupActionAllowed, notesViolation, onlyEditable, prepareContextCommit } from "@/lib/editingContext";
 import { canEditGroupAtLevel, mcpOpenGroupSummary, openGroupLevelsStillOpen, trackOpenGroupLevels, type OpenGroupLevel, type OpenGroupSession } from "@/lib/openGroupParts";
 import { applyMeshRepairs, scanForOpenMeshes, type MeshRepairScan } from "@/lib/meshRepair";
 import { createKernelMeshCheck } from "@/lib/meshRepairKernel";
@@ -474,6 +475,8 @@ type SplitSession = {
   position: number;
   pivot: [number, number, number];
   sourceFingerprint: string;
+  /** Build 0130: the activation of the editing context the split began in. */
+  startedContext: number;
   busy: boolean;
   error: string | null;
   /** The next click on a face sets the plane's position. */
@@ -3246,7 +3249,7 @@ export function LayerlingEditor({
   const [projectAttachments, setProjectAttachments] = useState<ProjectAttachment[]>(() => initialAttachments ?? NO_ATTACHMENTS);
   // Visual Groups: document-level, not part of the undo history; reads filter by the objects that exist (lib/visualGroups.ts).
   const [visualGroups, setVisualGroups] = useState<VisualGroupsRegistry>(() => initialVisualGroups ?? EMPTY_VISUAL_GROUPS);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIdsState] = useState<string[]>([]);
   const [clipboard, setClipboard] = useState<WorkplaneShape[]>([]);
   const clipboardCopiedAtRef = useRef(0);
   // Ctrl+V waits for the browser's paste event (#1548): the press it belongs to, and the one still waiting for it.
@@ -3394,10 +3397,41 @@ export function LayerlingEditor({
     (index: number) => describeHistoryStep(history[index - 1], history[index], openGroupCount),
     [history, openGroupCount],
   );
+  // Build 0130 (native): the ACTIVATION of the editing context. It changes on EVERY successful transition of the chain of open groups (open, descend, finish, cancel, undo past an opening, a session
+  // ending any other way), so an asynchronous operation that began in one activation completes only in that one: entering A, starting an import, entering B, finishing B and returning to A is a
+  // different activation although the group id matches again. A transition also ends the interactive modeling tools (their operands, previews and transient state belong to the previous context).
+  const contextGenerationRef = useRef(0);
+  const endModelingToolsRef = useRef<() => void>(() => undefined);
   const setOpenGroupLevels = useCallback((levels: OpenGroupLevel[]) => {
+    const changed = contextChain(openGroupsRef.current) !== contextChain(levels);
     openGroupsRef.current = levels;
     setOpenGroups(levels);
-  }, []);
+    if (changed && nativeDocument) {
+      contextGenerationRef.current += 1;
+      endModelingToolsRef.current();
+    }
+  }, [nativeDocument]);
+  /** The activation an asynchronous operation starts in; `contextChanged(started)` is true once any context transition has happened since. */
+  const contextActivation = useCallback(() => contextGenerationRef.current, []);
+  // Build 0130 (native): the members of the innermost open group (null: no context, no restriction), and the helpers every command that is not a plain modeling step uses to refuse.
+  const contextMembers = useCallback((): ReadonlySet<string> | null => (
+    nativeDocument && openGroupsRef.current.length
+      ? editableIds(openGroupsRef.current.map((level) => level.childIds), new Set(shapesRef.current.map((shape) => shape.id)))
+      : null
+  ), [nativeDocument]);
+  /** The modeling selection can only hold members of the editing context: the one rule behind click, marquee, Select All, Invert, the Objects Sidebar, Visual Groups and MCP. */
+  const gateSelectionIds = useCallback((ids: string[]): string[] => {
+    const members = contextMembers();
+    return members ? onlyEditable(members, ids) : ids;
+  }, [contextMembers]);
+  const setSelectedIds = useCallback((next: string[] | ((current: string[]) => string[])) => {
+    setSelectedIdsState((current) => {
+      const wanted = typeof next === "function" ? next(current) : next;
+      const kept = gateSelectionIds(wanted);
+      return kept.length === wanted.length ? wanted : kept;
+    });
+  }, [gateSelectionIds]);
+  const contextChanged = useCallback((started: number) => Boolean(nativeDocument) && activationChanged(started, contextGenerationRef.current), [nativeDocument]);
   const [stepExporting, setStepExporting] = useState(false);
   const [drawingExporting, setDrawingExporting] = useState(false);
   const [lylExporting, setLylExporting] = useState(false);
@@ -3522,6 +3556,24 @@ export function LayerlingEditor({
   const lastModelScaleRef = useRef<Pick<ScalePercentSettings, "by" | "ratio" | "useRealSize" | "realSize" | "axis"> | null>(null);
   const editorLanguage = useLanguage();
   const { notice, noticeAction, noticeAt, noticeOrdinary, setNotice, holdNotice, releaseNotice, dismissNotice, reportNoticesRef } = useEditorNotice({ errorsOnly: Boolean(nativeDocument) });
+  /** Whether this object may be changed now (no context open: always). */
+  const editableNow = useCallback((id: string): boolean => {
+    const members = contextMembers();
+    return !members || members.has(id);
+  }, [contextMembers]);
+  /** A command that changes the whole design is unavailable while a group is being edited, whatever it would happen to touch (quiet notice). */
+  const refuseWholeDesign = useCallback((): boolean => {
+    if (!contextMembers()) return false;
+    setNotice(t("status.documentWideBlocked"), true);
+    return true;
+  }, [contextMembers, setNotice]);
+  /** An action on several objects (a Visual Group's lock all, hide all, ...) is all or nothing: refused when any object it would touch is outside the editing context. */
+  const refuseNonMembers = useCallback((ids: readonly string[]): boolean => {
+    const members = contextMembers();
+    if (groupActionAllowed(members, ids)) return false;
+    setNotice(t("status.contextMixedAction"), true);
+    return true;
+  }, [contextMembers, setNotice]);
 
   /**
    * Build 0121: an open group is an editing transaction. While one is open the editor holds its parts as loose objects, so anything that
@@ -4525,7 +4577,7 @@ export function LayerlingEditor({
   // selection it is Select all. MCP's select_objects with invert goes through here too.
   const invertSelection = useCallback((fromIds?: string[]): string[] => {
     const selected = new Set(fromIds ?? selectedIdsRef.current);
-    const next = shapesRef.current.filter((shape) => !shape.hidden && !shape.imagePlate && !selected.has(shape.id)).map((shape) => shape.id);
+    const next = gateSelectionIds(shapesRef.current.filter((shape) => !shape.hidden && !shape.imagePlate && !selected.has(shape.id)).map((shape) => shape.id));
     setSelectedIds(next);
     selectedIdsRef.current = next;
     setNotice(next.length === 0 ? t("status.invertedNone") : next.length === 1 ? t("status.invertedOne") : t("status.invertedMany", { count: next.length }));
@@ -5335,31 +5387,55 @@ export function LayerlingEditor({
     // A group that was deleted while the sheet was open is no place.
     return { proceed: true, groupId: existingGroupId(visualGroupsRef.current, answer.groupId) };
   }, []);
+  // Build 0130 (N1): associated state that accompanies a commit (Visual Groups membership of the objects it makes) is applied ONLY when that commit succeeds. Callers place it before or after their commit
+  // in the same synchronous run; `commitShapes` is the one authority: a refusal drops what was queued before it and what is asked after it, a success applies it. Nothing outlives the tick.
+  const membershipTickRef = useRef<{ committed: boolean | null; pending: Array<() => void>; armed: boolean }>({ committed: null, pending: [], armed: false });
+  const markCommit = useCallback((ok: boolean): Array<() => void> => {
+    const tick = membershipTickRef.current;
+    const queued = tick.pending;
+    tick.pending = [];
+    tick.committed = ok;
+    if (!tick.armed) {
+      tick.armed = true;
+      queueMicrotask(() => { tick.armed = false; tick.committed = null; tick.pending = []; });
+    }
+    return ok ? queued : [];
+  }, []);
+  const afterCommit = useCallback((apply: () => void) => {
+    const tick = membershipTickRef.current;
+    if (tick.committed === true) { apply(); return; }
+    if (tick.committed === false) return;
+    tick.pending.push(apply);
+    if (!tick.armed) {
+      tick.armed = true;
+      queueMicrotask(() => { tick.armed = false; tick.committed = null; tick.pending = []; });
+    }
+  }, []);
   /** The merged object joins its group (the sources stay as stale entries: Undo finds them where they were). */
   const placeMergeResult = useCallback((sourceIds: readonly string[], resultId: string, groupId: string | null) => {
-    if (groupId) updateVisualGroups((current) => applyMerge(current, sourceIds, resultId, groupId));
-  }, [updateVisualGroups]);
+    if (groupId) afterCommit(() => updateVisualGroups((current) => applyMerge(current, sourceIds, resultId, groupId)));
+  }, [afterCommit, updateVisualGroups]);
   const placeMergeResultRef = useRef(placeMergeResult);
   placeMergeResultRef.current = placeMergeResult;
   /** New objects that replace a source (ungroup, separate, split, take out, ...) take the source's place in its Visual Group; each pair is (source id, new ids). */
   const placeDerived = useCallback((pairs: ReadonlyArray<readonly [string, readonly string[]]>) => {
     if (visualGroupsRef.current.items.length === 0 || pairs.length === 0) return;
-    updateVisualGroups((current) => placeDerivedObjects(current, pairs));
-  }, [updateVisualGroups]);
+    afterCommit(() => updateVisualGroups((current) => placeDerivedObjects(current, pairs)));
+  }, [afterCommit, updateVisualGroups]);
   const placeDerivedRef = useRef(placeDerived);
   placeDerivedRef.current = placeDerived;
   /** A tool replaced these sources by new objects: the merge rules give them a Visual Group, without asking (see placeReplacementObjects). */
   const placeReplacement = useCallback((sourceIds: readonly string[], newIds: readonly string[]) => {
     if (visualGroupsRef.current.items.length === 0) return;
-    updateVisualGroups((current) => placeReplacementObjects(current, sourceIds, newIds));
-  }, [updateVisualGroups]);
+    afterCommit(() => updateVisualGroups((current) => placeReplacementObjects(current, sourceIds, newIds)));
+  }, [afterCommit, updateVisualGroups]);
   const placeReplacementRef = useRef(placeReplacement);
   placeReplacementRef.current = placeReplacement;
   /** Copies (Duplicate, Array) take the place of the object they were made from. Pairs are (source id, copy id). */
   const placeCopies = useCallback((pairs: ReadonlyArray<readonly [string, string]>) => {
     if (visualGroupsRef.current.items.length === 0 || pairs.length === 0) return;
-    updateVisualGroups((current) => placeDerivedObjects(current, copyPairs(pairs)));
-  }, [updateVisualGroups]);
+    afterCommit(() => updateVisualGroups((current) => placeDerivedObjects(current, copyPairs(pairs))));
+  }, [afterCommit, updateVisualGroups]);
   const placeCopiesRef = useRef(placeCopies);
   placeCopiesRef.current = placeCopies;
   /** Undo/redo of a geometric step also takes back / brings again the membership change it made in place. */
@@ -5526,6 +5602,8 @@ export function LayerlingEditor({
   const updateProjectWorkspaceSettings = useCallback(
     (settings: { workspace: WorkplaneWorkspaceSettings; snap: GridSize }) => {
       const nextWorkspace = normalizeWorkspaceSettings(settings.workspace);
+      // Build 0130 (native): another plate size moves the bodies on the later plates, i.e. the whole design: unavailable while a group is being edited, refused BEFORE anything is written.
+      if (buildPlateCount(workspaceSettingsRef.current) > 1 && platePitch(workspaceSettingsRef.current) !== platePitch(nextWorkspace) && refuseWholeDesign()) return;
       // Native app: an edit of an application preference belongs to the application, not to this document (settingsScope.ts).
       if (nativeDocument) writeAppPrefs(splitWorkspace(nextWorkspace).app);
       const workspaceBefore = workspaceSettingsRef.current;
@@ -5630,34 +5708,51 @@ export function LayerlingEditor({
   const keyRunRef = useRef<KeyRun | null>(null);
 
   const commitShapes = useCallback(
-    (next: WorkplaneShape[], nextSelection: string | string[] | null = selectedIds, message?: string, keyRunKey?: string, amendNewest = false) => {
+    (next: WorkplaneShape[], nextSelection: string | string[] | null = selectedIds, message?: string, keyRunKey?: string, amendNewest = false): boolean => {
+      // Build 0130: the ONE refusal mechanism. A refusal (history view, shape lock, the editing context) changes NOTHING (no model, order, membership, notes, selection, history, dirty state) and
+      // returns false, so a caller with side effects stops; every other outcome returns true.
       // Solange der Verlaufsblick offen ist, zeigt die Flaeche nicht den
       // Entwurf. Eine Aenderung, die jetzt noch durchkaeme - ueber einen
       // Umweg, den die Leiste nicht kennt -, traefe etwas, das keiner sieht.
       if (historyViewStateRef.current) {
         setNotice(t("status.historyViewBlocksEdits"));
-        return;
+        markCommit(false);
+        return false;
       }
-      const canonicalNext = next.map(canonicalizeShape);
+      const levels = openGroupsRef.current;
+      // Build 0130 (native): isolation is a model integrity guarantee. Whatever is not a member of the innermost open group stays exactly as it was: checked on the tool's own result BEFORE
+      // canonicalization (reference first), then carried forward by its existing reference so that nothing later in the pipeline recreates or alters it. Group transitions are exempt by their caller.
+      const bounded = Boolean(nativeDocument) && levels.length > 0 && !openGroupTransitionRef.current;
+      const members = bounded ? editableIds(levels.map((level) => level.childIds), new Set(shapesRef.current.map((shape) => shape.id))) : null;
+      const prepared = prepareContextCommit(members, shapesRef.current, next, canonicalizeShape);
+      if (!prepared.ok) {
+        setNotice(t("status.contextProtected"), true);
+        markCommit(false);
+        return false;
+      }
+      const canonicalNext = prepared.shapes;
       // Lock shape (#1277): whatever tool got this far, a part of locked shape keeps its size, name and parts.
       if (!openGroupTransitionRef.current) {
         const held = shapeLockBroken(shapesRef.current, canonicalNext);
         if (held) {
           setNotice(t("status.shapeLockHeld", { name: displayShapeName(held) }));
-          return;
+          markCommit(false);
+          return false;
         }
       }
       const requestedSelection = Array.isArray(nextSelection) ? nextSelection : nextSelection ? [nextSelection] : [];
-      const validSelection = requestedSelection.filter((id, index) => requestedSelection.indexOf(id) === index && canonicalNext.some((shape) => shape.id === id));
+      let validSelection = requestedSelection.filter((id, index) => requestedSelection.indexOf(id) === index && canonicalNext.some((shape) => shape.id === id));
       // A note whose body goes away moves to the new body under it, or stays where it stands.
-      const levels = openGroupsRef.current;
       const nextNotes = notesAfterShapeChange(notesRef.current, shapesRef.current, canonicalNext, new Set(levels.map((level) => level.original.id)), openGroupTransitionRef.current);
       if (levels.length && !openGroupTransitionRef.current) {
         const levelPartIds = levels.map((level) => level.childIds);
-        const tracked = trackOpenGroupLevels(levelPartIds, shapesRef.current, canonicalNext);
+        // Build 0130 (native): every object this step adds joins the innermost level (new, duplicate, paste, import, any tool); the browser keeps "removes a part and brings new ones in".
+        const tracked = trackOpenGroupLevels(levelPartIds, shapesRef.current, canonicalNext, { addToInnermost: Boolean(nativeDocument) });
         if (tracked !== levelPartIds) {
           setOpenGroupLevels(levels.map((level, index) => (tracked[index] === level.childIds ? level : { ...level, childIds: [...tracked[index]] })));
         }
+        // Build 0130 (native): the modeling selection can only hold members of the context.
+        if (nativeDocument) validSelection = onlyEditable(editableIds(tracked, new Set(canonicalNext.map((shape) => shape.id))), validSelection);
       }
       shapesRef.current = canonicalNext;
       selectedIdsRef.current = validSelection;
@@ -5684,8 +5779,10 @@ export function LayerlingEditor({
       if (changed) {
         syncProjectShapes(canonicalNext);
       }
+      for (const apply of markCommit(true)) apply();
+      return true;
     },
-    [appendHistorySnapshot, notes, selectedIds, setOpenGroupLevels, syncProjectShapes],
+    [appendHistorySnapshot, markCommit, nativeDocument, notes, selectedIds, setNotice, setOpenGroupLevels, syncProjectShapes],
   );
 
   // Several build plates side by side (Discussion #456): the bar, the active plate and what its buttons do.
@@ -5702,6 +5799,7 @@ export function LayerlingEditor({
     commitShapes,
     updateWorkspace: updateProjectWorkspaceSettings,
     setNotice,
+    refuseWholeDesign,
   });
   const { ontoActivePlate } = buildPlates;
   plateResizeRef.current = (before, after) => commitShapes(shapesAfterPlateResize(before, after, shapesRef.current), selectedIdsRef.current);
@@ -5712,12 +5810,18 @@ export function LayerlingEditor({
    * dieser Wege legt einen Stand ab, den Rueckgaengig wieder holen kann.
    */
   const commitNotes = useCallback(
-    (next: WorkplaneNote[], message?: string) => {
+    (next: WorkplaneNote[], message?: string): boolean => {
       if (historyViewStateRef.current) {
         setNotice(t("status.historyViewBlocksEdits"));
-        return;
+        return false;
       }
       const normalized = normalizeNotes(next);
+      // Build 0130 (native): a note attached to an object outside the editing context may not be changed, removed, detached or reassigned, and none may be attached to one. Refused as a whole.
+      const members = nativeDocument && openGroupsRef.current.length ? editableIds(openGroupsRef.current.map((level) => level.childIds), new Set(shapesRef.current.map((shape) => shape.id))) : null;
+      if (members && notesViolation(members, new Set(shapesRef.current.map((shape) => shape.id)), notesRef.current, normalized)) {
+        setNotice(t("status.contextProtected"), true);
+        return false;
+      }
       notesRef.current = normalized;
       setNotes(normalized);
       const changed = appendHistoryEntry(editorHistoryEntry(shapesRef.current, selectedIdsRef.current, normalized, placementWorkplaneRef.current));
@@ -5725,8 +5829,9 @@ export function LayerlingEditor({
       // Der Abgleich mit dem Projektspeicher vergleicht Koerper. Eine Notiz
       // aendert daran nichts, also muss er hier ausdruecklich laufen.
       if (changed) syncProjectShapes(shapesRef.current, true);
+      return true;
     },
-    [appendHistoryEntry, setNotice, syncProjectShapes],
+    [appendHistoryEntry, nativeDocument, setNotice, syncProjectShapes],
   );
 
   const { addNote, addReferencePoints, removeAllReferencePoints, updateNote, removeNote } = useEditorNotes({ notesRef, setNotes, commitNotes, setNotice, setNotesVisible });
@@ -5809,6 +5914,7 @@ export function LayerlingEditor({
       setNotice(t("status.chooseEdgeFeature"), true);
       return;
     }
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint([selectedShape]);
     const sourceProjectId = projectInfoRef.current.projectId;
     const restored = await restoreEdgeTreatmentInShape(selectedShape, option.path, option.entryId, workspaceSettingsRef.current.booleanTriangleLimit);
@@ -5817,7 +5923,7 @@ export function LayerlingEditor({
       return;
     }
     const currentTarget = shapesRef.current.find((shape) => shape.id === selectedShape.id);
-    if (projectInfoRef.current.projectId !== sourceProjectId || !currentTarget || projectShapesFingerprint([currentTarget]) !== sourceFingerprint) {
+    if (projectInfoRef.current.projectId !== sourceProjectId || !currentTarget || projectShapesFingerprint([currentTarget]) !== sourceFingerprint || contextChanged(startedContext)) {
       setNotice(t("status.edgeRemoveChanged"));
       return;
     }
@@ -5855,6 +5961,7 @@ export function LayerlingEditor({
       setNotice(t("status.objectLocked"));
       return;
     }
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint([selectedShape]);
     const sourceProjectId = projectInfoRef.current.projectId;
     const restored = await restoreEdgeTreatmentInShape(selectedShape, option.path, option.entryId, workspaceSettingsRef.current.booleanTriangleLimit);
@@ -5863,7 +5970,7 @@ export function LayerlingEditor({
       return;
     }
     const currentTarget = shapesRef.current.find((shape) => shape.id === selectedShape.id);
-    if (projectInfoRef.current.projectId !== sourceProjectId || !currentTarget || projectShapesFingerprint([currentTarget]) !== sourceFingerprint) {
+    if (projectInfoRef.current.projectId !== sourceProjectId || !currentTarget || projectShapesFingerprint([currentTarget]) !== sourceFingerprint || contextChanged(startedContext)) {
       setNotice(t("status.edgeRemoveChanged"));
       return;
     }
@@ -6886,6 +6993,7 @@ export function LayerlingEditor({
   }, [sketchActive, sketchOperation, sketchProfile]);
 
   const finishSketch = useCallback(async () => {
+    const startedContext = contextActivation();
     // Drawn on the plate for a turned body: back into the body's frame, which it keeps.
     const turn = sketchEditTurnRef.current;
     // The notes are not part of the body's sketch: they become the body's own.
@@ -6961,6 +7069,7 @@ export function LayerlingEditor({
     }
     if (sketchNotes) notesRef.current = notesWithSketchNotes(notesRef.current, edited?.id ?? null, resolved, sketchNotes, sketchNoteFrame(resolved, sketchOperation, drawnProfile, sketchRevolveSettings));
     const nextShapes = edited ? shapes.map((shape) => (shape.id === edited.id ? resolved : shape)) : [...shapes, resolved];
+    if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
     commitShapes(
       nextShapes,
       resolved.id,
@@ -7505,10 +7614,11 @@ export function LayerlingEditor({
     const mergeSources = inSelectionOrder(selectedShapes.map((shape) => shape.id));
     const place = await chooseMergeGroup(mergeSources, true, "Array");
     if (!place.proceed) return;
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     const result = await buildGroupedShapeOffThread(pieces, workspaceSettingsRef.current.booleanTriangleLimit, geometryAbortRef.current?.signal);
-    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
       setNotice(t("status.groupChanged"));
       return;
     }
@@ -7589,6 +7699,7 @@ export function LayerlingEditor({
    * menu of its own (#1548).
    */
   const pasteShape = useCallback(async (systemText?: string) => {
+    const startedContext = contextActivation();
     const sourceProjectId = projectInfoRef.current.projectId;
     // The newest copy wins, wherever it landed: this tab, another tab (local
     // storage) or another browser (system clipboard).
@@ -7624,6 +7735,7 @@ export function LayerlingEditor({
         elevation: cleanNearZero((shape.elevation ?? 0) + centering.y),
       }))
       : pasteNudged(copies, sourceClipboard);
+    if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
     commitShapes([...shapesRef.current, ...pasted], pasted.map((shape) => shape.id), pasted.length === 1 ? t("status.pastedOne") : t("status.pastedMany", { count: pasted.length }));
   }, [clipboard, commitShapes, workspaceSettings.pasteCentered]);
   pasteShapeRef.current = pasteShape;
@@ -8032,6 +8144,7 @@ export function LayerlingEditor({
       position: plane.position,
       pivot: plane.origin,
       sourceFingerprint: projectShapesFingerprint(shapesRef.current),
+      startedContext: contextActivation(),
       busy: false,
       error: null,
       picking: false,
@@ -8178,7 +8291,8 @@ export function LayerlingEditor({
       return splitProjectIdRef.current === sourceProjectId
         && currentSelection.length === session.targetIds.length
         && session.targetIds.every((id) => currentSelection.includes(id))
-        && projectShapesFingerprint(shapesRef.current) === session.sourceFingerprint;
+        && projectShapesFingerprint(shapesRef.current) === session.sourceFingerprint
+        && !contextChanged(session.startedContext);
     };
     if (!sourceContextIsCurrent()) {
       splitRunRef.current += 1;
@@ -8635,6 +8749,7 @@ export function LayerlingEditor({
     lay?: (modified: WorkplaneShape) => void,
   ) => {
     invalidateCadModifierSession();
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint([shape]);
     const sourceProjectId = projectInfoRef.current.projectId;
     const kind: CadModifierKind = params.kind === "fillet" ? "fillet" : params.kind === "chamfillet" ? "chamfillet" : "chamfer";
@@ -8761,7 +8876,7 @@ export function LayerlingEditor({
     if (
       projectInfoRef.current.projectId !== sourceProjectId ||
       !currentTarget ||
-      projectShapesFingerprint([currentTarget]) !== sourceFingerprint
+      projectShapesFingerprint([currentTarget]) !== sourceFingerprint || contextChanged(startedContext)
     ) {
       throw new Error("The target object or project changed while the edge treatment was running; try again");
     }
@@ -8827,6 +8942,7 @@ export function LayerlingEditor({
       throw new Error("Select one unlocked object to hollow");
     }
     invalidateCadModifierSession();
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint([watched]);
     const sourceProjectId = projectInfoRef.current.projectId;
     const { response, sourceParts } = await prepareCadModifierForMcp(shape, 25);
@@ -8881,7 +8997,7 @@ export function LayerlingEditor({
     if (
       projectInfoRef.current.projectId !== sourceProjectId ||
       !currentTarget ||
-      projectShapesFingerprint([currentTarget]) !== sourceFingerprint
+      projectShapesFingerprint([currentTarget]) !== sourceFingerprint || contextChanged(startedContext)
     ) {
       throw new Error("The object or project changed while it was being hollowed; try again");
     }
@@ -8898,6 +9014,7 @@ export function LayerlingEditor({
   const makeExactShape = useCallback(async (shape: WorkplaneShape) => {
     if (bodyLocked(shape) || !offersMakeExact(shape)) throw new Error(t("makeExact.selectOne"));
     invalidateCadModifierSession();
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint([shape]);
     const sourceProjectId = projectInfoRef.current.projectId;
     let prepared: Awaited<ReturnType<typeof prepareCadModifierForMcp>>;
@@ -8926,7 +9043,7 @@ export function LayerlingEditor({
       cadDisplayEdgesVersion: 2 as const,
     });
     const currentTarget = shapesRef.current.find((candidate) => candidate.id === shape.id);
-    if (projectInfoRef.current.projectId !== sourceProjectId || !currentTarget || projectShapesFingerprint([currentTarget]) !== sourceFingerprint) {
+    if (projectInfoRef.current.projectId !== sourceProjectId || !currentTarget || projectShapesFingerprint([currentTarget]) !== sourceFingerprint || contextChanged(startedContext)) {
       throw new Error(t("makeExact.changed"));
     }
     return { shape: exact, report };
@@ -8963,6 +9080,7 @@ export function LayerlingEditor({
       throw new Error("Select one unlocked object to delete faces from");
     }
     invalidateCadModifierSession();
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint([shape]);
     const sourceProjectId = projectInfoRef.current.projectId;
     const { response, sourceParts } = await prepareCadModifierForMcp(shape, 25, { faces: true });
@@ -9033,7 +9151,7 @@ export function LayerlingEditor({
     if (
       projectInfoRef.current.projectId !== sourceProjectId ||
       !currentTarget ||
-      projectShapesFingerprint([currentTarget]) !== sourceFingerprint
+      projectShapesFingerprint([currentTarget]) !== sourceFingerprint || contextChanged(startedContext)
     ) {
       throw new Error("The object or project changed while the faces were being deleted; try again");
     }
@@ -9093,10 +9211,11 @@ export function LayerlingEditor({
     const hole = clearance > 0.0001
       ? await offsetShape(part, clearance, false, "round", true)
       : withHoleMode(cloneWorkplaneShapeTreeWithFreshIds(part, "cutout"), true);
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     const result = await buildGroupedShapeOffThread([host, hole], workspaceSettingsRef.current.booleanTriangleLimit, geometryAbortRef.current?.signal);
-    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
       throw new Error(t("status.cutOutChanged"));
     }
     if (!result.group && !result.consumed) throw new Error(result.failureNotice);
@@ -9168,9 +9287,10 @@ export function LayerlingEditor({
     }
     if (punch.id === target.id) throw new Error("The punch and the body to punch must be two different objects");
     const names = { punch: displayShapeName(punch), target: displayShapeName(target), axis: sectionAxisLetter(axis) };
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
-    const changed = () => projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint;
+    const changed = () => projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext);
     const plan = punchPlan(await getManifoldRuntime(), meshForShape(punch), meshForShape(target), axis, clearance);
     if (!plan.ok) {
       throw new Error(plan.problem === "miss"
@@ -9252,12 +9372,13 @@ export function LayerlingEditor({
     if (!targets.some((shape) => !shape.hole)) return fail(t("flexi.error.needsBody"));
     if (targets.some((shape) => bodyLocked(shape))) return fail(t("status.objectLocked"));
     const options = normalizeFlexiOptions(given);
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     setNotice(t("flexi.working"), true);
     const result = await articulateShapesOffThread(targets, options);
     if (!result.links) return fail(result.error);
-    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
       return fail(t("flexi.error.changed"));
     }
     const group = groupedShape(result.links);
@@ -9390,9 +9511,10 @@ export function LayerlingEditor({
     const changesBody = options.magnets || options.hinge || options.latches > 0 || options.clickBumps || options.handle === "notch" || options.type === "screw" || options.type === "screwIn" || options.type === "bayonet" || options.type === "slide";
     if (changesBody && targets.some((shape) => bodyLocked(shape))) return fail(t("status.objectLocked"));
     if (changesBody && targets.some((shape) => shape.groupOperation === "bundle")) return fail(t("lid.error.magnetsBundle"));
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
-    const changed = () => projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint;
+    const changed = () => projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext);
     setNotice(t("lid.working"), true);
     const result = await lidForShapesOffThread(targets, options);
     if (!result.lid) return fail(result.error);
@@ -9583,10 +9705,11 @@ export function LayerlingEditor({
       ...cableChannelShapeFields(path, options.diameter),
       name: t("cable.name", { name }),
     } as WorkplaneShape);
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     const result = await buildGroupedShapeOffThread([target, hole], workspaceSettingsRef.current.booleanTriangleLimit, geometryAbortRef.current?.signal);
-    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) throw new Error(t("status.groupChanged"));
+    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) throw new Error(t("status.groupChanged"));
     if (!result.group) throw new Error(result.failureNotice || t("cable.error.kernel"));
     const group = canonicalizeShape({ ...result.group, groupOperation: "group" });
     const length = Math.round(path.length);
@@ -9761,7 +9884,11 @@ export function LayerlingEditor({
    * in that history entry, so one undo takes back the resize as a whole. If
    * the body changed meanwhile, nothing happens: the next round picks it up.
    */
-  const replaceRebuiltShape = useCallback((staleId: string, fingerprint: string, rebuilt: WorkplaneShape) => {
+  const replaceRebuiltShape = useCallback((staleId: string, fingerprint: string, rebuilt: WorkplaneShape, startedContext: number) => {
+    // Build 0130 (N5): a rebuild belongs to the activation of the editing context it began in. Cancel (or any context transition) is authoritative over pending background work: the result is discarded, and the object keeps
+    // the state it has (the same stale-but-valid state it had when the rebuild began; the effect that started it finds it again and rebuilds against the new context). Never a member-only or no-context shortcut.
+    if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return false; }
+    if (!editableNow(staleId)) return false;
     const current = shapesRef.current;
     if (!current.some((shape) => shape.id === staleId && projectShapesFingerprint([shape]) === fingerprint)) return false;
     const next = current.map((shape) => shape.id === staleId ? canonicalizeShape(rebuilt) : shape);
@@ -9815,12 +9942,13 @@ export function LayerlingEditor({
   const [shellRebuildRound, setShellRebuildRound] = useState(0);
   useEffect(() => {
     if (projectInteractionActive || edgeModifier || shellTool || deleteFaceTool || shellRebuildBusyRef.current) return;
-    const stale = shapes.find((shape) => !shape.locked && shellNeedingRebuild(shape) && !shellRebuildFailedRef.current.has(projectShapesFingerprint([shape])));
+    const stale = shapes.find((shape) => !shape.locked && editableNow(shape.id) && shellNeedingRebuild(shape) && !shellRebuildFailedRef.current.has(projectShapesFingerprint([shape])));
     if (!stale) return;
     const timer = window.setTimeout(() => {
       const entry = shellNeedingRebuild(stale);
       if (!entry) return;
       const fingerprint = projectShapesFingerprint([stale]);
+      const startedContext = contextActivation();
       const { amount } = entry.feature;
       shellRebuildBusyRef.current = true;
       void rehollowedShape(stale)
@@ -9830,7 +9958,7 @@ export function LayerlingEditor({
             setNotice(t("status.shellRebuildFailed"), true);
             return;
           }
-          if (replaceRebuiltShape(stale.id, fingerprint, rebuilt)) setNotice(t("status.shellRebuilt", { size: Number(amount.toFixed(2)) }));
+          if (replaceRebuiltShape(stale.id, fingerprint, rebuilt, startedContext)) setNotice(t("status.shellRebuilt", { size: Number(amount.toFixed(2)) }));
         })
         .catch((error: unknown) => {
           const message = error instanceof Error ? localizedError(error.message) : String(error);
@@ -9845,7 +9973,7 @@ export function LayerlingEditor({
         });
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [deleteFaceTool, edgeModifier, projectInteractionActive, rehollowedShape, replaceRebuiltShape, shapes, shellRebuildRound, shellTool]);
+  }, [contextActivation, deleteFaceTool, edgeModifier, editableNow, projectInteractionActive, rehollowedShape, replaceRebuiltShape, shapes, shellRebuildRound, shellTool]);
 
   /**
    * "Fit the body to the neck" (issue #1482): the body's top made as wide as a standard's neck under the thread
@@ -9861,9 +9989,10 @@ export function LayerlingEditor({
     const patch = lidNeckFitPatch(target, standard);
     if (!patch) return fail(t("lid.error.neckFitShape"));
     if (bodyLocked(target)) return fail(t("status.objectLocked"));
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
-    const changed = () => projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint;
+    const changed = () => projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext);
     let fitted: WorkplaneShape | null = shapeWithInspectorPatch(target, patch);
     if (shellNeedingRebuild(fitted)) {
       try {
@@ -9926,16 +10055,17 @@ export function LayerlingEditor({
   const [sketchRebuildRound, setSketchRebuildRound] = useState(0);
   useEffect(() => {
     if (projectInteractionActive || edgeModifier || shellTool || deleteFaceTool || sketchActive || sketchRebuildBusyRef.current) return;
-    const stale = shapes.find((shape) => sketchBodyStretch(shape) && !sketchRebuildFailedRef.current.has(projectShapesFingerprint([shape])));
+    const stale = shapes.find((shape) => editableNow(shape.id) && sketchBodyStretch(shape) && !sketchRebuildFailedRef.current.has(projectShapesFingerprint([shape])));
     if (!stale?.sketchProfile) return;
     const timer = window.setTimeout(() => {
       const stretch = sketchBodyStretch(stale);
       if (!stretch || !stale.sketchProfile) return;
       const fingerprint = projectShapesFingerprint([stale]);
+      const startedContext = contextActivation();
       sketchRebuildBusyRef.current = true;
       void cadShapeFromSketchProfile(stretchedSketchProfile(stale.sketchProfile, stretch.x, stretch.z), stretch.height, stale)
         .then((extrusion) => {
-          replaceRebuiltShape(stale.id, fingerprint, placeSketchShape(extrusion, placementWorkplaneRef.current, stale));
+          replaceRebuiltShape(stale.id, fingerprint, placeSketchShape(extrusion, placementWorkplaneRef.current, stale), startedContext);
         })
         .catch(() => {
           sketchRebuildFailedRef.current.add(fingerprint);
@@ -9947,7 +10077,7 @@ export function LayerlingEditor({
         });
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [deleteFaceTool, edgeModifier, projectInteractionActive, replaceRebuiltShape, shapes, shellTool, sketchActive, sketchRebuildRound]);
+  }, [contextActivation, deleteFaceTool, edgeModifier, editableNow, projectInteractionActive, replaceRebuiltShape, shapes, shellTool, sketchActive, sketchRebuildRound]);
 
   useEffect(() => {
     const base = cadModifierBaseShapeRef.current;
@@ -10197,6 +10327,7 @@ export function LayerlingEditor({
   }, [commitShapes, hasSelection, selectedIds, selectedShapes, shapes]);
 
   const showHidden = useCallback(() => {
+    if (refuseWholeDesign()) return;
     const hiddenCount = shapes.filter((shape) => shape.hidden).length;
     if (hiddenCount === 0) {
       setNotice(t("status.noHiddenShapes"));
@@ -10207,12 +10338,13 @@ export function LayerlingEditor({
       selectedIds,
       hiddenCount === 1 ? t("status.shownHiddenOne") : t("status.shownHiddenMany", { count: hiddenCount }),
     );
-  }, [commitShapes, selectedIds, shapes]);
+  }, [commitShapes, refuseWholeDesign, selectedIds, shapes]);
   showHiddenRef.current = showHidden;
 
   // Hide others (Discussion #1472): everything but the selection goes out of sight in one undo step, so Ctrl+Z
   // or Show all hidden brings it back. Returns the ids it hid, or why it hid nothing, for MCP.
   const hideOthers = useCallback((keepIds?: string[]): { hiddenIds: string[]; problem: "noSelection" | "nothingElse" | null } => {
+    if (refuseWholeDesign()) return { hiddenIds: [], problem: "nothingElse" };
     const keep = new Set(keepIds ?? selectedIdsRef.current);
     const current = shapesRef.current;
     if (keep.size === 0) {
@@ -10323,34 +10455,38 @@ export function LayerlingEditor({
    * written, for all of them in ONE commit (one undo step). Objects that are hidden leave the selection, as with the object list's eye.
    */
   const toggleVisualGroupVisibility = useCallback((groupId: string) => {
+    if (refuseNonMembers(descendantObjectIds(visualGroupsRef.current, groupId, liveObjectIds(shapesRef.current)))) return;
     const toggle = toggleGroupVisibility(visualGroupsRef.current, groupId, shapesRef.current);
     if (!toggle) return;
     const changed = new Set(toggle.changedIds);
     commitShapes(toggle.shapes, toggle.hide ? selectedIdsRef.current.filter((id) => !changed.has(id)) : selectedIdsRef.current);
-  }, [commitShapes]);
+  }, [commitShapes, refuseNonMembers]);
   /**
    * Option-click on a group's eye: everything outside the group is hidden and the group's objects are shown, in ONE commit (one undo step). One-way: no state is kept.
    * Objects that are hidden leave the selection, as with the other eyes.
    */
   const focusVisualGroup = useCallback((groupId: string) => {
+    if (refuseWholeDesign()) return;
     const focus = focusGroupVisibility(visualGroupsRef.current, groupId, shapesRef.current);
     if (!focus) return;
     const hidden = new Set(focus.hiddenIds);
     commitShapes(focus.shapes, selectedIdsRef.current.filter((id) => !hidden.has(id)));
-  }, [commitShapes]);
+  }, [commitShapes, refuseWholeDesign]);
   /**
    * Lock All / Unlock All on a group, and the object row's lock button (Build 0056): Lock Object (shape.locked, the existing flag) for every object in the group at any
    * depth, or for one object, in ONE commit (one undo step). One-shot: no group keeps a lock and nothing is remembered. The selection is left as it is (a locked object
    * stays selectable). Silent, like the palette's eye.
    */
   const lockVisualGroup = useCallback((groupId: string, locked: boolean) => {
+    if (refuseNonMembers(descendantObjectIds(visualGroupsRef.current, groupId, liveObjectIds(shapesRef.current)))) return;
     const change = setGroupLocked(visualGroupsRef.current, groupId, shapesRef.current, locked);
     if (change) commitShapes(change.shapes, selectedIdsRef.current);
-  }, [commitShapes]);
+  }, [commitShapes, refuseNonMembers]);
   const toggleVisualObjectLock = useCallback((id: string) => {
+    if (refuseNonMembers([id])) return;
     const change = toggleObjectLocked(shapesRef.current, id);
     if (change) commitShapes(change.shapes, selectedIdsRef.current);
-  }, [commitShapes]);
+  }, [commitShapes, refuseNonMembers]);
   /**
    * Visual Groups Only (Build 0057): hide every object, show every object that is in a Visual Group, in ONE commit (one undo step). A one-shot action, not a mode: only the
    * existing `hidden` flags are written, nothing is remembered, the registry and the selection are left as they are. Silent, like the palette's eye. Not while a history
@@ -10358,11 +10494,15 @@ export function LayerlingEditor({
    */
   const showOnlyVisualGroupObjects = useCallback(() => {
     if (historyViewStateRef.current) return;
+    if (refuseWholeDesign()) return;
     const change = showOnlyGroupedObjects(visualGroupsRef.current, shapesRef.current);
     if (change) commitShapes(change.shapes, selectedIdsRef.current);
-  }, [commitShapes]);
+  }, [commitShapes, refuseWholeDesign]);
   const visualGroupOps = useMemo(() => ({
+    // Build 0130 (native): while a group is being edited the Visual Groups containers cannot be created, renamed, moved or deleted, and objects cannot be assigned or removed: that organizational
+    // state is not part of the session's Undo, Redo and Cancel, so it is unavailable rather than uncertain (reported limitation).
     create: (options?: { name?: string; parentId?: string | null; index?: number }): string => {
+      if (refuseWholeDesign()) return "";
       let id = "";
       updateVisualGroups((current) => {
         const made = createVisualGroup(current, options);
@@ -10371,19 +10511,20 @@ export function LayerlingEditor({
       });
       return id;
     },
-    rename: (groupId: string, name: string) => updateVisualGroups((current) => renameVisualGroup(current, groupId, name)),
-    delete: (groupId: string) => updateVisualGroups((current) => deleteVisualGroup(current, groupId)),
-    moveGroup: (groupId: string, parentId: string | null, index?: number) => updateVisualGroups((current) => moveVisualGroup(current, groupId, parentId, index)),
-    moveObjects: (objectIds: readonly string[], groupId: string, index?: number) => updateVisualGroups((current) => moveObjectsToGroup(current, objectIds, groupId, index)),
-    removeObjects: (objectIds: readonly string[]) => updateVisualGroups((current) => removeObjectsFromGroups(current, objectIds)),
+    rename: (groupId: string, name: string) => { if (!refuseWholeDesign()) updateVisualGroups((current) => renameVisualGroup(current, groupId, name)); },
+    delete: (groupId: string) => { if (!refuseWholeDesign()) updateVisualGroups((current) => deleteVisualGroup(current, groupId)); },
+    moveGroup: (groupId: string, parentId: string | null, index?: number) => { if (!refuseWholeDesign()) updateVisualGroups((current) => moveVisualGroup(current, groupId, parentId, index)); },
+    moveObjects: (objectIds: readonly string[], groupId: string, index?: number) => { if (!refuseWholeDesign()) updateVisualGroups((current) => moveObjectsToGroup(current, objectIds, groupId, index)); },
+    removeObjects: (objectIds: readonly string[]) => { if (!refuseWholeDesign()) updateVisualGroups((current) => removeObjectsFromGroups(current, objectIds)); },
     /** The palette's drop: re-order, nest or move rows (groups with their contents, objects) in one operation. */
-    moveItems: (items: ReadonlyArray<{ kind: "group" | "object"; id: string }>, parentId: string | null, index: number) =>
-      updateVisualGroups((current) => moveItemsToGroup(current, items, parentId, index, liveObjectIds(shapesRef.current))),
+    moveItems: (items: ReadonlyArray<{ kind: "group" | "object"; id: string }>, parentId: string | null, index: number) => {
+      if (!refuseWholeDesign()) updateVisualGroups((current) => moveItemsToGroup(current, items, parentId, index, liveObjectIds(shapesRef.current)));
+    },
     toggleVisibility: toggleVisualGroupVisibility,
     focus: focusVisualGroup,
     lockGroup: lockVisualGroup,
     toggleObjectLock: toggleVisualObjectLock,
-  }), [focusVisualGroup, lockVisualGroup, toggleVisualGroupVisibility, toggleVisualObjectLock, updateVisualGroups]);
+  }), [focusVisualGroup, lockVisualGroup, refuseWholeDesign, toggleVisualGroupVisibility, toggleVisualObjectLock, updateVisualGroups]);
   const visualGroupOpsRef = useRef(visualGroupOps);
   visualGroupOpsRef.current = visualGroupOps;
 
@@ -10868,6 +11009,7 @@ export function LayerlingEditor({
   }, [threadInsertTool, faceReadForClick, moveThreadInsertFace]);
 
   const applyThreadInsert = useCallback(async () => {
+    const startedContext = contextActivation();
     const tool = threadInsertTool;
     const spec = threadInsertSizeSpec;
     if (!tool?.face || !spec || tool.busy) return;
@@ -10901,6 +11043,7 @@ export function LayerlingEditor({
       const group = canonicalizeShape({ ...built.group, groupOperation: "group" });
       closeThreadInsert();
       placeReplacementRef.current([live.id], [group.id]);
+      if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
       commitShapes(
         [...shapesRef.current.filter((shape) => shape.id !== live.id), group],
         group.id,
@@ -11064,10 +11207,11 @@ export function LayerlingEditor({
       return;
     }
     setHolePatternTool({ ...tool, busy: true });
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     const result = await buildGroupedShapeOffThread([source, ...plan.holes], workspaceSettingsRef.current.booleanTriangleLimit, geometryAbortRef.current?.signal);
-    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
       setHolePatternTool(null);
       setNotice(t("status.groupChanged"));
       return;
@@ -11163,6 +11307,7 @@ export function LayerlingEditor({
 
   /** A stroke onto the painted body, as a step of the history; one that finds nothing on the body is not kept. */
   const addPaintStroke = useCallback(async (stroke: PaintStroke | null) => {
+    const startedContext = contextActivation();
     const tool = paintTool;
     if (!tool || !stroke) return;
     // A circle or a lasso is cut in by the kernel; without it, it would colour whole faces, and a small one find none.
@@ -11184,6 +11329,7 @@ export function LayerlingEditor({
       setNotice(t("status.paintNothing"));
       return;
     }
+    if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
     commitShapes(shapesRef.current.map((shape) => (shape.id === source.id ? next : shape)), source.id, t(stroke.color ? "status.paintAdded" : "status.paintErased"));
   }, [commitShapes, paintTool, refuseLockedSelection]);
 
@@ -11344,6 +11490,7 @@ export function LayerlingEditor({
     const source = shapesRef.current.find((shape) => shape.id === tool.sourceId);
     if (!source) return;
     setFaceTool({ ...tool, busy: true });
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     let body: WorkplaneShape | null;
@@ -11365,7 +11512,7 @@ export function LayerlingEditor({
     const createdMessage = t(tool.settings.direction === "in" ? "status.faceToolPocketCreated" : "status.faceToolCreated", { depth: Number(faceToolSettingsOn(tool.face, tool.settings).depth.toFixed(2)) });
     if (tool.settings.separate) {
       // As a part of its own (#750): beside the body, not grouped with it, ready to be resized, moved or used to cut.
-      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
         setFaceTool(null);
         setNotice(t("status.groupChanged"));
         return;
@@ -11375,7 +11522,7 @@ export function LayerlingEditor({
       return;
     }
     const result = await buildGroupedShapeOffThread([source, body], workspaceSettingsRef.current.booleanTriangleLimit, geometryAbortRef.current?.signal);
-    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
       setFaceTool(null);
       setNotice(t("status.groupChanged"));
       return;
@@ -11528,6 +11675,7 @@ export function LayerlingEditor({
   }, [supportRibTool?.face, supportRibTool?.settings, supportRibTool?.sourceId]);
 
   const applySupportRib = useCallback(async () => {
+    const startedContext = contextActivation();
     const tool = supportRibTool;
     if (!tool?.face || tool.busy) return;
     const source = shapesRef.current.find((shape) => shape.id === tool.sourceId);
@@ -11553,6 +11701,7 @@ export function LayerlingEditor({
       const group = groupedShape([source, rib]);
       if (group) {
         const bundle = canonicalizeShape({ ...group, name: source.name, groupOperation: "bundle" });
+        if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
         commitShapes([...shapesRef.current.filter((shape) => shape.id !== source.id), bundle], bundle.id, message);
         return;
       }
@@ -11684,10 +11833,11 @@ export function LayerlingEditor({
     const sources = tool.sourceIds.map((id) => shapesRef.current.find((shape) => shape.id === id));
     if (sources.some((shape) => !shape)) return;
     setStencilBridgeTool({ ...tool, busy: true });
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     const built = await buildStencilBridgeGroup(sources as WorkplaneShape[], tool.settings).catch(() => ({ ok: false as const, reason: "failed" as const }));
-    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
       setStencilBridgeTool((current) => (current ? { ...current, busy: false } : current));
       setNotice(t("status.groupChanged"));
       return;
@@ -11935,6 +12085,7 @@ export function LayerlingEditor({
     if (pending.length === 0) return;
     pending.forEach((shape) => honeycombConvertedRef.current.add(shape.id));
     const sourceProjectId = projectInfoRef.current.projectId;
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     void (async () => {
       const replacements = new Map<string, WorkplaneShape>();
@@ -11946,7 +12097,7 @@ export function LayerlingEditor({
         replacements.set(shape.id, canonicalizeShape({ ...result.group, id: shape.id, name: shape.name, color: shape.color, locked: shape.locked, groupOperation: "group" }));
       }
       if (replacements.size === 0) return;
-      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) return;
+      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) return;
       commitShapes(
         shapesRef.current.map((shape) => (shape.kind === "honeycomb" ? replacements.get(shape.id) ?? shape : shape)),
         selectedIdsRef.current,
@@ -11966,6 +12117,7 @@ export function LayerlingEditor({
     if (pending.length === 0) return;
     pending.forEach((shape) => threadRecutRef.current.add(recutKey(shape)));
     const sourceProjectId = projectInfoRef.current.projectId;
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     void (async () => {
       const replacements = new Map<string, WorkplaneShape>();
@@ -11974,7 +12126,7 @@ export function LayerlingEditor({
         if (result.group) replacements.set(shape.id, placeRecutGroup(result.group, shape));
       }
       if (replacements.size === 0) return;
-      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) return;
+      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) return;
       replacements.forEach((shape) => threadRecutRef.current.add(recutKey(shape)));
       commitShapes(shapesRef.current.map((shape) => replacements.get(shape.id) ?? shape), selectedIdsRef.current, undefined, undefined, true);
     })();
@@ -12100,10 +12252,11 @@ export function LayerlingEditor({
     const place = await chooseMergeGroup(mergeSources, true, "Group");
     if (!place.proceed) return;
     const selectionPivot = activeRotationPivot;
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     const result = await buildGroupedShapeOffThread(selectedShapes, workspaceSettingsRef.current.booleanTriangleLimit, geometryAbortRef.current?.signal);
-    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
       setNotice(t("status.groupChanged"));
       return;
     }
@@ -12129,6 +12282,7 @@ export function LayerlingEditor({
 
   /** the usual bundle (Ctrl+B): the parts move, turn and scale together and stay what they are. */
   const bundleSelected = useCallback(async () => {
+    const startedContext = contextActivation();
     if (selectionLocked) {
       setNotice(t("status.groupLocked"));
       return;
@@ -12158,6 +12312,7 @@ export function LayerlingEditor({
     }
     const selected = new Set(selectedIds);
     const bundle = withSelectionPivot(canonicalizeShape({ ...group, name: "Bundle", groupOperation: "bundle" }), activeRotationPivot);
+    if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
     commitShapes([...shapesRef.current.filter((shape) => !selected.has(shape.id)), bundle], bundle.id, t("status.bundledMany", { count: selectedShapes.length }));
     placeMergeResult(mergeSources, bundle.id, place.groupId);
   }, [selectionLocked, refuseLockedSelection, commitShapes, selectedIds, selectedShapes, activeRotationPivot, inSelectionOrder, chooseMergeGroup, placeMergeResult]);
@@ -12457,10 +12612,11 @@ export function LayerlingEditor({
     const mergeSources = inSelectionOrder(groupable.map((shape) => shape.id));
     const place = await chooseMergeGroup(mergeSources, true, "Intersection");
     if (!place.proceed) return;
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     const result = await buildIntersectionShapeFromSelection(groupable, workspaceSettingsRef.current.booleanTriangleLimit);
-    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
       setNotice(t("status.intersectChanged"));
       return;
     }
@@ -12524,11 +12680,12 @@ export function LayerlingEditor({
     const mergeSources = inSelectionOrder(groupable.map((shape) => shape.id));
     const place = await chooseMergeGroup(mergeSources, true, "Hull");
     if (!place.proceed) return;
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     setNotice(t("status.hulling"));
     const result = await buildHullShapeFromSelection(groupable, workspaceSettingsRef.current.booleanTriangleLimit);
-    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
       setNotice(t("status.hullChanged"));
       return;
     }
@@ -12554,11 +12711,12 @@ export function LayerlingEditor({
     const mergeSources = inSelectionOrder(targets.map((shape) => shape.id));
     const place = await chooseMergeGroup(mergeSources, only === undefined, "Loft");
     if (!place.proceed) return { ok: false as const, message: "Cancelled." };
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     setNotice(t("status.lofting"), true);
     const result = await buildSketchLoftFromSelection(targets);
-    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
       return fail(t("status.loftChanged"));
     }
     if (!result.group) return fail(localizedError(result.failureNotice));
@@ -12583,6 +12741,7 @@ export function LayerlingEditor({
       setNotice(t("status.gridfinityOutlineTilted"));
       return;
     }
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     setNotice(t("status.gridfinityOutlineReading"), true);
@@ -12603,7 +12762,7 @@ export function LayerlingEditor({
               : fit.large ? t("status.gridfinityOutlineTooLargeSwitch", { size: fit.limit, large: fit.large }) : t("status.gridfinityOutlineTooLarge", { size: fit.limit }));
         return;
       }
-      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
         setNotice(t("status.gridfinityOutlineChanged"));
         return;
       }
@@ -12629,6 +12788,7 @@ export function LayerlingEditor({
     if (!targets.length) return fail(t("status.cookieCutterNeedsShape"));
     if (targets.some((shape) => bodyLocked(shape))) return fail(t("status.objectLocked"));
     const options = normalizeCookieCutterOptions(given);
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     setNotice(t("status.buildingSketch"), true);
@@ -12685,7 +12845,7 @@ export function LayerlingEditor({
         const placed = finish({ ...filletBody, cadBrep: undefined }, t("cookieCutter.part.fillets"));
         parts.push(canonicalizeShape({ ...placed, elevation: (placed.elevation ?? 0) + (filletBody.elevation ?? 0) }));
       }
-      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
         return fail(t("status.cookieCutterChanged"));
       }
       const group = groupedShape(parts);
@@ -12901,7 +13061,8 @@ export function LayerlingEditor({
         [...levels, { original: group, childIds, notes: notesPinnedTo(notesRef.current, group), ...(nativeDocument ? { openedParts: parts } : {}) }],
         // The native app keeps the user's order: the parts stand where the group stood. (The browser edition keeps its own behaviour: the parts go to the end.)
         nativeDocument ? replaceAtFirst(shapesRef.current, [group.id], parts) : [...shapesRef.current.filter((shape) => shape.id !== group.id), ...parts],
-        selectPart !== undefined && childIds[selectPart] ? [childIds[selectPart]] : childIds,
+        // Build 0130 (native): entering Group Editing begins with NOTHING selected, whatever the entry path. The browser keeps selecting the parts.
+        nativeDocument ? [] : selectPart !== undefined && childIds[selectPart] ? [childIds[selectPart]] : childIds,
         message,
         amendNewest,
       );
@@ -13029,7 +13190,7 @@ export function LayerlingEditor({
       }
       endOpenGroupLevelsWithoutStep(outer);
       // Visual Groups: the part that is left takes the place of the group that is not coming back.
-      if (parts[0]) placeDerivedRef.current([[original.id, [parts[0].id]]]);
+      if (parts[0]) updateVisualGroups((current) => placeDerivedObjects(current, [[original.id, [parts[0].id]]]));
       // The group is not coming back: its notes go to the part left, or stay where they stand.
       const notesLeft = notesAfterShapeChange(notesRef.current, shapesRef.current.filter((shape) => shape.id !== parts[0]?.id), shapesRef.current, new Set(outer.map((level) => level.original.id)));
       if (notesLeft !== notesRef.current) commitNotes(notesLeft);
@@ -13037,6 +13198,7 @@ export function LayerlingEditor({
       setNotice(message);
       return { ok: true, message, partIds: parts.map((shape) => shape.id) };
     }
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     openGroupBusyRef.current = true;
@@ -13046,7 +13208,7 @@ export function LayerlingEditor({
       const result = await rebuildGroupFromParts(original, parts, Boolean(nativeDocument), session.openedParts);
       if (
         projectInfoRef.current.projectId !== sourceProjectId ||
-        projectShapesFingerprint(shapesRef.current) !== sourceFingerprint ||
+        projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext) ||
         openGroupsRef.current.at(-1) !== session
       ) {
         return refuseOpenGroupStep(t("status.groupChanged"));
@@ -13110,13 +13272,14 @@ export function LayerlingEditor({
     const mergeSources = [group.id, ...inSelectionOrder(added.map((shape) => shape.id))];
     const place = await chooseMergeGroup(mergeSources, interactive, "Add to group");
     if (!place.proceed) return { ok: false, message: "Cancelled." };
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     openGroupBusyRef.current = true;
     setOpenGroupBusy(true);
     try {
       const result = await rebuildGroupFromParts(group, [...restoreGroupedChildren(group), ...added]);
-      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
         return refuseOpenGroupStep(t("status.groupChanged"));
       }
       if (!result.group) return refuseOpenGroupStep(result.failure);
@@ -13181,13 +13344,14 @@ export function LayerlingEditor({
       if (held) return refuseOpenGroupStep(held);
       return { ok: true, message, partIds: left ? [taken.id, left.id] : [taken.id] };
     }
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     openGroupBusyRef.current = true;
     setOpenGroupBusy(true);
     try {
       const result = await rebuildGroupFromParts(group, rest);
-      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
         return refuseOpenGroupStep(t("status.groupChanged"));
       }
       if (!result.group) return refuseOpenGroupStep(result.failure);
@@ -13216,6 +13380,7 @@ export function LayerlingEditor({
     const running = keptPartsRunsRef.current.get(key);
     if (running) return running;
     const sourceProjectId = projectInfoRef.current.projectId;
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const run = (async () => {
       // A drag writes its step just after it ends: the rebuild finishes that step, not the one before it.
@@ -13237,7 +13402,7 @@ export function LayerlingEditor({
         if (kept.shrunk > 0) shrunkName ||= displayShapeName(group);
         shrunkCount += kept.shrunk;
       }
-      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) return;
+      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) return;
       // A group that could not be built again stays stretched, and the notice says why.
       const message = failure || mergeWarning || (shrunkCount > 0 ? t("status.groupPartsShrunk", { name: shrunkName, count: shrunkCount }) : "");
       if (replacements.size === 0) {
@@ -13256,11 +13421,12 @@ export function LayerlingEditor({
     if (!hull || hull.groupOperation !== "hull" || !hull.groupedShapes?.length) return { ok: false, message: t("status.hullNeedsShapes") };
     if (bodyLocked(hull)) return { ok: false, message: t("status.objectLocked") };
     if (Boolean(hull.hullKeepHoles) === keepHoles) return { ok: true, hull };
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     setNotice(t("status.hulling"));
     const result = await rebuildGroupFromParts({ ...hull, hullKeepHoles: keepHoles }, restoreGroupedChildren(hull));
-    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+    if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
       const message = t("status.hullChanged");
       setNotice(message);
       return { ok: false, message };
@@ -13288,6 +13454,7 @@ export function LayerlingEditor({
         setNotice(t("status.objectLocked"));
         return;
       }
+      const startedContext = contextActivation();
       const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
       const sourceProjectId = projectInfoRef.current.projectId;
       let failure = "";
@@ -13299,7 +13466,7 @@ export function LayerlingEditor({
         }
         return result.group;
       });
-      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) {
+      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) {
         setNotice(t("status.groupChanged"));
         return;
       }
@@ -13337,6 +13504,53 @@ export function LayerlingEditor({
   useEffect(() => {
     if (!openGroups.length && groupSessionRef.current) endGroupSession("done");
   }, [endGroupSession, openGroups]);
+
+  // Build 0130 (N6, native): a change of editing context (enter, descend, return, finish, cancel, undo past an opening) ends every interactive modeling tool: its operands, previews and transient
+  // state belong to the previous context and must not survive to reach the commit guard. A drag that is still going on can no longer be taken back to a snapshot of the previous context.
+  // Called from `setOpenGroupLevels` when the chain of open groups changes, i.e. only after a transition really happened (a failed one changes nothing).
+  const endModelingTools = useCallback(() => {
+    interactionStartShapesRef.current = null;
+    closeSplit();
+    setSplitConnectorPreview({ state: "idle" });
+    setAlignMode(false);
+    setAlignPreview(null);
+    setMirrorMode(false);
+    setMirrorPreviewAxis(null);
+    setPivotPickMode(false);
+    setLayFlatPickMode(false);
+    setMateTool(null);
+    setHolePatternTool(null);
+    setThreadInsertTool(null);
+    setFaceTool(null);
+    setFaceToolPreview(null);
+    setPaintTool(null);
+    setSupportRibTool(null);
+    setSupportRibPreview(null);
+    setStencilBridgeTool(null);
+    setStencilBridgePreview(null);
+    setDeleteFaceTool(null);
+    setSurfaceFacePick(null);
+    setSurfaceRegionDraw(null);
+    setSurfaceDrawnRegion(null);
+    setArrayTool(null);
+    setScalePercentTool(null);
+    setShellTool(null);
+    setCutOutTool(null);
+    setPunchTool(null);
+    setFlexiTool(null);
+    setLidTool(null);
+    setCableTool(null);
+    setCookieCutterTool(null);
+    setSimplifyToolId(null);
+    setIntersectPreviewIds(null);
+    setIntersectPreviewShape(null);
+    setClearanceTool(null);
+    setPrintCheckTool(null);
+  }, [closeSplit]);
+  endModelingToolsRef.current = endModelingTools;
+
+  // Build 0130 (native): what the viewport may pick or enclose (null: everything).
+  const contextSelectableIds = useMemo(() => contextMembers(), [contextMembers, openGroups, shapes]);
 
   // Undo past an opening brings that group back, and deleting every part leaves
   // nothing to close: in both cases that level is over, with every level inside it.
@@ -13428,6 +13642,7 @@ export function LayerlingEditor({
    * body changed meanwhile, the result is for something else and is dropped.
    */
   const textureSelectedSurface = useCallback(async (settings: SurfaceTextureSettings, layers: readonly SurfaceTextureSettings[] = []) => {
+    const startedContext = contextActivation();
     if (selectedShapes.length !== 1 || !selectedShape) {
       setNotice(t("status.selectOneToTexture"));
       return;
@@ -13524,6 +13739,7 @@ export function LayerlingEditor({
     const patternPart = surfacePatternPartOf(textured);
     if (patternPart && used.patternColor) rememberPatternColor(patternPart.color);
     // The gold of cracks made before gives way; new gold comes in as a part of its own.
+    if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
     commitShapes(sceneWithSurfaceBody(shapesRef.current, current.id, textured, gold), [textured.id], message);
   }, [commitShapes, selectedShape, selectedShapes.length]);
 
@@ -13558,11 +13774,12 @@ export function LayerlingEditor({
     if (plate.locked) return fail(t("status.objectLocked"));
     const count = gridfinitySwallowtailKeyCount({ ...plate, depth: shapeDepth(plate) });
     if (count === 0) return fail(t("status.gridfinityKeysNone"));
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     try {
       const built = await cadShapeFromSketchProfile(gridfinitySwallowtailKeyProfile(plate), GRIDFINITY_SWALLOWTAIL_KEY_THICKNESS, null);
-      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) return fail(t("status.gridfinityKeysChanged"));
+      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) return fail(t("status.gridfinityKeysChanged"));
       if (historyViewStateRef.current) return fail(t("status.historyViewBlocksEdits"));
       const box = boundsForShapes([plate]);
       const keys = gridfinitySwallowtailKeys(plate, box, built, shapeDepth(built), count, t("gridfinity.swallowtailKey"), () => createLocalId("swallowtail-key")).map(canonicalizeShape);
@@ -13590,11 +13807,12 @@ export function LayerlingEditor({
     const printer = printerPresetById(workspaceSettingsRef.current.printer);
     const split = gridfinityPlateSplit({ ...plate, depth: shapeDepth(plate) }, printer);
     if (!printer || !split) return { ok: false as const, message: MCP_GRIDFINITY_SPLIT_NEEDS };
+    const startedContext = contextActivation();
     const sourceFingerprint = projectShapesFingerprint(shapesRef.current);
     const sourceProjectId = projectInfoRef.current.projectId;
     try {
       const built = await cadShapeFromSketchProfile(gridfinitySwallowtailKeyProfile(plate), GRIDFINITY_SWALLOWTAIL_KEY_THICKNESS, null);
-      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint) return fail(t("status.gridfinityKeysChanged"));
+      if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(shapesRef.current) !== sourceFingerprint || contextChanged(startedContext)) return fail(t("status.gridfinityKeysChanged"));
       if (historyViewStateRef.current) return fail(t("status.historyViewBlocksEdits"));
       const pieces = gridfinityPlatePieces(plate, split, displayShapeName(plate), () => createLocalId("gridfinity"), (piece) => rebasePaintStrokes(plate.paint ?? [], plate, piece)).map(canonicalizeShape);
       const keys = gridfinityPlatePieceKeys(pieces, split, boundsForShapes([plate]), built, shapeDepth(built), t("gridfinity.swallowtailKey"), () => createLocalId("swallowtail-key")).map(canonicalizeShape);
@@ -13631,6 +13849,7 @@ export function LayerlingEditor({
 
   /** Splits the selected text into layers, or builds the selected stack again with new words, font or layers (#215). */
   const layerSelectedText = useCallback(async (patch: TextLayerPatch) => {
+    const startedContext = contextActivation();
     if (selectedShapes.length !== 1 || !selectedShape || !offersTextLayers(selectedShape)) return;
     const stack = textLayerStack(selectedShape);
     if (!stack) return;
@@ -13651,6 +13870,7 @@ export function LayerlingEditor({
       const tab = free && stack.keyring
         ? keyringTabAt(textFreeKeyringPlace(stack.source, { ...stack.keyring, free }), floor, t("nameTag.keyringTab"))
         : keyringTabShape(next, floor, stack.keyring?.diameter ?? DEFAULT_KEYRING_DIAMETER, t("nameTag.keyringTab"));
+      if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
       commitShapes([...shapesRef.current.map((shape) => (shape.id === selectedShape.id ? next : shape)), tab], [tab.id], t("status.keyringTabMade"));
       return;
     }
@@ -13663,11 +13883,13 @@ export function LayerlingEditor({
 
   /** One tag like the selected text or stack per name, in rows under it; the first takes its place (#215). */
   const makeTextTags = useCallback(async (names: string[], gap: number) => {
+    const startedContext = contextActivation();
     if (selectedShapes.length !== 1 || !selectedShape || !offersTextLayers(selectedShape) || names.length === 0) return;
     const stack = textLayerStack(selectedShape);
     if (!stack) return;
     await keyringRuntimeReady(stack.keyring);
     const tags = nameTagsFor(stack, names, gap, { id: selectedShape.id, ids: selectedShape.kind !== "text" ? stack.ids : [] });
+    if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
     commitShapes(
       [...shapesRef.current.filter((shape) => shape.id !== selectedShape.id), ...tags],
       tags.map((tag) => tag.id),
@@ -13770,6 +13992,7 @@ export function LayerlingEditor({
 
   /** Another SVG on the selected icon tag: its layers, width and place stay, the icon and the name change. */
   const replaceIconSvg = useCallback(async (file: File) => {
+    const startedContext = contextActivation();
     const current = selectedShapes.length === 1 && selectedShape?.layeredIcon ? selectedShape : null;
     const stack = current ? iconLayerStack(current) : null;
     if (!current || !stack) return;
@@ -13777,6 +14000,7 @@ export function LayerlingEditor({
     const { area, name } = await svgIconArea(source.name, source.svg, stack.width);
     const next = await layeredIconShape(area, stack.layers, stack.place, stack.ids, current.id, { ...current, name }, stack.keyring);
     if (!shapesRef.current.some((shape) => shape.id === current.id)) return;
+    if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
     commitShapes(shapesRef.current.map((shape) => (shape.id === current.id ? next : shape)), [next.id], t("status.iconReplaced", { name }));
   }, [commitShapes, selectedShape, selectedShapes.length]);
 
@@ -13798,25 +14022,31 @@ export function LayerlingEditor({
 
   /** The icon tag window's OK: the SVG (or the traced picture) as a new icon tag on the plate, selected. */
   const createIconTag = useCallback(async (source: IconSource, width: number) => {
+    const startedContext = contextActivation();
     const tag = await iconTagFromSvg(source.name, source.svg, width);
+    if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
     commitShapes([...shapesRef.current, tag], [tag.id], t("status.iconTagAdded", { name: tag.name }));
     setIconTagPanelOpen(false);
   }, [commitShapes]);
 
   /** The QR code window's OK (#553): the code as a new body on the plate's middle, selected. */
   const createQrCode = useCallback(async (settings: QrCodeSettings, width: number) => {
+    const startedContext = contextActivation();
     const shape = await qrCodeShape(settings, width, workspaceSettingsRef.current.booleanTriangleLimit);
+    if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
     commitShapes([...shapesRef.current, shape], [shape.id], t("status.qrCodeAdded"));
     setQrCodePanelOpen(false);
   }, [commitShapes]);
 
   /** The QR code card's "Make again": the selected code with a new text, where it stood and as wide as it is. */
   const regenerateSelectedQrCode = useCallback(async (text: string) => {
+    const startedContext = contextActivation();
     const current = selectedShapes.length === 1 ? selectedShape : null;
     const settings = qrCodeOf(current);
     if (!current || !settings) return;
     const next = await regeneratedQrCodeShape(current, { ...settings, text }, workspaceSettingsRef.current.booleanTriangleLimit);
     if (!shapesRef.current.some((shape) => shape.id === current.id)) return;
+    if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
     commitShapes(shapesRef.current.map((shape) => (shape.id === current.id ? next : shape)), [next.id], t("status.qrCodeRegenerated"));
   }, [commitShapes, selectedShape, selectedShapes.length]);
 
@@ -13827,11 +14057,13 @@ export function LayerlingEditor({
 
   /** The SBC board from the library (#1098): the default board, standing on the workplane at the point, selected. */
   const placeSbcBoard = useCallback(async (point?: PlacementPoint, onFace?: PlacementWorkplane) => {
+    const startedContext = contextActivation();
     setNotice(t("sbcBoard.building"), true);
     try {
       const built = await sbcBoardShape({ board: DEFAULT_SBC_BOARD, clearance: 0, reach: 0 }, workspaceSettingsRef.current.booleanTriangleLimit);
       const workplane = onFace ?? placementWorkplaneRef.current;
       const shape = canonicalizeShape({ ...built, ...placementPatchForNewShape(built, workplane, point ?? workplane.origin) });
+      if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
       commitShapes([...shapesRef.current, shape], [shape.id], t("status.sbcBoardAdded", { name: shape.name }));
     } catch (error) {
       setNotice(error instanceof Error ? localizedError(error.message) : t("sbcBoard.failed"), true);
@@ -13845,6 +14077,7 @@ export function LayerlingEditor({
    * the new bundle, or why it could not be made, as the notice says it.
    */
   const placeFitTest = useCallback(async (pinBase?: boolean): Promise<{ shape: WorkplaneShape } | { error: string }> => {
+    const startedContext = contextActivation();
     setNotice(t("fitTest.building"), true);
     try {
       const built = await fitTestShape(workspaceSettingsRef.current.booleanTriangleLimit, undefined, { base: pinBase ?? fitTestPinBaseChosen() });
@@ -13854,6 +14087,7 @@ export function LayerlingEditor({
       const taken = shapesRef.current.filter((shape) => !shape.hidden && !isNonSolidShape(shape)).map((shape) => meshAabb(shape));
       const spot = fitTestSpot({ width: built.width, depth: built.depth }, origin, taken);
       const shape = canonicalizeShape({ ...built, ...placementPatchForNewShape(built, base, { ...origin, x: spot.x, z: spot.z }) });
+      if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return { error: t("status.contextChanged") }; }
       commitShapes([...shapesRef.current, shape], [shape.id], t("status.fitTestAdded"));
       return { shape };
     } catch (error) {
@@ -13865,10 +14099,12 @@ export function LayerlingEditor({
 
   /** The SBC board card: another board, clearance or reach, made again where the selected board stands. */
   const regenerateSelectedSbcBoard = useCallback(async (settings: SbcBoardSettings) => {
+    const startedContext = contextActivation();
     const current = selectedShapes.length === 1 ? selectedShape : null;
     if (!current || !sbcBoardOf(current)) return;
     const next = await regeneratedSbcBoardShape(current, settings, workspaceSettingsRef.current.booleanTriangleLimit);
     if (!shapesRef.current.some((shape) => shape.id === current.id)) return;
+    if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
     commitShapes(shapesRef.current.map((shape) => (shape.id === current.id ? next : shape)), [next.id], t("status.sbcBoardRegenerated", { name: next.name }));
   }, [commitShapes, selectedShape, selectedShapes.length]);
 
@@ -13882,6 +14118,7 @@ export function LayerlingEditor({
    * line parts up on. Added from the import panel, made see-through and calibrated in its card.
    */
   const addReferenceImageFile = useCallback(async (file: File) => {
+    const startedContext = contextActivation();
     if (!file.type.startsWith("image/")) {
       setNotice(t("status.chooseImageFile"));
       return;
@@ -13891,6 +14128,7 @@ export function LayerlingEditor({
       const name = file.name.replace(/\.[^.]+$/, "") || t("referenceImage.title");
       const image = placeSketchShape(referenceImageShape(prepared, name, createLocalId("reference-image")), placementWorkplaneRef.current, null);
       const bytes = dataUrlByteLength(prepared.dataUrl);
+      if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
       commitShapes(
         [...shapesRef.current, image],
         image.id,
@@ -14023,6 +14261,7 @@ export function LayerlingEditor({
   const [makeExactBusy, setMakeExactBusy] = useState(false);
   /** Make exact on the one selected mesh body, with what it was found to be made of in the status line. */
   const makeSelectedExact = useCallback(async () => {
+    const startedContext = contextActivation();
     if (makeExactBusy) return;
     if (refuseLockedSelection()) return;
     if (selectedShapes.length !== 1 || !selectedShape || !offersMakeExact(selectedShape)) {
@@ -14034,6 +14273,7 @@ export function LayerlingEditor({
     setNotice(t("makeExact.working", { count: formatTriangleCount(target.importedMesh?.triangleCount ?? 0) }));
     try {
       const { shape: exact, report } = await makeExactShape(target);
+      if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return; }
       commitShapes(
         shapesRef.current.map((shape) => (shape.id === target.id ? exact : shape)),
         [exact.id],
@@ -14374,6 +14614,7 @@ export function LayerlingEditor({
   type MeshRepairReport = { repairableMeshes: number; objects: number; leftUnchanged: number; meshesLookedAt: number; repaired?: { meshes: number; objects: number } };
   /** The scan, and with `apply` the repair of what it found. Read-only without `apply`. A repair is applied only to the scene the scan saw. */
   const repairOpenMeshes = useCallback(async (apply: boolean): Promise<{ ok: true; report: MeshRepairReport } | { ok: false; message: string }> => {
+    const startedContext = contextActivation();
     const refused = meshRepairRefusal();
     if (refused) return { ok: false, message: refused };
     meshRepairBusyRef.current = true;
@@ -14393,6 +14634,7 @@ export function LayerlingEditor({
       if (shapesRef.current !== source || (stillRefused && stillRefused !== t("status.meshRepairBusy"))) return { ok: false, message: stillRefused && stillRefused !== t("status.meshRepairBusy") ? stillRefused : t("status.meshRepairStale") };
       const applied = applyMeshRepairs(source, scan.repairs);
       if (applied.objects === 0) return { ok: true, report };
+      if (contextChanged(startedContext)) return { ok: false, message: t("status.contextChanged") };
       commitShapes(applied.shapes, selectedIdsRef.current);
       report.repaired = { meshes: scan.repairs.size, objects: applied.objects };
       return { ok: true, report };
@@ -14549,7 +14791,7 @@ export function LayerlingEditor({
         }
         const validIds = requestedIds.filter((id) => currentShapes().some((shape) => shape.id === id));
         setSelectedIds(validIds);
-        selectedIdsRef.current = validIds;
+        selectedIdsRef.current = gateSelectionIds(validIds);
         setNotice(validIds.length === 0
           ? t("status.mcpCleared")
           : validIds.length === 1 ? t("status.mcpSelectedOne") : t("status.mcpSelectedMany", { count: validIds.length }));
@@ -15453,6 +15695,7 @@ export function LayerlingEditor({
           ...(custom ? holePatternCustomFootprint(custom) : {}),
         });
         // Taken before the face is read: joining a group's or bundle's parts takes a moment, and the scene may change meanwhile.
+        const startedContext = contextActivation();
         const sourceFingerprint = projectShapesFingerprint(currentShapes());
         const sourceProjectId = projectInfoRef.current.projectId;
         // A flat face, or the round wall of a cylinder, tube or bore (#1393).
@@ -15464,7 +15707,7 @@ export function LayerlingEditor({
         if (plan.tooMany) throw new Error("That would be too many holes; make them bigger or the spacing wider");
         if (plan.holes.length === 0) throw new Error("No hole fits on that face with this size and margin");
         const result = await buildGroupedShapeOffThread([target, ...plan.holes], workspaceSettingsRef.current.booleanTriangleLimit, geometryAbortRef.current?.signal);
-        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint) {
+        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint || contextChanged(startedContext)) {
           throw new Error("The scene changed while perforating; run the command again");
         }
         if (!result.group) throw new Error(result.failureNotice);
@@ -15535,6 +15778,7 @@ export function LayerlingEditor({
           spec = threadInsertSpec(sizeName, "", "");
         }
         if (!spec) throw new Error("thread_insert found no such size");
+        const startedContext = contextActivation();
         const sourceFingerprint = projectShapesFingerprint(currentShapes());
         const sourceProjectId = projectInfoRef.current.projectId;
         const read = readHolePatternFace(await faceReadPositionsOffThread(target, geometryAbortRef.current?.signal), point, normal);
@@ -15570,7 +15814,7 @@ export function LayerlingEditor({
         }
         const hole = makeThreadInsertHole(face, spec);
         const result = await buildGroupedShapeOffThread([target, hole], workspaceSettingsRef.current.booleanTriangleLimit, geometryAbortRef.current?.signal);
-        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint) {
+        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint || contextChanged(startedContext)) {
           throw new Error("The scene changed while the hole was made; run the command again");
         }
         if (!result.group) throw new Error(result.failureNotice);
@@ -15689,11 +15933,12 @@ export function LayerlingEditor({
           unreachable: "No bridge reaches the parts that would fall out at this width; try a smaller width",
           failed: "The bridges could not be made",
         };
+        const startedContext = contextActivation();
         const sourceFingerprint = projectShapesFingerprint(currentShapes());
         const sourceProjectId = projectInfoRef.current.projectId;
         const built = await buildStencilBridgeGroup(sources, settings);
         if (!built.ok) throw new Error(reasons[built.reason]);
-        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint) {
+        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint || contextChanged(startedContext)) {
           throw new Error("The scene changed while making the bridges; run the command again");
         }
         writeStencilBridgeToolSettings(settings);
@@ -15771,6 +16016,7 @@ export function LayerlingEditor({
           partOffBed: "The part does not stand on the bed; drop it onto the workplane first so the bridges meet their layers",
           failed: "The rib could not be built there",
         };
+        const startedContext = contextActivation();
         const sourceFingerprint = projectShapesFingerprint(currentShapes());
         const sourceProjectId = projectInfoRef.current.projectId;
         const read = readPerforableFace(await faceReadPositionsOffThread(target, geometryAbortRef.current?.signal), point, normal);
@@ -15781,7 +16027,7 @@ export function LayerlingEditor({
         if (!built.ok) throw new Error(reasons[built.reason]);
         const rib = supportRibShape(createLocalId("support-rib"), t("supportRib.name"), target.color, built.positions, target.id);
         if (!rib) throw new Error(reasons.failed);
-        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint) {
+        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint || contextChanged(startedContext)) {
           throw new Error("The scene changed while building the rib; run the command again");
         }
         writeSupportRibSettings(settings);
@@ -15840,6 +16086,7 @@ export function LayerlingEditor({
           depth: mcpNumber(params.depth, DEFAULT_FACE_TOOL.depth),
           separate: params.separate === true,
         });
+        const startedContext = contextActivation();
         const sourceFingerprint = projectShapesFingerprint(currentShapes());
         const sourceProjectId = projectInfoRef.current.projectId;
         const read = readPerforableFace(await faceReadPositionsOffThread(target, geometryAbortRef.current?.signal), point, normal);
@@ -15851,7 +16098,7 @@ export function LayerlingEditor({
         if (!body) throw new Error("The inset leaves nothing of that face; make it smaller");
         const pushedMessage = t(settings.direction === "in" ? "status.faceToolPocketCreated" : "status.faceToolCreated", { depth: Number(faceToolSettingsOn(read.face, settings).depth.toFixed(2)) });
         if (settings.separate) {
-          if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint) {
+          if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint || contextChanged(startedContext)) {
             throw new Error("The scene changed while pushing the face; run the command again");
           }
           commitShapes([...currentShapes(), body], body.id, pushedMessage);
@@ -15862,7 +16109,7 @@ export function LayerlingEditor({
           };
         }
         const result = await buildGroupedShapeOffThread([target, body], workspaceSettingsRef.current.booleanTriangleLimit, geometryAbortRef.current?.signal);
-        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint) {
+        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint || contextChanged(startedContext)) {
           throw new Error("The scene changed while pushing the face; run the command again");
         }
         if (!result.group) throw new Error(result.failureNotice);
@@ -15903,7 +16150,7 @@ export function LayerlingEditor({
           const message = spreadMessage(result, axis, workspaceSettingsRef.current);
           if (result.moved === 0) {
             setSelectedIds(validIds);
-            selectedIdsRef.current = validIds;
+            selectedIdsRef.current = gateSelectionIds(validIds);
             setNotice(message);
           } else {
             commitShapes(result.nextShapes, validIds, message);
@@ -15924,7 +16171,7 @@ export function LayerlingEditor({
           const message = sizedAlignmentMessage(sized, sizeAlignmentLabel(axis, target));
           if (sized.resized === 0) {
             setSelectedIds(validIds);
-            selectedIdsRef.current = validIds;
+            selectedIdsRef.current = gateSelectionIds(validIds);
             setNotice(message);
           } else {
             commitShapes(sized.nextShapes, validIds, message);
@@ -15941,7 +16188,7 @@ export function LayerlingEditor({
         const { nextShapes, moved } = alignedShapesForSelection(currentShapes(), validIds, selectedForAlign, anchorId, axis, target, alignAxesForWorkplane(placementWorkplaneRef.current));
         if (moved === 0) {
           setSelectedIds(validIds);
-          selectedIdsRef.current = validIds;
+          selectedIdsRef.current = gateSelectionIds(validIds);
           setNotice(t("status.mcpAligned", { label: alignmentLabel(axis, target) }));
           return {
             moved,
@@ -15970,10 +16217,11 @@ export function LayerlingEditor({
         // Visual Groups: nobody to ask here, so objects in different groups give an unassigned result.
         const mergeSources = groupable.map((shape) => shape.id);
         const place = await chooseMergeGroup(mergeSources, false, "Group");
+        const startedContext = contextActivation();
         const sourceFingerprint = projectShapesFingerprint(currentShapes());
         const sourceProjectId = projectInfoRef.current.projectId;
         const result = await buildGroupedShapeOffThread(groupable, workspaceSettingsRef.current.booleanTriangleLimit, geometryAbortRef.current?.signal);
-        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint) {
+        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint || contextChanged(startedContext)) {
           throw new Error("The scene changed while grouping; run the command again");
         }
         if (!result.group) {
@@ -16370,10 +16618,11 @@ export function LayerlingEditor({
         if (!canIntersectShapes(groupable)) throw new Error("Pass two solids, or a solid and a hole, to intersect");
         const mergeSources = groupable.map((shape) => shape.id);
         const place = await chooseMergeGroup(mergeSources, false, "Intersection");
+        const startedContext = contextActivation();
         const sourceFingerprint = projectShapesFingerprint(currentShapes());
         const sourceProjectId = projectInfoRef.current.projectId;
         const result = await buildIntersectionShapeFromSelection(groupable, workspaceSettingsRef.current.booleanTriangleLimit);
-        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint) {
+        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint || contextChanged(startedContext)) {
           throw new Error("The scene changed while intersecting; run the command again");
         }
         if (!result.group && !result.empty) throw new Error(result.failureNotice);
@@ -16404,10 +16653,11 @@ export function LayerlingEditor({
         if (!canHullShapes(groupable)) throw new Error("Pass two objects or more to make a hull");
         const mergeSources = groupable.map((shape) => shape.id);
         const place = await chooseMergeGroup(mergeSources, false, "Hull");
+        const startedContext = contextActivation();
         const sourceFingerprint = projectShapesFingerprint(currentShapes());
         const sourceProjectId = projectInfoRef.current.projectId;
         const result = await buildHullShapeFromSelection(groupable, workspaceSettingsRef.current.booleanTriangleLimit, { keepHoles });
-        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint) {
+        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint || contextChanged(startedContext)) {
           throw new Error("The scene changed while making the hull; run the command again");
         }
         if (!result.group) throw new Error(result.failureNotice);
@@ -16607,10 +16857,11 @@ export function LayerlingEditor({
         if (operands.some((shape) => isNonSolidShape(shape))) {
           throw new Error("A ruler isn't a solid and can't be a boolean operand");
         }
+        const startedContext = contextActivation();
         const sourceFingerprint = projectShapesFingerprint(currentShapes());
         const sourceProjectId = projectInfoRef.current.projectId;
         const result = await buildGroupedShapeOffThread(operands, workspaceSettingsRef.current.booleanTriangleLimit, geometryAbortRef.current?.signal);
-        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint) {
+        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint || contextChanged(startedContext)) {
           throw new Error("The scene changed while cutting; run the command again");
         }
         const remainingShapes = currentShapes().filter((shape) => !operandIds.has(shape.id));
@@ -16934,12 +17185,13 @@ export function LayerlingEditor({
           throw new Error(`position must lie inside the objects, between ${Number(range.min.toFixed(3))} and ${Number(range.max.toFixed(3))}`);
         }
         const plane = modelSplitPlane(points, axis, requestedPosition, rotation) ?? range;
+        const startedContext = contextActivation();
         const sourceFingerprint = projectShapesFingerprint(currentShapes());
         const sourceProjectId = projectInfoRef.current.projectId;
         const outcome = await splitShapesByPlaneOffThread(
           targets,
           plane,
-          () => projectInfoRef.current.projectId === sourceProjectId && projectShapesFingerprint(currentShapes()) === sourceFingerprint,
+          () => projectInfoRef.current.projectId === sourceProjectId && projectShapesFingerprint(currentShapes()) === sourceFingerprint && !contextChanged(startedContext),
           geometryAbortRef.current?.signal,
           connectors.kind === "none" ? undefined : connectors,
           stretch,
@@ -17184,10 +17436,11 @@ export function LayerlingEditor({
         if (params.group !== true) return looseResult(t("status.arrayCreated", { count: copies.length }));
         if (sources.some((shape) => isNonSolidShape(shape))) return looseResult(t("status.arrayCreated", { count: copies.length }), "A ruler isn't a solid and can't be grouped, so the pieces stay loose");
         const pieces = [...sources, ...copies];
+        const startedContext = contextActivation();
         const sourceFingerprint = projectShapesFingerprint(currentShapes());
         const sourceProjectId = projectInfoRef.current.projectId;
         const result = await buildGroupedShapeOffThread(pieces, workspaceSettingsRef.current.booleanTriangleLimit, geometryAbortRef.current?.signal);
-        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint) {
+        if (projectInfoRef.current.projectId !== sourceProjectId || projectShapesFingerprint(currentShapes()) !== sourceFingerprint || contextChanged(startedContext)) {
           throw new Error("The scene changed while grouping; run the command again");
         }
         if (!result.group) {
@@ -19362,6 +19615,7 @@ export function LayerlingEditor({
   }, [insertDesignFile]);
 
   const importFiles = useCallback(async (selected: File[], fileHandle?: LylFileHandle, importOptions?: { keepSvgPage?: boolean; svgWidth?: number | null }): Promise<{ importedIds: string[]; failures: Array<{ fileName: string; reason: string }>; warning?: string }> => {
+    const startedContext = contextActivation();
     const none = { importedIds: [] as string[], failures: [] as Array<{ fileName: string; reason: string }> };
     if (!selected.length) return none;
     const projectFiles = selected.filter((file) => /\.(lyl|skf)$/i.test(file.name));
@@ -19433,6 +19687,7 @@ export function LayerlingEditor({
     setProjectAssets(nextAssets);
     const designAfter = [...shapesRef.current, ...importedShapes];
     const importMessage = [successSummary, ...notes].join(" ") + failureSummary;
+    if (contextChanged(startedContext)) { setNotice(t("status.contextChanged"), true); return none; }
     commitShapes(designAfter, importedShapes.map((shape) => shape.id), importMessage);
     setTopPanel(null);
     // Very large meshes make the editor slow and saving slow (Discussion #1652): said once, after the import that brings them,
@@ -19575,6 +19830,8 @@ export function LayerlingEditor({
   // from that mesh, so the flag would change nothing visible until the group is rebuilt (group-editing mechanics).
   const updateNestedShape = useCallback((path: NestedFocusPath, patch: { name?: string; shapeLocked?: boolean }): boolean => {
     if (historyViewStateRef.current) return false;
+    // Build 0130 (native): an object inside a closed group is outside the editing context whenever one is open.
+    if (contextMembers()) { setNotice(t("status.contextProtected"), true); return false; }
     const target = resolveNestedFocus(shapesRef.current, path, (shape) => displayShapeName(shape), restoreGroupedChildren);
     if (!target) return false;
     if (patch.shapeLocked === true && target.stored.locked) {
@@ -19591,7 +19848,7 @@ export function LayerlingEditor({
     if (!next) return false;
     commitShapes(next, selectedIdsRef.current, patch.shapeLocked === undefined ? undefined : patch.shapeLocked ? t("status.shapeLockOn") : t("status.shapeLockOff"));
     return true;
-  }, [commitShapes, setNotice]);
+  }, [commitShapes, contextMembers, setNotice]);
   const [objectsWatching, setObjectsWatching] = useState(() => nativeObjectsWatching());
   const [objectsTick, setObjectsTick] = useState(0);
   useEffect(() => {
@@ -19721,8 +19978,10 @@ export function LayerlingEditor({
     if (!nestedFocusTarget) return null;
     const { placed, placement, rowId } = nestedFocusTarget;
     const key = [rowId, placement, placed.x, placed.z, placed.elevation ?? 0, placed.height, placed.width, placed.depth, placed.size, placed.rotation, placed.rotationX ?? 0, placed.rotationZ ?? 0, placed.hole ? 1 : 0].join("|");
-    return { key, shape: placed, placement, card: nestedFocusCard(nestedFocusTarget, displayShapeName(nestedFocusTarget.stored)), onRename: renameNestedFocus, onEditGroup: editNestedFocusGroup };
-  }, [nestedFocusTarget, editNestedFocusGroup, renameNestedFocus]);
+    // Build 0130 (native): while a group is being edited every object inside a CLOSED group is a surrounding: the focus card stays (navigation), its Name field and Edit Group are unavailable (the engine refuses both as well).
+    const inContext = Boolean(contextSelectableIds);
+    return { key, shape: placed, placement, card: nestedFocusCard(nestedFocusTarget, displayShapeName(nestedFocusTarget.stored)), onRename: inContext ? undefined : renameNestedFocus, onEditGroup: inContext ? undefined : editNestedFocusGroup };
+  }, [nestedFocusTarget, editNestedFocusGroup, renameNestedFocus, contextSelectableIds]);
 
   // A selection made by the user on the workplane brings the Inspector's Object tab to the front (Build 0031). Selection changed any other way (the object list,
   // commands, undo) does not touch the tab, and neither does a click that selects nothing.
@@ -20647,7 +20906,7 @@ export function LayerlingEditor({
   // Native app (Build 0007): the same items as a real macOS menu. The submenus ("Select other", "Onto plate") are built up front from the same builder
   // (the web menu swaps its items in place); a choice runs the item's own function; highlighting a row of "Select other" marks its body in the view.
   const hiddenObjectCount = countHiddenObjects(shapes);
-  const hiddenObjects = useMemo(() => ({ count: hiddenObjectCount, ids: shapes.filter((shape) => shape.hidden).map((shape) => shape.id), unhideAll: showHidden }), [hiddenObjectCount, shapes, showHidden]);
+  const hiddenObjects = useMemo(() => ({ count: hiddenObjectCount, ids: shapes.filter((shape) => shape.hidden).map((shape) => shape.id), unhideAll: showHidden, unavailable: Boolean(contextSelectableIds) }), [hiddenObjectCount, shapes, showHidden, contextSelectableIds]);
   nativeShapeMenuRef.current = nativeDocument && nativeMenusAvailable()
     ? (request) => {
         const base: ShapeContextMenuState = { x: request.clientX, y: request.clientY, onShape: Boolean(request.shapeId) || Boolean(request.inSelection), stack: request.stackIds, facePoint: request.facePoint };
@@ -21136,6 +21395,7 @@ export function LayerlingEditor({
           onSelectShape={selectShapeOnWorkplane}
           onShapeContextMenu={historyViewState ? undefined : openShapeContextMenu}
           highlightIds={clearanceHighlightIds ?? menuHighlightIds}
+          selectableIds={contextSelectableIds}
           nestedFocus={nestedFocusView}
           clearanceMark={clearanceMark}
           printCheckView={printCheckView}

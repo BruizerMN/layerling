@@ -1,159 +1,257 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { activationChanged, carryProtected, contextChain, contextViolation, editableIds, groupActionAllowed, notesViolation, onlyEditable, prepareContextCommit, sameShapeData, trackContextMembership } from "@/lib/editingContext";
+import { buildObjectRows } from "@/lib/objectsSnapshot";
 import { trackOpenGroupLevels } from "@/lib/openGroupParts";
-import { createVisualGroup, EMPTY_VISUAL_GROUPS, liveObjectIds, membershipMap, moveObjectsToGroup, removeObjectsFromGroups } from "@/lib/visualGroups";
-import { notesAfterShapeChange } from "@/lib/noteAnchoring";
+import { canonicalizeShape } from "@/lib/workplaneShapes";
 import type { WorkplaneNote, WorkplaneShape } from "@/types/layerling";
 import { primitive } from "./support";
-import { contextToken, contextViolation, editableIds, groupActionAllowed, selectableOnly, trackMembership } from "./editingContextProto";
 
 /*
- * Build 0130, STEP 1 (investigation and failing-first; no production change). Layers: (1) FAILING FIRST against production (`it.fails`): the behaviour the build must add; they flip to plain tests with the
- * implementation. (2) PROTOTYPE tests (plain): the central rule's predicates behave as designed (editingContextProto.ts, test tree only). (3) CENSUS tests of production source (what exists today).
+ * Build 0130 (production verification; Step 1's failing-first tests, now passing). Layers, as in the findings: P = production modules run as they are; S = source-text census of LayerlingEditor.tsx / the viewport (the editor
+ * itself cannot be run headlessly); I = interactive acceptance (docs/BUILD-0130.md).
  */
 const root = path.resolve(__dirname, "../../../");
-const editor = readFileSync(path.join(root, "apps/web/src/components/LayerlingEditor.tsx"), "utf8");
+const read = (file: string) => readFileSync(path.join(root, file), "utf8");
+const editor = read("apps/web/src/components/LayerlingEditor.tsx");
+const viewport = read("apps/web/src/components/WorkplaneViewport.tsx");
+const slice = (from: string, to: string) => { const a = editor.indexOf(from); expect(a, from).toBeGreaterThan(-1); return editor.slice(a, editor.indexOf(to, a)); };
 const S = (id: string, extra: Partial<WorkplaneShape> = {}) => primitive(id, "box", extra);
-const ids = (xs: readonly WorkplaneShape[]) => xs.map((s) => s.id);
+const commit = slice("const commitShapes = useCallback(", "// Several build plates side by side");
 
-describe("FAILING FIRST: production behaviour 0130 must add", () => {
-  it.fails("production trackOpenGroupLevels joins a PURE addition (new, duplicate, paste, import) to the innermost level in native", () => {
-    const levels = [["a", "b"]];
-    const prev = [S("a"), S("b"), S("out")], next = [...prev, S("new")];
-    const native = trackOpenGroupLevels as unknown as (l: ContextLevelsT, p: unknown, n: unknown, o?: { addToInnermost: boolean }) => ContextLevelsT;
-    expect(native(levels, prev, next, { addToInnermost: true })[0]).toContain("new");
+describe("P: membership (central rule, native) and the browser's unchanged default", () => {
+  const levels = [["a", "b", "inner"], ["c", "d"]];
+  const prev = [S("o1"), S("a"), S("b"), S("c"), S("o2")];
+  it("every ADDITION (new, duplicate, paste, import, any future tool) joins the innermost level", () => {
+    expect(trackContextMembership(levels, prev, [...prev, S("new")])).toEqual([["a", "b", "inner"], ["c", "d", "new"]]);
+    expect(trackContextMembership(levels, prev, [...prev, S("n1"), S("n2")])[1]).toEqual(["c", "d", "n1", "n2"]);
   });
-  it.fails("a production module lib/editingContext exists with editableIds and contextViolation (the central rule)", async () => {
-    const mod = await import("@/lib/editingContext" as string);
-    expect(typeof mod.editableIds).toBe("function"); expect(typeof mod.contextViolation).toBe("function");
+  it("a step that removes a part keeps today's placement rule; an unrelated additions-free step changes nothing", () => {
+    expect(trackContextMembership(levels, prev, [S("o1"), S("a"), S("b"), S("o2"), S("cut1"), S("cut2")])[1]).toEqual(["c", "cut1", "cut2", "d"]);
+    expect(trackContextMembership(levels, prev, prev)).toBe(levels);
   });
-  it.fails("commitShapes refuses a step that changes or removes an object outside the context (source wiring)", () => {
-    const commit = editor.slice(editor.indexOf("const commitShapes = useCallback("), editor.indexOf("// Several build plates side by side"));
-    expect(commit).toContain("contextViolation(");
+  it("nested: new objects go to the innermost level only; the outer level is untouched", () => {
+    const out = trackContextMembership(levels, prev, [...prev, S("x")]);
+    expect(out[0]).toEqual(["a", "b", "inner"]);
   });
-  it.fails("selectedIds can hold only editable objects: one choke point (source wiring)", () => {
-    expect(editor).toMatch(/selectableOnly\(|editableSelection\(/);
+  it("no context: nothing is tracked; WITHOUT the option (the browser) a pure addition adds nobody, exactly as before", () => {
+    expect(trackContextMembership([], prev, [...prev, S("x")])).toEqual([]);
+    expect(trackOpenGroupLevels(levels, prev, [...prev, S("new")])).toBe(levels);
   });
-  it.fails("entering Group Editing selects nothing: openGroupForEditing no longer passes the parts as the selection (native)", () => {
-    const open = editor.slice(editor.indexOf("const openGroupForEditing = useCallback"), editor.indexOf("// A click on a part in the object list opens its group"));
-    expect(open).not.toContain("selectPart !== undefined && childIds[selectPart] ? [childIds[selectPart]] : childIds");
-  });
-  for (const [name, start] of [["Unhide All (showHidden)", "const showHidden = useCallback("], ["Hide Others (hideOthers)", "const hideOthers = useCallback("], ["Visual Groups Only", "const showOnlyVisualGroupObjects = useCallback("], ["Visual Group lock", "const lockVisualGroup = useCallback("]] as const) {
-    it.fails(`${name} is unavailable during Group Editing in the engine (document-wide command)`, () => {
-      const at = editor.indexOf(start); const body = editor.slice(at, at + 900);
-      expect(body).toMatch(/documentWideBlocked\(|openGroupsRef\.current\.length/);
-    });
-  }
-  it.fails("every asynchronous creator that awaits before it commits carries a fingerprint or a context-token guard (census below lists the gaps)", () => {
-    expect(asyncGaps()).toEqual([]);
+  it("an emptied context (every part deleted) takes new objects: the 0129 limitation ends", () => {
+    expect(trackContextMembership([["gone"]], [S("o1")], [S("o1"), S("fresh")])).toEqual([["gone", "fresh"]]);
   });
 });
 
-type ContextLevelsT = string[][];
-
-describe("PROTOTYPE: membership, editability, the guard, selection, group actions, the async token", () => {
-  const A = S("a"), B = S("b"), C = S("c"), OUT1 = S("o1"), OUT2 = S("o2");
-  it("every addition joins the INNERMOST level; a replacing step keeps today's placement; ids stay on the list across Undo", () => {
-    const levels = [["a", "b", "inner"], ["c", "d"]];
-    const prev = [OUT1, A, B, C, OUT2];
-    expect(trackMembership(levels, prev, [...prev, S("new")])).toEqual([["a", "b", "inner"], ["c", "d", "new"]]);        // new/paste/import/duplicate
-    expect(trackMembership(levels, prev, [OUT1, A, B, OUT2, S("cut1"), S("cut2")])[1]).toEqual(["c", "cut1", "cut2", "d"]); // c replaced (today's rule)
-    expect(trackMembership([], prev, [...prev, S("new")])).toEqual([]);                                                    // no context: nothing
-  });
-  it("EDITABILITY is membership of the innermost context only, whether the object is visible or not (surroundings and ancestors' other parts are not editable)", () => {
-    const levels = [["a", "b", "inner"], ["c", "d"]];
-    const present = new Set(["o1", "a", "b", "c", "d", "inner", "o2"]);
+describe("P: editability, selection, group actions", () => {
+  const levels = [["a", "b", "inner"], ["c", "d"]];
+  const present = new Set(["o1", "a", "b", "c", "d", "inner", "o2"]);
+  it("only the innermost level's members are editable: ancestors' other parts are surroundings; visibility never grants it", () => {
     expect([...editableIds(levels, present)!].sort()).toEqual(["c", "d"]);
     expect(editableIds([], present)).toBeNull();
-    expect([...editableIds([["x", "gone"]], new Set(["x"]))!]).toEqual(["x"]);     // an id on the list that is absent is nothing
+    expect([...editableIds([["x", "gone"]], new Set(["x"]))!]).toEqual(["x"]);
   });
-  const members = new Set(["a", "b"]);
-  const base = [OUT1, A, B, OUT2];
-  it("the guard allows what a context may do: change or remove members, add objects, move members within the list", () => {
-    expect(contextViolation(members, base, [OUT1, { ...A, x: 5 }, B, OUT2])).toBeNull();
-    expect(contextViolation(members, base, [OUT1, OUT2])).toBeNull();
-    expect(contextViolation(members, base, [OUT1, A, B, OUT2, S("new")])).toBeNull();
-    expect(contextViolation(members, base, [OUT1, B, A, OUT2])).toBeNull();
+  it("selection holds only members (Select All, Invert, marquee, Sidebar, Visual Groups and MCP share the rule)", () => {
+    const members = editableIds(levels, present);
+    expect(onlyEditable(members, ["o1", "c", "a", "d"])).toEqual(["c", "d"]);
+    expect(onlyEditable(null, ["o1", "a"])).toEqual(["o1", "a"]);
   });
-  it("the guard refuses a changed, removed or reordered surrounding, with no inference: exemptions are passed explicitly; no context = no restriction", () => {
-    expect(contextViolation(members, base, [{ ...OUT1, hidden: true }, A, B, OUT2])).toEqual({ kind: "changed", id: "o1" });   // Unhide All / Hide Others style
-    expect(contextViolation(members, base, [{ ...OUT1, name: "x" }, A, B, OUT2])).toEqual({ kind: "changed", id: "o1" });       // rename
-    expect(contextViolation(members, base, [OUT1, A, B])).toEqual({ kind: "removed", id: "o2" });
-    expect(contextViolation(members, base, [OUT2, A, B, OUT1])).toMatchObject({ kind: "reordered" });
-    expect(contextViolation(members, base, [{ ...OUT1, hidden: true }, A, B, OUT2], true)).toBeNull();                          // transition/history: caller-declared
-    expect(contextViolation(null, base, [])).toBeNull();
-  });
-  it("a locked or shape-locked MEMBER is still refused by the existing lock rules (the guard decides nothing about members)", () => {
-    expect(contextViolation(members, [{ ...A, locked: true }, OUT1], [{ ...A, locked: true, x: 9 }, OUT1])).toBeNull();
-  });
-  it("selection can only hold editable objects, Select All and Invert included (they inherit the filter)", () => {
-    expect(selectableOnly(members, ["o1", "a", "b", "o2"])).toEqual(["a", "b"]);
-    expect(selectableOnly(null, ["o1", "a"])).toEqual(["o1", "a"]);
-  });
-  it("Q9: a group-level action is all or nothing", () => {
-    expect(groupActionAllowed(members, ["a", "b"])).toBe(true);
-    expect(groupActionAllowed(members, ["a", "o1"])).toBe(false);
+  it("a group-level action is all or nothing", () => {
+    const members = editableIds(levels, present);
+    expect(groupActionAllowed(members, ["c", "d"])).toBe(true);
+    expect(groupActionAllowed(members, ["c", "o1"])).toBe(false);
     expect(groupActionAllowed(null, ["o1"])).toBe(true);
   });
-  it("the async token differs across a session end, a new session and a nested open (so an operation started elsewhere is refused)", () => {
-    expect(contextToken("s1", "g")).toBe(contextToken("s1", "g"));
-    expect(new Set([contextToken(null, null), contextToken("s1", "g"), contextToken("s1", "g2"), contextToken("s2", "g")]).size).toBe(4);
+});
+
+describe("P: the commit guard and the pipeline (surroundings unchanged after the ENTIRE pipeline)", () => {
+  const A = S("a"), B = S("b"), O1 = S("o1"), O2 = S("o2");
+  const members = new Set(["a", "b"]);
+  const base = [O1, A, B, O2];
+  it("allows what a context may do: change or remove members, add objects, reorder members", () => {
+    expect(contextViolation(members, base, [O1, { ...A, x: 5 }, B, O2])).toBeNull();
+    expect(contextViolation(members, base, [O1, O2])).toBeNull();
+    expect(contextViolation(members, base, [O1, A, B, O2, S("new")])).toBeNull();
+    expect(contextViolation(members, base, [O1, B, A, O2])).toBeNull();
+  });
+  it("refuses a changed, removed or reordered surrounding (rename, hide, lock, delete, bulk commands, reorder); no context: no restriction", () => {
+    expect(contextViolation(members, base, [{ ...O1, hidden: true }, A, B, O2])).toEqual({ kind: "changed", id: "o1" });
+    expect(contextViolation(members, base, [{ ...O1, name: "x" }, A, B, O2])).toEqual({ kind: "changed", id: "o1" });
+    expect(contextViolation(members, base, [O1, A, B])).toEqual({ kind: "removed", id: "o2" });
+    expect(contextViolation(members, base, [O2, A, B, O1])).toMatchObject({ kind: "reordered" });
+    expect(contextViolation(null, base, [])).toBeNull();
+  });
+  it("a recreated-but-equal surrounding (a tool's spread copy) is not a violation; a recreated-and-different one is", () => {
+    expect(contextViolation(members, base, [{ ...O1 }, A, B, { ...O2 }])).toBeNull();
+    expect(sameShapeData(O1, { ...O1, x: 1 })).toBe(false);
+  });
+  it("PRODUCTION PIPELINE: protected, NON-CANONICAL surroundings are carried forward by their existing reference; canonicalization never recreates or alters them", () => {
+    const odd = S("odd", { rotation: 0.004, width: 10.00004 });
+    expect(canonicalizeShape(odd)).not.toEqual(odd);                                  // canonicalization WOULD change it (non-canonical stored data)
+    const prev = [odd, A, B];
+    const edited = prev.map((shape) => (shape.id === "a" ? { ...shape, x: 3.333333 } : shape));
+    const out = prepareContextCommit(members, prev, edited, canonicalizeShape);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.shapes[0]).toBe(odd);                                                   // the same reference: untouched by the whole pipeline
+    expect(out.shapes[1]).toEqual(canonicalizeShape(edited[1]));                       // members are canonicalized as always
+    expect(prepareContextCommit(null, prev, edited, canonicalizeShape)).toMatchObject({ ok: true });   // no context: today's behaviour
+    expect((prepareContextCommit(null, prev, edited, canonicalizeShape) as { shapes: WorkplaneShape[] }).shapes[0]).not.toBe(odd);
+  });
+  it("a refused step reports why and carries nothing forward", () => {
+    expect(prepareContextCommit(members, base, [{ ...O1, locked: true }, A, B, O2], canonicalizeShape)).toEqual({ ok: false, violation: { kind: "changed", id: "o1" } });
+  });
+  it("carryProtected keeps new objects canonicalized", () => {
+    const fresh = S("fresh", { rotation: 0.004 });
+    const out = carryProtected(members, base, [...base, fresh], canonicalizeShape);
+    expect(out[4]).toEqual(canonicalizeShape(fresh));
   });
 });
 
-describe("CENSUS (production source today)", () => {
-  it("the direct `setShapes(` writers are exactly the ten classified in docs/BUILD-0130-STEP1-FINDINGS.md (a new one must be classified first)", () => {
-    const sites = [...editor.matchAll(/\bsetShapes\(/g)].length;
-    expect(sites).toBe(10);
+describe("P: the activation of an editing context (N2) and associated state (N3)", () => {
+  it("the activation changes on EVERY transition of the chain, including returning to a previously active context", () => {
+    const L = (...ids: string[]) => ids.map((id) => ({ original: { id } }));
+    let generation = 0; let chain = contextChain(L());
+    const step = (levels: ReturnType<typeof L>) => { const next = contextChain(levels); if (next !== chain) generation += 1; chain = next; };
+    step(L("A")); const started = generation;                                         // enter A, start an import
+    step(L("A", "B")); step(L("A"));                                                   // enter B, finish B: back in A
+    expect(contextChain(L("A"))).toBe("A");                                           // same session, same group id ...
+    expect(activationChanged(started, generation)).toBe(true);                         // ... a different activation
+    expect(activationChanged(generation, generation)).toBe(false);
+    step(L()); expect(activationChanged(started, generation)).toBe(true);              // Cancel/Done: also different
   });
-  it("Visual Groups operations are context-blind today: any object id can be assigned or removed (characterization)", () => {
-    const { registry, id } = createVisualGroup(EMPTY_VISUAL_GROUPS, { name: "V" });
-    const withOutside = moveObjectsToGroup(registry, ["outside"], id);
-    expect(membershipMap(withOutside, liveObjectIds([S("outside")])).get("outside")).toBe(id);
-    expect(membershipMap(removeObjectsFromGroups(withOutside, ["outside"]), liveObjectIds([S("outside")])).has("outside")).toBe(false);
+  it("notes attached to surroundings cannot be changed, removed, detached, reassigned or created; members', free and the open group's own can", () => {
+    const note = (id: string, shapeId?: string): WorkplaneNote => ({ id, text: id, x: 0, y: 0, z: 0, ...(shapeId ? { anchor: { shapeId, normalized: [0.5, 0.5, 0.5] } } : {}) }) as WorkplaneNote;
+    const members = new Set(["m"]); const present = new Set(["m", "o"]);
+    const before = [note("n-o", "o"), note("n-m", "m"), note("n-free"), note("n-open", "openGroup")];
+    expect(notesViolation(members, present, before, [...before, note("n-new")])).toBeNull();                       // a free note
+    expect(notesViolation(members, present, before, before.map((n) => (n.id === "n-m" ? { ...n, text: "edited" } : n)))).toBeNull();   // a member's
+    expect(notesViolation(members, present, before, before.map((n) => (n.id === "n-open" ? { ...n, text: "edited" } : n)))).toBeNull(); // the open group's own (absent while open)
+    expect(notesViolation(members, present, before, before.map((n) => (n.id === "n-o" ? { ...n, text: "x" } : n)))).toBe("n-o");        // modified
+    expect(notesViolation(members, present, before, before.filter((n) => n.id !== "n-o"))).toBe("n-o");                                // removed
+    expect(notesViolation(members, present, before, before.map((n) => (n.id === "n-o" ? { id: n.id, text: n.text, x: 0, y: 0, z: 0 } as WorkplaneNote : n)))).toBe("n-o"); // detached
+    expect(notesViolation(members, present, before, before.map((n) => (n.id === "n-free" ? { ...n, anchor: { shapeId: "o", normalized: [0, 0, 0] } } as WorkplaneNote : n)))).toBe("n-free");   // attached to a surrounding
+    expect(notesViolation(null, present, before, [])).toBeNull();
   });
-  it("a note pinned to an object outside the context is not touched by a step that only changes members; a note on a removed member is freed where it stood", () => {
-    const outside = S("o1", { x: 40 }), member = S("m1");
-    const pinned = (shapeId: string): WorkplaneNote => ({ id: `n-${shapeId}`, text: "t", x: 1, y: 1, z: 1, anchor: { shapeId, normalized: [0.5, 0.5, 0.5] } } as WorkplaneNote);
-    const notes = [pinned("o1"), pinned("m1")];
-    const after = notesAfterShapeChange(notes, [outside, member], [outside]);
-    expect(after.find((n) => n.id === "n-o1")).toBe(notes[0]);
-    expect(after.find((n) => n.id === "n-m1")!.anchor).toBeUndefined();
+  it("the Objects Sidebar rows carry `outside` for every live object that is not a member of the innermost context", () => {
+    const g = S("g"), o = S("o"), a = S("a"), b = S("b"), other = S("c");
+    const rows = buildObjectRows([o, a, b, other], (s) => s.id, [{ original: g, childIds: ["a", "b"] }])!;
+    const flat: Record<string, boolean | undefined> = {};
+    const walk = (list: typeof rows) => list.forEach((r) => { flat[r.id] = r.outside; if (r.items) walk(r.items); });
+    walk(rows);
+    expect(flat).toMatchObject({ o: true, c: true });
+    expect(flat.a).toBeUndefined(); expect(flat.b).toBeUndefined();
+    expect(buildObjectRows([o, a], (s) => s.id, [])!.every((r) => r.outside === undefined)).toBe(true);   // nothing open: no flag
   });
 });
 
-/** The async census: every `async` editor callback that commits and awaits BEFORE its first commit, with no fingerprint/context guard (the script of the findings). */
+describe("S: the editor's wiring (source census; native-only; one refusal mechanism)", () => {
+  it("N1: commitShapes returns a boolean; every refusal marks the commit as refused and returns false; the context guard runs BEFORE canonicalization and surroundings are carried by reference", () => {
+    expect(commit).toContain("): boolean => {");
+    const returnsFalse = (commit.match(/return false;/g) ?? []).length;
+    const marks = (commit.match(/markCommit\(false\);/g) ?? []).length;
+    expect(returnsFalse).toBe(3);                                         // history view, context protection, shape lock: the one mechanism
+    expect(marks).toBe(3);                                                // each of them drops the queued associated state
+    expect(commit.indexOf("prepareContextCommit(")).toBeGreaterThan(-1);
+    expect(commit.indexOf("prepareContextCommit(")).toBeLessThan(commit.indexOf("shapeLockBroken("));   // the lock rule stays independent, applied to what will be stored
+    expect(commit).toContain("for (const apply of markCommit(true)) apply();");
+  });
+  it("N1: associated state that accompanies a commit is queued and applied only on success (every Visual Groups placement helper)", () => {
+    for (const name of ["placeMergeResult", "placeDerived", "placeReplacement", "placeCopies"]) {
+      const at = editor.indexOf(`const ${name} = useCallback(`);
+      expect(at, name).toBeGreaterThan(-1);
+      expect(editor.slice(at, at + 520), name).toContain("afterCommit(");
+    }
+    // no raw Visual Groups write sits directly beside a commit any more: the three helpers are the only writers next to commits
+    expect(editor).not.toMatch(/placeDerived\(\[\[group\.id[^\n]*\n[^\n]*updateVisualGroups\(/);
+  });
+  it("N1: the Visual Groups containers cannot be changed while a group is being edited (not part of the session's Undo/Cancel), and group-level actions are all or nothing", () => {
+    const ops = slice("const visualGroupOps = useMemo(", "const visualGroupOpsRef = useRef(visualGroupOps)");
+    for (const op of ["create:", "rename:", "delete:", "moveGroup:", "moveObjects:", "removeObjects:", "moveItems:"]) expect(ops.slice(ops.indexOf(op), ops.indexOf(op) + 260), op).toContain("refuseWholeDesign()");
+    for (const fn of ["toggleVisualGroupVisibility", "lockVisualGroup"]) expect(slice(`const ${fn} = useCallback(`, "}, [commitShapes"), fn).toContain("refuseNonMembers(");
+    expect(slice("const toggleVisualObjectLock = useCallback(", "}, [commitShapes")).toContain("refuseNonMembers([id])");
+  });
+  it("selection: ONE gated setter; the direct ref writes are gated; entry selects nothing (native)", () => {
+    expect(editor).toContain("const [selectedIds, setSelectedIdsState] = useState<string[]>([]);");
+    expect(slice("const setSelectedIds = useCallback(", "/** A command that changes")).toContain("gateSelectionIds(wanted)");
+    expect((editor.match(/selectedIdsRef\.current = gateSelectionIds\(validIds\);/g) ?? []).length).toBe(4);
+    const open = slice("const openGroupForEditing = useCallback", "// A click on a part in the object list opens its group");
+    expect(open).toContain("nativeDocument ? [] : selectPart !== undefined");
+  });
+  it("document-wide commands are unavailable during Group Editing in the engine (before anything is read or written)", () => {
+    for (const [name, start] of [["showHidden", "const showHidden = useCallback("], ["hideOthers", "const hideOthers = useCallback("], ["showOnlyVisualGroupObjects", "const showOnlyVisualGroupObjects = useCallback("], ["focusVisualGroup", "const focusVisualGroup = useCallback("]] as const) {
+      const at = editor.indexOf(start); expect(at, name).toBeGreaterThan(-1);
+      expect(editor.slice(at, at + 330), name).toContain("refuseWholeDesign()");
+    }
+    const plates = read("apps/web/src/components/workplane/useBuildPlates.ts");
+    for (const fn of ["const add = useCallback", "const rename = useCallback", "const move = useCallback", "const remove = useCallback", "const arrange = useCallback"]) expect(plates.slice(plates.indexOf(fn), plates.indexOf(fn) + 260), fn).toContain("refuseWholeDesign?.()");
+    expect(slice("const updateProjectWorkspaceSettings = useCallback(", "const workspaceBefore")).toContain("platePitch(workspaceSettingsRef.current) !== platePitch(nextWorkspace) && refuseWholeDesign()");
+  });
+  it("N6: a transition of the chain (and only that) ends the modeling tools and the interrupted drag; every tool state is covered (permanent census)", () => {
+    const setter = slice("const setOpenGroupLevels = useCallback(", "/** The activation an asynchronous operation starts in");
+    expect(setter).toContain("contextChain(openGroupsRef.current) !== contextChain(levels)");
+    expect(setter).toContain("endModelingToolsRef.current();");
+    expect(setter).toContain("changed && nativeDocument");
+    const end = slice("const endModelingTools = useCallback(", "endModelingToolsRef.current = endModelingTools;");
+    expect(end).toContain("interactionStartShapesRef.current = null;");        // cancelInteraction can no longer restore a snapshot of the previous context
+    // every `[xTool, setXTool]`-like state of the editor is reset there (allow-list: view modes and sketch state that are not modeling tools)
+    const states = [...editor.matchAll(/const \[\w+, (set\w*(?:Tool|Preview|Session|Pick|Draw|Region|Mode|ToolId)\w*)\] = useState/g)].map((m) => m[1]);
+    const exempt = new Set(["setNoteMode", "setWorkplaneMode", "setToolbarMode", "setPresentationMode", "setStandbyMode", "setSketchTool", "setSketchRevolvePreview", "setSketchStrokePreview", "setMultiSelect", "setSplitSession", "setSplitConnectorPreview", "setPivotPickMode", "setLayFlatPickMode", "setAlignMode", "setMirrorMode", "setPrintCheckTool", "setDrawingExporting"]);
+    const missing = states.filter((name) => !exempt.has(name) && !end.includes(`${name}(`));
+    expect(missing).toEqual([]);
+    for (const name of ["setSplitConnectorPreview", "setPivotPickMode", "setLayFlatPickMode", "setAlignMode", "setMirrorMode", "setPrintCheckTool"]) expect(end, name).toContain(`${name}(`);
+    expect(end).toContain("closeSplit();");
+  });
+  it("N2 and N5: asynchronous completion obeys the activation (permanent invariant; fingerprint guards also carry it; rebuilds obey it)", () => {
+    expect(asyncGaps()).toEqual([]);
+    const unguardedFingerprint = editor.split("\n").filter((line) => /!== sourceFingerprint/.test(line) && !/contextChanged\(startedContext\)/.test(line) && !/session\.sourceFingerprint/.test(line));
+    expect(unguardedFingerprint).toEqual([]);
+    const rebuild = slice("const replaceRebuiltShape = useCallback(", "const current = shapesRef.current;");
+    expect(rebuild).toContain("startedContext: number");
+    expect(rebuild).toContain("contextChanged(startedContext)");
+    expect(rebuild).toContain("!editableNow(staleId)");           // in ADDITION to (never instead of) the target identity and fingerprint checks below
+    expect(editor).toContain("const startedContext = contextActivation();\n      sketchRebuildBusyRef.current = true;");
+    expect(editor).toContain("const stale = shapes.find((shape) => !shape.locked && editableNow(shape.id) && shellNeedingRebuild(shape)");
+  });
+  it("notes: the notes store refuses changes to notes attached to surroundings (and reports it)", () => {
+    const notesCommit = slice("const commitNotes = useCallback(", "const { addNote,");
+    expect(notesCommit).toContain("notesViolation(");
+    expect(notesCommit).toContain("return false;");
+  });
+  it("N8: nested-focus Inspector controls and Sidebar rows are unavailable for surroundings; the engine refuses regardless", () => {
+    expect(editor).toContain("onRename: inContext ? undefined : renameNestedFocus, onEditGroup: inContext ? undefined : editNestedFocusGroup");
+    expect(slice("const updateNestedShape = useCallback(", "const target = resolveNestedFocus")).toContain("if (contextMembers())");
+  });
+  it("viewport: clicks, the click stack, marquee and note attachment pass through surroundings; they stay drawn and usable as references", () => {
+    expect(viewport).toContain("pickShapeAt(state, pickableShapes(),");
+    expect(viewport).toContain("shapesUnderPointer(state, pickableShapes(),");
+    expect(viewport).toContain(".filter((shape) => !allowed || allowed.has(shape.id))");
+    expect(viewport).toContain("if (selectableIdsRef.current && !selectableIdsRef.current.has(shapeId)) return false;");
+    expect(viewport).toContain("selectableIds = null,");                        // the default (browser, no context): everything
+  });
+  it("browser preserved: every new behaviour is gated on the native document or on an open context", () => {
+    expect(commit).toContain("Boolean(nativeDocument) && levels.length > 0");
+    expect(commit).toContain("{ addToInnermost: Boolean(nativeDocument) }");
+    expect(slice("const contextMembers = useCallback(", "/** The modeling selection")).toContain("nativeDocument && openGroupsRef.current.length");
+    expect(slice("const setOpenGroupLevels = useCallback(", "/** The activation an asynchronous")).toContain("nativeDocument");
+    expect(slice("const contextChanged = useCallback(", "\n")).toContain("Boolean(nativeDocument)");
+  });
+});
+
+/** The async census: every `async` editor callback that commits and awaits BEFORE its first commit carries a fingerprint or a context guard. */
 function asyncGaps(): string[] {
   const lines = editor.split("\n");
-  const starts = lines.flatMap((l, i) => (/^  const \w+ = (useCallback\()?async/.test(l) ? [i] : []));
-  const heads = lines.flatMap((l, i) => (/^  (const \w+ = |\w+Ref\.current = )/.test(l) ? [i] : []));
+  const starts = lines.flatMap((line, i) => (/^  const \w+ = (useCallback\()?async/.test(line) ? [i] : []));
+  const heads = lines.flatMap((line, i) => (/^  (const \w+ = |\w+Ref\.current = )/.test(line) ? [i] : []));
   const gaps: string[] = [];
   for (const s of starts) {
     const e = heads.find((h) => h > s) ?? s + 200;
     const body = lines.slice(s, e).join("\n");
-    const commit = body.search(/commitShapes\(|setShapes\(|commitOpenGroupTransition\(/);
-    if (commit < 0) continue;
-    if (/ourceFingerprint|changed\(\)|stillWanted|sceneUnchanged|contextToken|sameEditingContext/.test(body)) continue;
-    if (body.slice(0, commit).includes("await ")) gaps.push(lines[s].trim().split(" ")[1]);
+    const first = body.search(/commitShapes\(|setShapes\(|commitOpenGroupTransition\(/);
+    if (first < 0) continue;
+    if (/contextChanged\((?:session\.)?startedContext\)|stillWanted|sceneUnchanged/.test(body)) continue;
+    if (body.slice(0, first).includes("await ")) gaps.push(lines[s].trim().split(" ")[1]);
   }
   return gaps;
 }
-describe("CENSUS: asynchronous creators that can complete in another context", () => {
-  it("lists the unguarded ones (information; the failing-first test above demands none)", () => {
-    const gaps = asyncGaps();
-    console.info(`[0130 async census] ${gaps.length} unguarded: ${gaps.join(", ")}`);
-    expect(gaps.length).toBeGreaterThan(0);
-    expect(gaps).toContain("importFiles"); expect(gaps).toContain("pasteShape");
-  });
-  it("the geometry tools are already protected: they capture projectShapesFingerprint(shapesRef.current) and refuse when it changed, and opening or closing a context always changes it (the group is flattened)", () => {
-    expect(editor).toContain("const sourceFingerprint = projectShapesFingerprint(shapesRef.current);");
-    expect(editor).toContain("projectShapesFingerprint(shapesRef.current) !== sourceFingerprint");
-    expect(editor).toContain("openGroupsRef.current.at(-1) !== session");
-  });
-  it("entry into an unrelated context is already refused in the engine (navigation cannot open an unrelated group)", () => {
-    const open = editor.slice(editor.indexOf("const openGroupForEditing = useCallback"), editor.indexOf("// A click on a part in the object list opens its group"));
-    expect(open).toContain("innermost && !innermost.childIds.includes(id)");
-  });
-  void ids;
-});

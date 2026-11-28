@@ -25,6 +25,8 @@ export interface HiddenObjectsState {
   count: number;
   ids: readonly string[];
   unhideAll: () => void;
+  /** Build 0130 (native): Unhide All is a whole-design command, unavailable while a group is being edited. */
+  unavailable?: boolean;
 }
 
 export const HiddenObjectsContext = createContext<HiddenObjectsState>({ count: 0, ids: [], unhideAll: () => undefined });

@@ -57,18 +57,24 @@ export function trackOpenGroupLevels(
   levels: readonly (readonly string[])[],
   previous: readonly { id: string }[],
   next: readonly { id: string }[],
+  /**
+   * Build 0130 (native app): `addToInnermost` makes the rule central. A step that removes no part but ADDS objects (a new shape, a duplicate, a paste, an import, any tool added later) joins them to the
+   * INNERMOST level, so the active editing context is the destination of every creation. Without it (the browser) such a step adds nobody, as before.
+   */
+  options: { addToInnermost?: boolean } = {},
 ): readonly (readonly string[])[] {
   const nextIds = new Set(next.map((shape) => shape.id));
   const previousIds = new Set(previous.map((shape) => shape.id));
   const removed = (id: string) => previousIds.has(id) && !nextIds.has(id);
-  const level = levels.findLastIndex((partIds) => partIds.some(removed));
+  const replacing = levels.findLastIndex((partIds) => partIds.some(removed));
+  const level = replacing >= 0 ? replacing : options.addToInnermost ? levels.length - 1 : -1;
   if (level < 0) return levels;
   const known = new Set(levels.flat());
   const added = next.map((shape) => shape.id).filter((id) => !previousIds.has(id) && !known.has(id));
   if (!added.length) return levels;
   const partIds = levels[level];
   // Where the first replaced part stood, so the rebuilt group keeps its order.
-  const at = partIds.findIndex(removed) + 1;
+  const at = replacing >= 0 ? partIds.findIndex(removed) + 1 : partIds.length;
   const tracked = [...partIds.slice(0, at), ...added, ...partIds.slice(at)];
   return levels.map((ids, index) => (index === level ? tracked : ids));
 }

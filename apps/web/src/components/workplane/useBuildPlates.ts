@@ -45,6 +45,7 @@ export function useBuildPlates({
   commitShapes,
   updateWorkspace,
   setNotice,
+  refuseWholeDesign,
 }: {
   workspace: WorkplaneWorkspaceSettings;
   workspaceRef: MutableRefObject<WorkplaneWorkspaceSettings>;
@@ -58,6 +59,8 @@ export function useBuildPlates({
   commitShapes: (next: WorkplaneShape[], selection?: string | string[] | null, message?: string) => void;
   updateWorkspace: (settings: { workspace: WorkplaneWorkspaceSettings; snap: GridSize }) => void;
   setNotice: (message: string, warn?: boolean) => void;
+  /** Build 0130 (native): the plates (their number, names, order, and what stands on each) are the whole design's: unavailable while a group is being edited. True when refused (the notice is said). */
+  refuseWholeDesign?: () => boolean;
 }) {
   const count = plateCount(workspace);
   const [active, setActive] = useState(0);
@@ -107,6 +110,7 @@ export function useBuildPlates({
   }, [frame]);
 
   const add = useCallback(() => {
+    if (refuseWholeDesign?.()) return null;
     const names = platesWithAdded(workspaceRef.current);
     if (!names) {
       setNotice(t("plates.full", { max: MAX_BUILD_PLATES }), true);
@@ -121,22 +125,25 @@ export function useBuildPlates({
     frame(index);
     setNotice(t("status.plateAdded", { plate: plateDisplayLabel({ ...workspaceRef.current, plates: names }, index) }));
     return index;
-  }, [frame, setNotice, workspaceRef, writePlates]);
+  }, [frame, refuseWholeDesign, setNotice, workspaceRef, writePlates]);
 
   const rename = useCallback((index: number, name: string) => {
+    if (refuseWholeDesign?.()) return;
     writePlates(platesRenamed(workspaceRef.current, index, name));
-  }, [workspaceRef, writePlates]);
+  }, [refuseWholeDesign, workspaceRef, writePlates]);
 
   const move = useCallback((index: number, to: number) => {
+    if (refuseWholeDesign?.()) return;
     const result = platesMoved(workspaceRef.current, shapesRef.current, index, to);
     writePlates(result.plates);
     commitShapes(result.shapes, selectedIdsRef.current, t("status.plateMoved", { plate: plateDisplayLabel(workspaceRef.current, index), number: to + 1 }));
     activeRef.current = to;
     setActive(to);
     frame(to);
-  }, [commitShapes, frame, selectedIdsRef, shapesRef, workspaceRef, writePlates]);
+  }, [commitShapes, frame, refuseWholeDesign, selectedIdsRef, shapesRef, workspaceRef, writePlates]);
 
   const remove = useCallback((index: number) => {
+    if (refuseWholeDesign?.()) return;
     const before = workspaceRef.current;
     if (plateCount(before) <= 1) return;
     const label = plateDisplayLabel(before, index);
@@ -149,7 +156,7 @@ export function useBuildPlates({
     const next = Math.max(0, Math.min(index, plateCount({ ...before, plates: result.plates }) - 1));
     activeRef.current = next;
     setActive(next);
-  }, [commitShapes, selectedIdsRef, shapesRef, workspaceRef, writePlates]);
+  }, [commitShapes, refuseWholeDesign, selectedIdsRef, shapesRef, workspaceRef, writePlates]);
 
   /** The selection onto plate `target`, at the same spot on it; -1 puts it on a new plate. */
   const moveSelectionToPlate = useCallback((target: number, only?: readonly string[]): number | null => {
@@ -179,6 +186,7 @@ export function useBuildPlates({
 
   /** "Arrange on plates": the selection, or every body, row by row onto the plates, adding plates as needed. */
   const arrange = useCallback((only?: readonly string[]) => {
+    if (refuseWholeDesign?.()) return { arranged: 0, plates: plateCount(workspaceRef.current), leftOver: [] as string[] };
     const workspaceNow = workspaceRef.current;
     const selection = only ? [...only] : selectedIdsRef.current;
     const ids = new Set(selection.length ? selection : shapesRef.current.map((shape) => shape.id));
@@ -196,7 +204,7 @@ export function useBuildPlates({
     setHidden(false);
     frame(0, packed.plateCount - 1);
     return { arranged: moved, plates: packed.plateCount, leftOver: packed.leftOver };
-  }, [commitShapes, frame, roundPlate, selectedIdsRef, setNotice, shapesRef, workspaceRef, writePlates]);
+  }, [commitShapes, frame, refuseWholeDesign, roundPlate, selectedIdsRef, setNotice, shapesRef, workspaceRef, writePlates]);
 
   const toggleBar = useCallback(() => {
     if (barOpen) {

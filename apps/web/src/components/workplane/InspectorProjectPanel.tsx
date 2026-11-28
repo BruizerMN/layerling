@@ -11,14 +11,14 @@ import { InspectorSection } from "@/components/workplane/InspectorSection";
  * More project-wide sections go here as further `InspectorSection`s.
  */
 export function InspectorProjectPanel() {
-  const { count, unhideAll } = useHiddenObjects();
+  const { count, unhideAll, unavailable } = useHiddenObjects();
   return (
     <div className="inspector-project-panel" data-inspector-panel="project">
       <InspectorSection name="project.general" title="General">
         <div className="inspector-hidden-banner" role="status" data-hidden-count={count}>
           <EyeOff size={13} aria-hidden="true" />
           <span>{count === 0 ? "No hidden objects" : hiddenObjectsLabel(count)}</span>
-          <button type="button" disabled={count === 0} onClick={unhideAll}>
+          <button type="button" disabled={count === 0 || unavailable} title={unavailable ? "Unavailable while a group is being edited" : undefined} onClick={unhideAll}>
             Unhide All
           </button>
         </div>

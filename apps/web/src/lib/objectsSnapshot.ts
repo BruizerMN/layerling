@@ -30,6 +30,8 @@ export interface ObjectProps {
   ownName?: true;
   /** A group that is open for editing: it keeps its place in the hierarchy, marked, with its live parts (which the engine can select) as its items. */
   editing?: true;
+  /** Build 0130: a live object that is OUTSIDE the editing context while a group is being edited (a surrounding): the engine refuses to select or change it; the host shows its eye, lock and name as unavailable. */
+  outside?: true;
 }
 export interface ObjectRow extends ObjectProps {
   items?: ObjectRow[];
@@ -122,6 +124,8 @@ export function buildObjectRows(shapes: readonly WorkplaneShape[], nameOf: (shap
     }
     const row = one(shape, level + 2, "", container.length);
     if (!row) return null;
+    // Build 0130: only the parts of the INNERMOST open group are editable; the rest of the live objects are surroundings.
+    if (level !== openLevels.length - 1) row.outside = true;
     container.push(row);
   }
   return root;
