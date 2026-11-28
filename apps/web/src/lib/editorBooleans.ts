@@ -2400,10 +2400,10 @@ export type HullBuildResult = {
 };
 
 /** Whether a selection can be hulled: two shapes or more, at least one of them a solid. */
-export function canHullShapes(shapes: WorkplaneShape[]) {
+export function canHullShapes(shapes: WorkplaneShape[], allowSingle = false) {
   const solids = shapes.filter((shape) => !shape.hole && !isNonSolidShape(shape));
   // Holes only make a hole: two cylinder holes, a slot (#1055).
-  return shapes.length >= 2 && (solids.length >= 1 || shapes.every((shape) => shape.hole && !isNonSolidShape(shape)));
+  return (shapes.length >= 2 || (allowSingle && shapes.length === 1)) && (solids.length >= 1 || shapes.every((shape) => shape.hole && !isNonSolidShape(shape)));
 }
 
 /**
@@ -2421,11 +2421,13 @@ export type HullBuildOptions = {
    * are joined back in, so a neighbour that reaches into it is not cut. A recess at the side of a part stays too.
    */
   keepHoles?: boolean;
+  /** Build 0129 (native Done): the hull of ONE remaining constituent (a group edited down to one part keeps being a hull). Never set by the Hull command. */
+  allowSingle?: boolean;
 };
 
 export async function buildHullShapeFromSelection(groupable: WorkplaneShape[], triangleLimit: number, options: HullBuildOptions = {}): Promise<HullBuildResult> {
   const shapes = groupable.filter((shape) => !isNonSolidShape(shape));
-  if (!canHullShapes(shapes)) return { group: null, failureNotice: t("status.hullNeedsShapes") };
+  if (!canHullShapes(shapes, Boolean(options.allowSingle))) return { group: null, failureNotice: t("status.hullNeedsShapes") };
   const holesOnly = shapes.every((shape) => shape.hole);
   const solids = holesOnly ? shapes : shapes.filter((shape) => !shape.hole);
   const holes = holesOnly ? [] : shapes.filter((shape) => shape.hole);
@@ -2758,7 +2760,18 @@ export function groupedShape(selection: WorkplaneShape[]): WorkplaneShape | null
   if (groupable.length < 2) {
     return null;
   }
+  return plainGroupOfShapes(groupable);
+}
 
+/**
+ * Build 0129 (native Done only): the plain group of ONE constituent, exactly what `groupedShape` makes of several, drawn from its part: nothing is computed from the part, so an open mesh
+ * is kept as it is. The Group command and every other builder still need two; this is reached only from the reconstruction of a group edited down to one part.
+ */
+export function groupedShapeOfOne(shape: WorkplaneShape): WorkplaneShape {
+  return plainGroupOfShapes([{ ...shape, locked: false }]);
+}
+
+function plainGroupOfShapes(groupable: WorkplaneShape[]): WorkplaneShape {
   const groupBounds = boundsForShapesOfVertices(groupable);
   const minX = groupBounds.minX;
   const maxX = groupBounds.maxX;

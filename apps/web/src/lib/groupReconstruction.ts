@@ -1,5 +1,5 @@
 import { buildGroupedShapeOffThread } from "@/lib/geometryWorker";
-import { buildHullShapeFromSelection, buildIntersectionShapeFromSelection, disposeManifold, groupedShape, manifoldFromMeshData, type GroupBuildQuality } from "@/lib/editorBooleans";
+import { buildHullShapeFromSelection, buildIntersectionShapeFromSelection, disposeManifold, groupedShape, groupedShapeOfOne, manifoldFromMeshData, type GroupBuildQuality } from "@/lib/editorBooleans";
 import { getManifoldRuntime, meshForShape } from "@/lib/editorMeshCore";
 import { buildSketchLoftFromSelection } from "@/lib/sketchLoft";
 import { analyzeMesh } from "@/lib/meshRepair";
@@ -37,7 +37,19 @@ export type GroupReconstructionContext = {
 
 export type GroupReconstruction =
   | { group: WorkplaneShape; mergeWarning: string; quality?: GroupBuildQuality }
-  | { group: null; failure: string };
+  /** `removed` (Build 0129, native Done with no constituent left): not a failure; the empty group is to be taken out of the document. */
+  | { group: null; failure: string; removed?: true };
+
+/**
+ * Build 0129 (native Done): the group of ONE remaining constituent, per the group's own operation. Nothing is computed for an ordinary group, a bundle or an intersection (the intersection of one body is that body), so an open
+ * mesh is kept exactly as it is; a hull is the hull of the one body and so needs a closed solid like any hull; a loft needs two sketches and is refused. Never reached from the Group command or the browser.
+ */
+async function buildSingleConstituent(operation: string, part: WorkplaneShape, context: GroupReconstructionContext, keepHoles: boolean): Promise<{ group: WorkplaneShape | null; failureNotice?: string; loftNeedsTwo?: boolean }> {
+  if (operation === "loft") return { group: null, loftNeedsTwo: true };
+  if (operation === "hull") return buildHullShapeFromSelection([part], context.triangleLimit, { keepHoles, allowSingle: true });
+  if (operation === "intersection" && (await openMeshParts([part])).names.length) return { group: null, failureNotice: "" };
+  return { group: groupedShapeOfOne(part) };
+}
 
 /** The parts whose mesh the kernel cannot take as a closed solid (an operand of a boolean that is not one). A part that is itself a group without a body is drawn from its own parts and is not checked here. */
 export async function partsThatAreNotClosedSolids(parts: readonly WorkplaneShape[]): Promise<string[]> {
@@ -74,6 +86,8 @@ export async function openMeshParts(parts: readonly WorkplaneShape[]): Promise<{
 }
 
 export async function rebuildGroupFromParts(original: WorkplaneShape, parts: WorkplaneShape[], context: GroupReconstructionContext): Promise<GroupReconstruction> {
+  // Build 0129 (native Done): a group with nothing left in it is taken out of the document, whatever its pose or operation.
+  if (context.strict && parts.length === 0) return { group: null, failure: "", removed: true };
   // Build 0127: a group that carries a pose (rotation, mirror, resize) keeps it, or Done is refused; a group without one takes the unchanged path below (Build 0126). Native strict only.
   const plan = context.strict ? planPoseRebuild(original, parts, context.opened) : null;
   if (plan?.kind === "refuse") return { group: null, failure: plan.message };
@@ -81,7 +95,10 @@ export async function rebuildGroupFromParts(original: WorkplaneShape, parts: Wor
   const preserve = plan?.kind === "preserve" ? plan : null;
   const buildFrom = preserve ? preserve.local : parts;
   const operation = original.groupOperation === "intersection" || original.groupOperation === "hull" || original.groupOperation === "bundle" || original.groupOperation === "loft" ? original.groupOperation : "group";
-  const result = operation === "intersection"
+  const single = Boolean(context.strict) && parts.length === 1;
+  const result = single
+    ? await buildSingleConstituent(operation, buildFrom[0], context, Boolean(original.hullKeepHoles))
+    : operation === "intersection"
     ? await buildIntersectionShapeFromSelection(buildFrom, context.triangleLimit)
     : operation === "hull"
       ? await buildHullShapeFromSelection(buildFrom, context.triangleLimit, { keepHoles: Boolean(original.hullKeepHoles) })
@@ -95,6 +112,7 @@ export async function rebuildGroupFromParts(original: WorkplaneShape, parts: Wor
   if (!result.group) {
     const base = "failureNotice" in result && result.failureNotice ? result.failureNotice : t("status.groupChanged");
     if (!context.strict) return { group: null, failure: base };
+    if ("loftNeedsTwo" in result && result.loftNeedsTwo) return { group: null, failure: groupFinishProblemMessage({ kind: "loftNeedsTwo", group: name }) };
     const { names: objects, repairable } = await openMeshParts(parts);
     // Build 0126: a group of holes only that could not be unioned says so (never the cut of a solid, and never the meshes laid together instead).
     const built = result as { hasSolid?: boolean; hasHole?: boolean; hasImportedMesh?: boolean };
@@ -108,14 +126,21 @@ export async function rebuildGroupFromParts(original: WorkplaneShape, parts: Wor
   // Its colour stays if it had been given one apart from its first part.
   const firstSolid = original.groupedShapes?.find((child) => !child.hole) ?? original.groupedShapes?.[0];
   const ownColour = Boolean(firstSolid && firstSolid.color !== original.color);
-  const rebuilt = canonicalizeShape(preserve ? poseBuiltGroup(original, { ...result.group, groupOperation: operation } as WorkplaneShape, preserve) : { ...result.group, groupOperation: operation });
+  let rebuilt = canonicalizeShape(preserve ? poseBuiltGroup(original, { ...result.group, groupOperation: operation } as WorkplaneShape, preserve) : { ...result.group, groupOperation: operation });
+  if (single && rebuilt.groupedShapes?.length === 1) {
+    // Build 0129: the constituent that is left is the same object it was, so it keeps the id it had in the group (not one derived again), changed or not.
+    const was = context.opened?.findIndex((open) => open.id === parts[0].id) ?? -1;
+    const childId = was >= 0 ? original.groupedShapes?.[was]?.id : undefined;
+    if (childId) rebuilt = { ...rebuilt, groupedShapes: [{ ...rebuilt.groupedShapes[0], id: childId }] };
+  }
   // Build 0126 (native Done): a group of holes only keeps the colour it was given (its parts' colours say nothing: holes are drawn hole grey), and a shape lock is data that must survive.
   const holesOnly = Boolean(context.strict) && parts.length > 0 && parts.every((part) => part.hole);
   const group = canonicalizeShape(carryShapePivot(original, withHoleMode({
     ...rebuilt,
     id: original.id,
     name: original.name,
-    color: ownColour || holesOnly ? original.color : rebuilt.color,
+    // Build 0129: a group left with one constituent keeps the colour it had (it is the same group; the constituent that is left says nothing about it).
+    color: ownColour || holesOnly || single ? original.color : rebuilt.color,
     transparent: original.transparent,
     hidden: original.hidden,
     ...(context.strict && original.shapeLocked ? { shapeLocked: true } : {}),

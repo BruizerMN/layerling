@@ -13008,8 +13008,19 @@ export function LayerlingEditor({
       const shape = byId.get(id);
       return shape ? [{ ...shape, locked: false }] : [];
     });
-    if (parts.length < 2) {
+    if (nativeDocument && parts.length === 0) {
+      // Build 0129: an emptied group is removed (the Done of an empty editing context): no message, the group's id leaves its level, and the session is one history step as always.
+      const outer = levels.slice(0, -1);
+      const parent = outer.at(-1);
+      if (parent) outer[outer.length - 1] = { ...parent, childIds: parent.childIds.filter((id) => id !== original.id) };
+      endOpenGroupLevelsWithoutStep(outer);
+      const notesLeft = notesAfterShapeChange(notesRef.current, shapesRef.current, shapesRef.current, new Set(outer.map((level) => level.original.id)));
+      if (notesLeft !== notesRef.current) commitNotes(notesLeft);
+      return { ok: true, message: "", partIds: [] };
+    }
+    if (parts.length < 2 && !nativeDocument) {
       // Nothing to group: the part that is left takes the group's place in the level around it.
+      // (Browser only. The native app keeps a group of one constituent, Build 0129.)
       const outer = levels.slice(0, -1);
       const parent = outer.at(-1);
       if (parent && parts.length) {
@@ -13335,9 +13346,10 @@ export function LayerlingEditor({
     const stillOpen = openGroupLevelsStillOpen(
       openGroups.map((level) => ({ groupId: level.original.id, partIds: level.childIds })),
       ids,
+      { keepEmpty: Boolean(nativeDocument) },
     );
     if (stillOpen < openGroups.length) endOpenGroupLevelsWithoutStep(openGroups.slice(0, stillOpen));
-  }, [endOpenGroupLevelsWithoutStep, openGroups, shapes]);
+  }, [endOpenGroupLevelsWithoutStep, nativeDocument, openGroups, shapes]);
 
   /** Whether "Edit group" applies to this group right now. */
   const canEditGroup = useCallback(

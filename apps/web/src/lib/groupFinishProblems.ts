@@ -12,6 +12,7 @@ export type GroupFinishProblem =
   | { kind: "rotationStorage"; group: string; part: string; mm: number }
   | { kind: "unsupportedGroup"; group: string; type: string }
   | { kind: "unsupportedFeature"; group: string; part: string; feature: string }
+  | { kind: "loftNeedsTwo"; group: string }
   | { kind: "cutFailed"; group: string }
   | { kind: "degraded"; group: string; reason: string };
 
@@ -55,6 +56,8 @@ export function groupFinishProblemMessage(problem: GroupFinishProblem): string {
       return `Cannot finish ${group}: ${part(problem)} uses ${problem.feature}, which Group Editing cannot yet keep exact while the group is rotated, mirrored or resized. Change ${part(problem)} back, ${orCancelRestores}\n${STAYS_OPEN}`;
     case "unionFailed":
       return `Cannot finish ${group}: its holes could not be combined into one clean body. Cancel to keep the group as it was, or change the parts and try again.`;
+    case "loftNeedsTwo":
+      return `Cannot finish ${group}: a loft needs at least two sketches and only one is left. Bring back a deleted sketch with Undo, ${orCancelRestores}\n${STAYS_OPEN}`;
     case "cutFailed":
       return `Cannot finish ${group}: the cut of its holes could not be computed cleanly. Cancel to keep the group as it was, or change the parts and try again.`;
     case "degraded":

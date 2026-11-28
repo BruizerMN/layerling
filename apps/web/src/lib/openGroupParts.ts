@@ -93,9 +93,15 @@ export function trackOpenGroupParts(
 export function openGroupLevelsStillOpen(
   levels: readonly { groupId: string; partIds: readonly string[] }[],
   presentIds: ReadonlySet<string>,
+  /**
+   * Build 0129 (native): a level whose parts are all gone is an EMPTY editing context, not a finished one: it stays open until Done (removes the group), Cancel (restores it) or Undo past its opening
+   * (the group is back among the objects) resolves it. Without this (the browser) deleting every part ends the level silently, as before.
+   */
+  options: { keepEmpty?: boolean } = {},
 ): number {
   const reopened = levels.findIndex((level) => presentIds.has(level.groupId));
   const candidates = reopened < 0 ? levels.length : reopened;
+  if (options.keepEmpty) return candidates;
   let open = candidates;
   let innerAlive = false;
   for (let index = candidates - 1; index >= 0; index -= 1) {
