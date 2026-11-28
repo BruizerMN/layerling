@@ -129,7 +129,8 @@ describe("a hole-only union that cannot be made REFUSES Done (Build 0126, Q4)", 
     const failure = "failure" in result ? result.failure : "";
     expect(failure).toContain("“Round Roof” is not a closed solid");
     expect(failure).toContain("Repair Open Meshes");
-    expect(failure).toContain("Cancel");
+    // Build 0127 (approved wording): cancel the session first, and say what cancelling costs
+    expect(failure).toContain("cancel group editing (the changes made in this session are discarded), choose Model > Repair Open Meshes, then edit the group again. Or remove the part.");
   });
   it("after the repair the same group unions", async () => {
     const broken = { ...tJunctionBox("Round Roof", 150), id: "rr", hole: true } as WorkplaneShape;
@@ -154,7 +155,8 @@ describe("a hole-only union that cannot be made REFUSES Done (Build 0126, Q4)", 
     expect(failure).not.toContain("Repair Open Meshes");
   });
   it("the refusal is the same message family as a mixed group's (names the object, Cancel available)", async () => {
-    expect(groupFinishProblemMessage({ kind: "openMesh", group: "G", objects: ["A"], repairable: true })).toContain("Model > Repair Open Meshes");
+    expect(groupFinishProblemMessage({ kind: "openMesh", group: "G", objects: ["A"], repairable: true })).toBe("Cannot finish “G”: “A” is not a closed solid (its mesh has open edges), so the group cannot be rebuilt. To close the gap, cancel group editing (the changes made in this session are discarded), choose Model > Repair Open Meshes, then edit the group again. Or remove the part.");
+    expect(groupFinishProblemMessage({ kind: "openMesh", group: "G", objects: ["A", "B"], repairable: true })).toBe("Cannot finish “G”: “A”, “B” are not closed solids (their meshes have open edges), so the group cannot be rebuilt. To close the gaps, cancel group editing (the changes made in this session are discarded), choose Model > Repair Open Meshes, then edit the group again. Or remove the parts.");
     expect(groupFinishProblemMessage({ kind: "openMesh", group: "G", objects: ["A"] })).not.toContain("Repair Open Meshes");
     expect(groupFinishProblemMessage({ kind: "unionFailed", group: "G" })).toContain("Cancel");
   });

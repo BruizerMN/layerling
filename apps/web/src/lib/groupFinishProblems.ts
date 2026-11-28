@@ -25,9 +25,13 @@ export function groupFinishProblemMessage(problem: GroupFinishProblem): string {
   const group = `“${problem.group}”`;
   switch (problem.kind) {
     case "openMesh": {
-      const remedy = problem.repairable
-        ? "Run Model > Repair Open Meshes (it closes gaps like this without changing any shape), remove"
-        : "Fix or remove";
+      // Build 0127 (approved wording): Repair Open Meshes is disabled while a group is open for editing, so the person must cancel first, and cancelling discards this session's changes.
+      if (problem.repairable) {
+        return problem.objects.length === 1
+          ? `Cannot finish ${group}: ${quoted(problem.objects)} is not a closed solid (its mesh has open edges), so the group cannot be rebuilt. To close the gap, cancel group editing (the changes made in this session are discarded), choose Model > Repair Open Meshes, then edit the group again. Or remove the part.`
+          : `Cannot finish ${group}: ${quoted(problem.objects)} are not closed solids (their meshes have open edges), so the group cannot be rebuilt. To close the gaps, cancel group editing (the changes made in this session are discarded), choose Model > Repair Open Meshes, then edit the group again. Or remove the parts.`;
+      }
+      const remedy = "Fix or remove";
       return problem.objects.length === 1
         ? `Cannot finish ${group}: ${quoted(problem.objects)} is not a closed solid (its mesh has open edges), so the group cannot be rebuilt. ${remedy} it, or Cancel to keep the group as it was.`
         : `Cannot finish ${group}: ${quoted(problem.objects)} are not closed solids (their meshes have open edges), so the group cannot be rebuilt. ${remedy} them, or Cancel to keep the group as it was.`;
