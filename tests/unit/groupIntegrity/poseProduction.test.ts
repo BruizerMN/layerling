@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 const kernel = vi.hoisted(() => ({ runtime: null as Promise<unknown> | null }));
 vi.mock("@/lib/editorMeshCore", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/editorMeshCore")>()), getManifoldRuntime: () => kernel.runtime }));
 import { restoreGroupedChildren } from "@/lib/editorBooleans";
+import { meshForShape } from "@/lib/editorMeshCore";
 import { planPoseRebuild, POSE_DISPLACEMENT_TOLERANCE, groupHasPose, unposePart } from "@/lib/groupPose";
 import type { WorkplaneShape } from "@/types/layerling";
 import { assertKernelLive, flatLeaves, maxVertexDeviation, reconstruct, startKernel } from "./support";
@@ -142,6 +143,22 @@ describe("cones keep their radii through a posed rebuild (the engine rescales co
       const baked = await reconstruct(G, edited.map((p) => ({ ...p, locked: false })));
       expect(produced.group, produced.failure).toBeTruthy();
       expect(relSym(produced.group!, baked.group!), JSON.stringify(pose)).toBeLessThan(2e-3);
+    }
+  });
+});
+
+describe("cone radii in a UNION-ONLY group (the path that honours an explicit radius; the kernel cut path ignores a lone baseRadius, which is why a body-level check on cut groups cannot see the inverse)", () => {
+  it("an edited cone keeps its size: the restored cone's mesh equals the cone the person placed", async () => {
+    const parts = [primitive("K", "cone", { x: 0, width: 20, depth: 20, height: 24 }), primitive("Block", "box", { x: 26, width: 14, depth: 14, height: 14 })];
+    for (const pose of [{ stretch: [1.7, 1.7, 1.7] }, { rotation: 20, rotationX: 35, rotationZ: 50, mirrorX: true, stretch: [1.3, 1.3, 1.3] }] as Pose[]) {
+      const G = await posedGroup(parts, pose);
+      const opened = openParts(G);
+      const edited = movePart(opened, "K", { x: opened[0].x + 2 });
+      const r = await produce(G, edited, opened);
+      expect(r.group, r.failure).toBeTruthy();
+      const meshOf = (s: WorkplaneShape) => { const o: number[] = []; meshForShape(s).vertices.forEach((v) => o.push(...v)); return o; };
+      const cone = restoreGroupedChildren(r.group!).find((p) => p.name === "K")!;
+      expect(maxVertexDeviation(meshOf(cone), meshOf(edited[0])), JSON.stringify(pose)).toBeLessThan(1e-2);   // the 0.01 degree storage floor on a 20 mm cone, not a radius error of millimetres
     }
   });
 });
