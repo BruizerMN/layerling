@@ -185,6 +185,8 @@ import { composedShapeRotation, geometryRotationDegreesForShortcut, geometryRota
 import { carryShapePivot, heightPatchKeepingBase, pivotAfterJoin, shapePivotFromWorld, shapePivotWorld, type PivotPoint } from "@/lib/rotationPivot";
 import { createLocalId } from "@/lib/localIds";
 import { canEditGroupAtLevel, mcpOpenGroupSummary, openGroupLevelsStillOpen, trackOpenGroupLevels, type OpenGroupLevel, type OpenGroupSession } from "@/lib/openGroupParts";
+import { applyMeshRepairs, scanForOpenMeshes, type MeshRepairScan } from "@/lib/meshRepair";
+import { createKernelMeshCheck } from "@/lib/meshRepairKernel";
 import { appendInSession, boundSession, endSession, sessionFrame, type GroupEditSession } from "@/lib/historyFrames";
 import type { TapeMeasurementsAnswer, TapeMeasurementsRequest } from "@/lib/tapeLengthEdit";
 import { projectExportFileName, stlNameAsksForNewFile } from "@/lib/exportNames";
@@ -14337,6 +14339,79 @@ export function LayerlingEditor({
     return result.removed.length;
   }, [syncProjectShapes]);
 
+  // ---- Build 0124: Repair Open Meshes ------------------------------------------------------------------------------------------------------------------------
+  // A document-wide maintenance operation (never the selection): a read-only scan of every distinct imported mesh in the scene, nested groups included, then, once the
+  // person has confirmed (native alert, or the browser's confirm), ONE history step that replaces the repaired meshes. The repair engine is lib/meshRepair.ts.
+  const meshRepairBusyRef = useRef(false);
+  /** Why a mesh repair cannot run right now (the same restrictions as any change to the design), or null. */
+  const meshRepairRefusal = useCallback((): string | null => {
+    if (groupSessionRef.current || openGroupsRef.current.length) return t("status.meshRepairInGroup");
+    if (historyViewStateRef.current) return t("status.historyViewBlocksEdits");
+    if (projectInteractionActiveRef.current) return t("status.meshRepairFinishAction");
+    if (openGroupBusyRef.current || meshRepairBusyRef.current) return t("status.meshRepairBusy");
+    return null;
+  }, []);
+
+  type MeshRepairReport = { repairableMeshes: number; objects: number; leftUnchanged: number; meshesLookedAt: number; repaired?: { meshes: number; objects: number } };
+  /** The scan, and with `apply` the repair of what it found. Read-only without `apply`. A repair is applied only to the scene the scan saw. */
+  const repairOpenMeshes = useCallback(async (apply: boolean): Promise<{ ok: true; report: MeshRepairReport } | { ok: false; message: string }> => {
+    const refused = meshRepairRefusal();
+    if (refused) return { ok: false, message: refused };
+    meshRepairBusyRef.current = true;
+    try {
+      let kernelValid;
+      try {
+        kernelValid = await createKernelMeshCheck();
+      } catch {
+        return { ok: false, message: t("status.meshRepairKernelUnavailable") };
+      }
+      const source = shapesRef.current;
+      const scan: MeshRepairScan = await scanForOpenMeshes(source, { kernelValid });
+      const report: MeshRepairReport = { repairableMeshes: scan.repairs.size, objects: scan.objects, leftUnchanged: scan.notRepairable + scan.failedChecks, meshesLookedAt: scan.meshes };
+      if (!apply || scan.repairs.size === 0) return { ok: true, report };
+      // The design must be the one that was scanned (and still free of anything that would make a change land somewhere unseen).
+      const stillRefused = meshRepairRefusal();
+      if (shapesRef.current !== source || (stillRefused && stillRefused !== t("status.meshRepairBusy"))) return { ok: false, message: stillRefused && stillRefused !== t("status.meshRepairBusy") ? stillRefused : t("status.meshRepairStale") };
+      const applied = applyMeshRepairs(source, scan.repairs);
+      if (applied.objects === 0) return { ok: true, report };
+      commitShapes(applied.shapes, selectedIdsRef.current);
+      report.repaired = { meshes: scan.repairs.size, objects: applied.objects };
+      return { ok: true, report };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    } finally {
+      meshRepairBusyRef.current = false;
+    }
+  }, [commitShapes, meshRepairRefusal]);
+
+  /** What the person is told after a scan that found nothing to repair (never implies a full integrity audit). */
+  const meshRepairNothingMessage = useCallback((report: MeshRepairReport) => (
+    report.leftUnchanged > 0 ? t("status.meshRepairNoneLeft", { count: report.leftUnchanged }) : t("status.meshRepairNone")
+  ), []);
+  const meshRepairDoneMessage = useCallback((report: MeshRepairReport) => (
+    report.leftUnchanged > 0
+      ? t("status.meshRepairDoneLeft", { meshes: report.repaired?.meshes ?? 0, objects: report.repaired?.objects ?? 0, count: report.leftUnchanged })
+      : t("status.meshRepairDone", { meshes: report.repaired?.meshes ?? 0, objects: report.repaired?.objects ?? 0 })
+  ), []);
+
+  /** The person confirmed (native alert, `meshRepair.confirmed`; or the browser's confirm): repair what a fresh scan finds. A quiet result, never a dialog. */
+  const confirmedRepairOpenMeshes = useCallback(async () => {
+    const outcome = await repairOpenMeshes(true);
+    if (!outcome.ok) { setNotice(outcome.message); return; }
+    setNotice(outcome.report.repaired ? meshRepairDoneMessage(outcome.report) : meshRepairNothingMessage(outcome.report), false, null, true);
+  }, [meshRepairDoneMessage, meshRepairNothingMessage, repairOpenMeshes, setNotice]);
+
+  /** Model > Repair Open Meshes: a read-only scan, then the confirmation. The same confirmation serves the on-load offer (Build 0125). */
+  const startRepairOpenMeshes = useCallback(async () => {
+    const outcome = await repairOpenMeshes(false);
+    if (!outcome.ok) { setNotice(outcome.message); return; }
+    const { report } = outcome;
+    if (report.repairableMeshes === 0) { setNotice(meshRepairNothingMessage(report), false, null, true); return; }
+    // Native: the host asks (a sheet on this document) and answers with `meshRepair.confirmed`; Cancel there changes nothing.
+    if (nativeDocument && requestHostAction("confirmMeshRepair", { meshes: report.repairableMeshes, objects: report.objects })) return;
+    if (typeof window !== "undefined" && window.confirm(t("dialog.meshRepairAsk", { meshes: report.repairableMeshes, objects: report.objects }))) await confirmedRepairOpenMeshes();
+  }, [confirmedRepairOpenMeshes, meshRepairNothingMessage, nativeDocument, repairOpenMeshes, setNotice]);
+
   const executeMcpCommand = useCallback(async (command: LayerlingMcpCommand): Promise<unknown> => {
     const params = command.params ?? {};
     const currentShapes = () => shapesRef.current;
@@ -14376,6 +14451,25 @@ export function LayerlingEditor({
         return inGroupSession && historyResult && typeof historyResult === "object"
           ? { ...(historyResult as Record<string, unknown>), historyScope: "group-editing-session", historyScopeNote: "These states are the group editing session's own history (the first state is the moment the group was opened). The document's history is kept apart and comes back when the group is finished or cancelled." }
           : historyResult;
+      }
+
+      // Build 0124: the repair command for AI tools. Read-only unless `confirm: true` (and then not `dryRun`); the same restrictions as the interactive command.
+      if (command.action === "repair_open_meshes") {
+        const apply = params.confirm === true && params.dryRun !== true;
+        const outcome = await repairOpenMeshes(apply);
+        if (!outcome.ok) throw new Error(outcome.message);
+        const { report } = outcome;
+        return {
+          dryRun: !apply,
+          repairableMeshes: report.repairableMeshes,
+          objectsUsingThem: report.objects,
+          meshesLookedAt: report.meshesLookedAt,
+          leftUnchanged: report.leftUnchanged,
+          ...(report.repaired ? { repaired: report.repaired } : {}),
+          note: apply
+            ? "Repaired as one undo step."
+            : report.repairableMeshes > 0 ? "Nothing was changed. Pass confirm: true (without dryRun) to repair these meshes as one undo step." : "No T-junction repairs were found; this checks only that defect class, not the geometry as a whole.",
+        };
       }
 
       // The files kept with the design (#820): the same checks as the attachments panel, see projectAttachmentsMcp.ts.
@@ -17931,7 +18025,7 @@ export function LayerlingEditor({
       setNotice(message);
       throw error;
     }
-  }, [
+  }, [repairOpenMeshes, 
     placeFitTest,
     alignSizeLimit,
     buildSectionSvg,
@@ -20714,6 +20808,8 @@ export function LayerlingEditor({
         onShowHidden={showHidden}
         onClearSelection={clearSelection}
         onHideOthers={() => { hideOthers(); }}
+        onRepairOpenMeshes={() => { void startRepairOpenMeshes(); }}
+        onMeshRepairConfirmed={() => { void confirmedRepairOpenMeshes(); }}
         onVisualGroupsOnly={showOnlyVisualGroupObjects}
         onInvertSelection={() => { invertSelection(); }}
         onToggleHidden={toggleHidden}

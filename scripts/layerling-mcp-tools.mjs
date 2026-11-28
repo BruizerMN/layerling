@@ -2183,6 +2183,18 @@ export const tools = [
     },
   },
   {
+    name: "layerling_repair_open_meshes",
+    description: "Look for imported meshes whose open edges are only T-junctions (a vertex that lies on the edge of the face beside it, so the surface is closed to the eye but open to the Boolean kernel, which then rejects the object as \"not a closed solid\" when its group is finished) and, with `confirm: true`, repair them. Document-wide, never the selection: every distinct imported mesh in the design, nested groups included, shared meshes counted once. The repair splits faces only: it creates and moves no coordinate, keeps the surface, shading, sizes, positions and every object's identity, and is ONE undo step. Healthy meshes, baked group bodies and meshes with other defects are never touched. Without `confirm` (or with `dryRun: true`) it is read-only and only reports what a repair would change. It checks for this one defect class only; it is not a full geometry check. Refused while a group is open for editing, the history view is open or another action is under way. Returns the counts; `leftUnchanged` meshes have open edges that cannot be repaired exactly.",
+    inputSchema: {
+      ...editorTargetSchema,
+      properties: {
+        ...editorTargetSchema.properties,
+        dryRun: { type: "boolean", description: "True: only report. This is also the default when `confirm` is not true." },
+        confirm: { type: "boolean", description: "True (and not dryRun): repair the meshes found, as one undo step." },
+      },
+    },
+  },
+  {
     name: "layerling_clear_history",
     description: "Delete every undo and redo step of the design for good, as the History view's \"Delete history\" button does: the design keeps its current state as its only one, so Undo has nothing to go back to, and a LYL file saved afterwards carries no history. It cannot be undone. Needs `confirm: true`, so it is never done by accident. Closes the History view if it is open. Returns how many steps were removed.",
     inputSchema: {

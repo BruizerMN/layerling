@@ -177,6 +177,7 @@ export type LayerlingMcpCommandName =
   | "restore_from_history"
   | "clear_history"
   | "delete_history_steps"
+  | "repair_open_meshes"
   | "list_backups"
   | "open_backup"
   | "show_workplane"

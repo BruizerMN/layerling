@@ -212,6 +212,8 @@ async function callTool(name, args) {
       return bridgeCommand("layer_text", args, 30000);
     case "layerling_text_block":
       return bridgeCommand("text_block", args, 30000);
+    case "layerling_repair_open_meshes":
+      return bridgeCommand("repair_open_meshes", args);
     case "layerling_clear_history":
       return bridgeCommand("clear_history", args);
     case "layerling_delete_history_steps":

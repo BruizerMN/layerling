@@ -74,7 +74,7 @@ export interface NativeMenuItem {
 import { VIEW_COMMANDS } from "@/lib/viewCommands";
 import { isValueCommand, validateCommandValue, type CommandValue } from "@/lib/commandValues";
 
-export const UI_COMMANDS = ["mode.geometry", "mode.sketch", "focusMode.toggle", "ribbonPin.toggle", "search", "guide", "whatsNew", "shortcuts", "interactiveHelp", "inspector.toggle", "edit.undo", "edit.redo", "edit.history", "edit.cut", "edit.copy", "edit.paste", "edit.duplicate", "edit.delete", "edit.deselectAll", "view.objectList", "view.hideSelected", "view.unhideAll", "view.hideOthers", "view.visualGroupsOnly", "view.notes", "view.overhangs", "file.import", "file.export", "file.attachments", "presentation.enter", "presentation.exit", "presentation.standby", "settings.saveStartView", "settings.resetStartView", "settings.makeFitTest", ...VIEW_COMMANDS] as const;
+export const UI_COMMANDS = ["repair.openMeshes", "meshRepair.confirmed", "mode.geometry", "mode.sketch", "focusMode.toggle", "ribbonPin.toggle", "search", "guide", "whatsNew", "shortcuts", "interactiveHelp", "inspector.toggle", "edit.undo", "edit.redo", "edit.history", "edit.cut", "edit.copy", "edit.paste", "edit.duplicate", "edit.delete", "edit.deselectAll", "view.objectList", "view.hideSelected", "view.unhideAll", "view.hideOthers", "view.visualGroupsOnly", "view.notes", "view.overhangs", "file.import", "file.export", "file.attachments", "presentation.enter", "presentation.exit", "presentation.standby", "settings.saveStartView", "settings.resetStartView", "settings.makeFitTest", ...VIEW_COMMANDS] as const;
 export type UiCommand = (typeof UI_COMMANDS)[number];
 /** The first protocol version that carries the document messages. */
 export const DOCUMENT_PROTOCOL_MIN = 2;
@@ -308,7 +308,7 @@ export interface UiActionRequest {
   session: string;
   type: "ui.action";
   protocol: number;
-  payload: { documentId: string; action: "openSettings" | "openDocumentSettings" | "enterPresentation" | "showMeasureTape" | "showMeasureCornerRuler" | "showMeasureProtractor" | "confirmClearMeasurements" | "showSectionView" | "toggleObjectsTab" | "confirmCancelGroupEditing" };
+  payload: { documentId: string; action: "openSettings" | "openDocumentSettings" | "enterPresentation" | "showMeasureTape" | "showMeasureCornerRuler" | "showMeasureProtractor" | "confirmClearMeasurements" | "showSectionView" | "toggleObjectsTab" | "confirmCancelGroupEditing" | "confirmMeshRepair"; /** Build 0124 (`confirmMeshRepair`): what a repair would change. */ meshes?: number; objects?: number };
 }
 /** Build 0003 (`ui.v1`): the document's own settings, for its Document Settings window. Sent only while that window is watching. */
 export interface SettingsStateRequest {

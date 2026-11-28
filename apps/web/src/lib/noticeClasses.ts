@@ -2,6 +2,11 @@
 // its sentence says: ERROR = something failed, was refused or cannot proceed, or needs the person to act; INFO = a confirmation, guidance for a tool, progress,
 // a cancellation, or a routine remark. Used by noticeKind.ts for the native app, which shows errors only. Keys not listed here are never suppressed.
 export const NOTICE_ERROR_KEYS: readonly string[] = [
+  "status.meshRepairBusy",
+  "status.meshRepairFinishAction",
+  "status.meshRepairInGroup",
+  "status.meshRepairKernelUnavailable",
+  "status.meshRepairStale",
   "cable.error.needsBody",
   "clearance.otherTool",
   "faceTool.empty",
@@ -262,6 +267,10 @@ export const NOTICE_ERROR_KEYS: readonly string[] = [
 ];
 
 export const NOTICE_INFO_KEYS: readonly string[] = [
+  "status.meshRepairDone",
+  "status.meshRepairDoneLeft",
+  "status.meshRepairNone",
+  "status.meshRepairNoneLeft",
   "status.groupOpened",
   "status.groupOpenCancelled",
   "status.groupClosed",

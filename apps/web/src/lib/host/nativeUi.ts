@@ -91,10 +91,10 @@ export function publishUiState(incoming: NativeUiState) {
 }
 
 /** Asks the host to open one of its windows. */
-export function requestHostAction(action: "openSettings" | "openDocumentSettings" | "enterPresentation" | "showMeasureTape" | "showMeasureCornerRuler" | "showMeasureProtractor" | "confirmClearMeasurements" | "showSectionView" | "toggleObjectsTab" | "confirmCancelGroupEditing") {
+export function requestHostAction(action: "openSettings" | "openDocumentSettings" | "enterPresentation" | "showMeasureTape" | "showMeasureCornerRuler" | "showMeasureProtractor" | "confirmClearMeasurements" | "showSectionView" | "toggleObjectsTab" | "confirmCancelGroupEditing" | "confirmMeshRepair", detail: { meshes?: number; objects?: number } = {}) {
   const bridge = getHostBridge();
   if (!documentId || !bridge?.supportsUi()) return false;
-  void bridge.sendUi("ui.action", { documentId, action });
+  void bridge.sendUi("ui.action", { documentId, action, ...detail });
   return true;
 }
 

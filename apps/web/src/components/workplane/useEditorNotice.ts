@@ -39,9 +39,10 @@ export function useEditorNotice(options: { errorsOnly?: boolean } = {}) {
     }, ms);
   }, []);
   // "stay": the message stays until the next one or the close button - for work that runs long and for what went wrong (#286).
-  const setNotice = useCallback((message: string, patient: boolean | "stay" = false, action: NoticeAction | null = null) => {
+  // `showInNative` (Build 0124): a result the person should see even in the native app, where confirmations are otherwise not raised (the footer message, never a sheet).
+  const setNotice = useCallback((message: string, patient: boolean | "stay" = false, action: NoticeAction | null = null, showInNative = false) => {
     reportNoticesRef.current = rememberBugReportEvent(reportNoticesRef.current, message);
-    if (errorsOnly && message !== "") {
+    if (errorsOnly && message !== "" && !showInNative) {
       // Native app: nothing is a toast. An error goes to the host, which shows it as a sheet on this document's window; anything else is not raised at all.
       // Without a host to take it (not expected in the app), the error is shown here as before rather than lost.
       if (!noticeIsError(message) || reportNativeError(message)) return;

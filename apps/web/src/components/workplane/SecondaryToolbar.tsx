@@ -12,7 +12,7 @@ import { ProjectNameField } from "@/components/workplane/ProjectNameField";
 import { FOCUS_MODE_CHANGE_EVENT, FOCUS_MODE_SHORTCUT } from "@/lib/focusMode";
 import { ShapeMenuPanel } from "@/components/workplane/ShapeMenuPanel";
 import { ShapeLibraryList } from "@/components/workplane/ShapeLibraryList";
-import { AlertTriangle, ArchiveRestore, ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, Check, CircleHelp, Percent, Circle as CircleIcon, Eye, EyeOff, Hexagon as HexagonIcon, ListTree, Maximize2, Minimize2, Pentagon as PentagonIcon, Pin, PinOff, Rotate3d, Route as RouteIcon, ScanEye, Search, Sparkles, Square as SquareIcon, Star as StarIcon, Triangle as TriangleIcon, X } from "lucide-react";
+import { AlertTriangle, ArchiveRestore, ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, Check, CircleHelp, Percent, Circle as CircleIcon, Eye, EyeOff, Hexagon as HexagonIcon, ListTree, Maximize2, Minimize2, Pentagon as PentagonIcon, Pin, PinOff, Rotate3d, Route as RouteIcon, ScanEye, Search, Sparkles, Square as SquareIcon, Star as StarIcon, Triangle as TriangleIcon, Wrench, X } from "lucide-react";
 import { OPEN_FILE_BACKUPS_EVENT } from "@/lib/fileBackups";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
@@ -412,6 +412,8 @@ export function SecondaryToolbar({
   onShowHidden,
   onClearSelection,
   onHideOthers,
+  onRepairOpenMeshes,
+  onMeshRepairConfirmed,
   onVisualGroupsOnly,
   onInvertSelection,
   onToggleHidden,
@@ -631,6 +633,10 @@ export function SecondaryToolbar({
   onClearSelection?: () => void;
   /** Hide everything but the selection, and select what is not selected (Discussion #1472). */
   onHideOthers: () => void;
+  /** Build 0124: Repair Open Meshes (Model menu, command search): a read-only scan, then the confirmation, then one Undo step. */
+  onRepairOpenMeshes?: () => void;
+  /** Build 0124: the host asked the person (native alert) and they chose Repair Meshes. */
+  onMeshRepairConfirmed?: () => void;
   /** Visual Groups Only (Build 0057, native View menu and toolbar): hide every object, then show the objects that are in a Visual Group; one step. */
   onVisualGroupsOnly?: () => void;
   onInvertSelection: () => void;
@@ -1031,6 +1037,8 @@ export function SecondaryToolbar({
       case "view.hideSelected": onToggleHidden(); break;
       case "view.unhideAll": onShowHidden(); break;
       case "view.hideOthers": onHideOthers(); break;
+      case "repair.openMeshes": if (toolbarMode !== "sketch" && !historyViewActive) onRepairOpenMeshes?.(); break;
+      case "meshRepair.confirmed": if (toolbarMode !== "sketch") onMeshRepairConfirmed?.(); break;
       case "view.visualGroupsOnly": if (toolbarMode !== "sketch") onVisualGroupsOnly?.(); break;
       case "view.notes": onToggleNotes(); break;
       case "view.overhangs": onToggleOverhangs(); break;
@@ -1506,6 +1514,7 @@ export function SecondaryToolbar({
       plain("scalePercent", t("scalePercent.title"), t("editor.group.modify"), canModifySelection, onScalePercent, { icon: Percent, active: scalePercentActive }),
       ...arrangeTools.map((tool) => fromTool(tool, t("editor.group.arrange"))),
       plain("note", t("editor.tool.note"), visibilityGroup, true, onNoteTool, { icon: ToolbarNoteIcon, active: noteMode }),
+      ...(onRepairOpenMeshes ? [plain("repair-open-meshes", t("palette.repairOpenMeshes"), t("palette.group.model"), !historyViewActive, onRepairOpenMeshes, { icon: Wrench })] : []),
       plain("import", t("editor.import"), fileGroup, true, () => onTopPanel("import"), { icon: ToolbarImportIcon }),
       plain("export", t("editor.export"), fileGroup, true, () => onTopPanel("export"), { icon: ToolbarVectorExportIcon }),
       plain("file-backups", t("backups.title"), fileGroup, true, () => window.dispatchEvent(new Event(OPEN_FILE_BACKUPS_EVENT)), { icon: ArchiveRestore, keywords: ["backup", "backups", "version", "versions", "restore", "sicherung", "fassung", "wiederherstellen"] }),

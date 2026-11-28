@@ -70,6 +70,7 @@ export const COMMAND_KEYWORDS: Readonly<Record<string, readonly string[]>> = {
   shortcuts: ["shortcuts", "keys", "keyboard", "tastenkuerzel", "tastenkürzel", "tastatur", "hotkeys", "own keys", "custom keys", "eigene tasten", "taste festlegen"],
   "shapes-panel": ["shapes", "add shape", "basic shapes", "shape library", "panel", "formen", "form hinzufügen", "grundformen", "formenauswahl", "bibliothek"],
   "mode-geometry": ["3d", "editor", "geometry", "bodies", "koerper", "körper"],
+  "repair-open-meshes": ["repair", "mesh", "meshes", "open", "t-junction", "tjunction", "manifold", "heal", "fix", "round roof", "not a closed solid"],
   "mode-sketch": ["sketch", "draw", "2d", "skizze", "zeichnen"],
   "sketch-line": ["line", "polyline", "linie", "gerade"],
   "sketch-arc": ["arc", "three point arc", "3 point", "radius", "circle", "bogen", "kreisbogen", "drei punkte", "dreipunkt"],
