@@ -88,9 +88,9 @@ describe.skipIf(!process.env.LAYERLING_POSE_INVESTIGATION)("verification matrix"
             if (original && !touched.includes(i)) {
               untouched += 1;
               if (child.id === original.id) idsKept += 1;
-              // `hole: undefined` and `hole: false` are the same thing (withHoleMode writes the boolean everywhere); position and id of the direct part are compared separately
-              const norm = (v: unknown): unknown => (Array.isArray(v) ? v.map(norm) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, w]) => [k, k === "hole" ? Boolean(w) : norm(w)])) : v);
-              const strip = (s: WorkplaneShape) => { const { x, z, elevation, id, ...rest } = s as never as Record<string, unknown>; void x; void z; void elevation; void id; return JSON.stringify(norm({ ...rest, hole: Boolean((rest as { hole?: boolean }).hole) })); };
+              // `hole: undefined` and `hole: false` are the same thing (withHoleMode writes the boolean at every level); the part's own position and id are compared separately
+              const norm = (v: unknown): unknown => { if (Array.isArray(v)) return v.map(norm); if (v && typeof v === "object") { const o = { ...(v as Record<string, unknown>) }; if ("kind" in o || "groupedShapes" in o) o.hole = Boolean(o.hole); return Object.fromEntries(Object.entries(o).map(([k, w]) => [k, norm(w)])); } return v; };
+              const strip = (s: WorkplaneShape) => { const { x, z, elevation, id, ...rest } = s as never as Record<string, unknown>; void x; void z; void elevation; void id; return JSON.stringify(norm(rest)); };
               if (strip(child) === strip(original)) valuesVerbatim += 1;
               else { const a = child as never as Record<string, unknown>, b = original as never as Record<string, unknown>; for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) if (!['x', 'z', 'elevation', 'id'].includes(k) && JSON.stringify(a[k]) !== JSON.stringify(b[k])) diffKeys[k] = (diffKeys[k] ?? 0) + 1; }
               maxShift = Math.max(maxShift, Math.abs(child.x - original.x), Math.abs(child.z - original.z), Math.abs((child.elevation ?? 0) - (original.elevation ?? 0)));
