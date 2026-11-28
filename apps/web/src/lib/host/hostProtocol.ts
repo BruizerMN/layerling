@@ -308,7 +308,7 @@ export interface UiActionRequest {
   session: string;
   type: "ui.action";
   protocol: number;
-  payload: { documentId: string; action: "openSettings" | "openDocumentSettings" | "enterPresentation" | "showMeasureTape" | "showMeasureCornerRuler" | "showMeasureProtractor" | "confirmClearMeasurements" | "showSectionView" | "toggleObjectsTab" | "confirmCancelGroupEditing" | "confirmMeshRepair"; /** Build 0124 (`confirmMeshRepair`): what a repair would change. */ meshes?: number; objects?: number };
+  payload: { documentId: string; action: "openSettings" | "openDocumentSettings" | "enterPresentation" | "showMeasureTape" | "showMeasureCornerRuler" | "showMeasureProtractor" | "confirmClearMeasurements" | "showSectionView" | "toggleObjectsTab" | "confirmCancelGroupEditing" | "confirmMeshRepair"; /** Build 0124 (`confirmMeshRepair`): what a repair would change. */ meshes?: number; objects?: number; /** Build 0125 (`confirmMeshRepair`): why it is offered (absent = "command"); `scanMs` is a diagnostic only. */ source?: "command" | "load"; scanMs?: number };
 }
 /** Build 0003 (`ui.v1`): the document's own settings, for its Document Settings window. Sent only while that window is watching. */
 export interface SettingsStateRequest {

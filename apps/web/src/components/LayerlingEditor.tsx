@@ -187,6 +187,7 @@ import { createLocalId } from "@/lib/localIds";
 import { canEditGroupAtLevel, mcpOpenGroupSummary, openGroupLevelsStillOpen, trackOpenGroupLevels, type OpenGroupLevel, type OpenGroupSession } from "@/lib/openGroupParts";
 import { applyMeshRepairs, scanForOpenMeshes, type MeshRepairScan } from "@/lib/meshRepair";
 import { createKernelMeshCheck } from "@/lib/meshRepairKernel";
+import { createMeshOfferScheduler, type MeshOfferScan } from "@/lib/meshRepairOffer";
 import { appendInSession, boundSession, endSession, sessionFrame, type GroupEditSession } from "@/lib/historyFrames";
 import type { TapeMeasurementsAnswer, TapeMeasurementsRequest } from "@/lib/tapeLengthEdit";
 import { projectExportFileName, stlNameAsksForNewFile } from "@/lib/exportNames";
@@ -5147,6 +5148,7 @@ export function LayerlingEditor({
     };
   }, [nativeApiRef, nativeDocument, nativeSignature]);
 
+  const startMeshOfferRef = useRef<(() => void) | null>(null);
   // The host is told the document is open once the editor is on screen, not once the data is parsed.
   useEffect(() => {
     if (!nativeDocument || !onNativeDocumentReady) return;
@@ -5158,6 +5160,8 @@ export function LayerlingEditor({
       nativeTrackerRef.current ??= new DocumentRevisionTracker((state) => onNativeDocumentChangeRef.current?.(state));
       nativeTrackerRef.current.baseline(nativeSignature());
       onNativeDocumentReady();
+      // Build 0125: only now that the host has been told the document is open (documents opened from a file only; see the scheduler effect).
+      startMeshOfferRef.current?.();
     };
     const timer = window.setTimeout(finish, 2000);
     const frame = window.requestAnimationFrame(() => window.requestAnimationFrame(finish));
@@ -14411,6 +14415,39 @@ export function LayerlingEditor({
     if (nativeDocument && requestHostAction("confirmMeshRepair", { meshes: report.repairableMeshes, objects: report.objects })) return;
     if (typeof window !== "undefined" && window.confirm(t("dialog.meshRepairAsk", { meshes: report.repairableMeshes, objects: report.objects }))) await confirmedRepairOpenMeshes();
   }, [confirmedRepairOpenMeshes, meshRepairNothingMessage, nativeDocument, repairOpenMeshes, setNotice]);
+
+  // ---- Build 0125: the quiet check after a document was opened from a file, and the one-time offer (lib/meshRepairOffer.ts) ----------------------------------------
+  // Native app only, documents opened from a file only (a new blank document has nothing to find); the browser edition never scans or alerts. Read-only until the person
+  // confirms in the host's sheet; the repair is exactly the 0124 one (a fresh scan, ONE Undo step). A busy person is never interrupted: the check is deferred, not dropped.
+  const toolbarModeRef = useRef<ToolbarMode>("geometry");
+  toolbarModeRef.current = toolbarMode;
+  // The scheduler lives as long as the document does; its ports read the latest functions through refs, so a re-render never replaces a running check.
+  const meshOfferPortsRef = useRef({ repairOpenMeshes, meshRepairRefusal });
+  meshOfferPortsRef.current = { repairOpenMeshes, meshRepairRefusal };
+  const opensFromFile = !!nativeDocument && nativeDocument.fileName !== null;
+  useEffect(() => {
+    if (!opensFromFile) return;
+    const scheduler = createMeshOfferScheduler({
+      isBusy: () => meshOfferPortsRef.current.meshRepairRefusal() !== null || toolbarModeRef.current === "sketch",
+      scan: async (): Promise<MeshOfferScan> => {
+        const scene = shapesRef.current;
+        const started = performance.now();
+        const outcome = await meshOfferPortsRef.current.repairOpenMeshes(false);
+        if (!outcome.ok) return meshOfferPortsRef.current.meshRepairRefusal() !== null ? { kind: "busy" } : { kind: "failed" };
+        return { kind: "counts", meshes: outcome.report.repairableMeshes, objects: outcome.report.objects, scene, ms: performance.now() - started };
+      },
+      isCurrent: (scene) => shapesRef.current === scene,
+      offer: ({ meshes, objects, scanMs }) => requestHostAction("confirmMeshRepair", { meshes, objects, source: "load", scanMs: Math.round(scanMs) }),
+      setTimer: (run, ms) => window.setTimeout(run, ms),
+      clearTimer: (handle) => window.clearTimeout(handle as number),
+      log: (line) => console.info(`[layerling] ${line}`),
+    });
+    startMeshOfferRef.current = scheduler.start;
+    return () => {
+      scheduler.abort();   // the document closed or reloaded
+      startMeshOfferRef.current = null;
+    };
+  }, [opensFromFile]);
 
   const executeMcpCommand = useCallback(async (command: LayerlingMcpCommand): Promise<unknown> => {
     const params = command.params ?? {};
